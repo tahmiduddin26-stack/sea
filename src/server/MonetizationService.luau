@@ -89,10 +89,10 @@ local function grantProduct(player: Player, name: string): boolean
 	Analytics.tag(player, "IAP", name)
 	if name == "StarterPack" then
 		data.starterBought = true
-		data.coins += 5000
+		data.coins += 5000 * Config.COIN_SCALE
 		data.pearls += 50
 		if not FarmService.giveMonster(player, "Kelpdrake", 3, 2) then
-			data.coins += 8000
+			data.coins += 8000 * Config.COIN_SCALE
 			toast(player, "Nests full, so you got extra coins instead of the egg", GOLD)
 		end
 		toast(player, "Starter Pack! A Lv3 Kelpdrake egg is in your nest", GOLD)
@@ -111,13 +111,12 @@ local function grantProduct(player: Player, name: string): boolean
 			toast(player, "No battle to revive, so here are 20 pearls", GOLD)
 		end
 	elseif name == "SkipTimer" then
-		if not FarmService.finishAllTimers(player) then
-			data.pearls += 10
-			toast(player, "No timers running, so here are 10 pearls", GOLD)
-		end
+		-- 5 minutes of instant hatching (stacks if bought again while running)
+		data.hatchNowUntil = math.max(data.hatchNowUntil or 0, os.time()) + Config.HATCH_NOW_SECONDS
+		FarmService.finishAllTimers(player)
+		toast(player, "Hatch Now! Every egg and fuse is instant for 5 minutes", GOLD)
 	elseif Config.COIN_PACK_MINUTES[name] then
-		local coins = math.floor(Stats.coinsPerMinute(data.bestDepth) * Config.COIN_PACK_MINUTES[name])
-		coins = math.max(coins, if name == "CoinsSmall" then 5000 else 25000)
+		local coins = Stats.coinPack(name, data.bestDepth)
 		data.coins += coins
 		toast(player, "+" .. Format.abbrev(coins) .. " Coins!", GOLD)
 	elseif name == "ElementBundle" then

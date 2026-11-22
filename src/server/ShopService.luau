@@ -1,5 +1,5 @@
 --!strict
--- Upgrade boards on each ship (Egg Luck, Egg Pedestals, Floor 2 + Lighthouse), codes,
+-- The Floor board on each ship, the Dockyard's upgrades (Egg Luck, Fast Reel, Shipwright), codes,
 -- and the one Action remote the client calls for everything that isn't a prompt.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -76,24 +76,7 @@ function ShopService.syncBoards(player: Player)
 	if not ship or not data then
 		return
 	end
-	-- Luck
-	do
-		local title, value, price = ensureBoardGui(ship.boards.Luck)
-		local lvl = data.upgrades.Luck
-		local p = Stats.upgradePrice("Luck", lvl)
-		title.Text = "Egg Luck"
-		value.Text = "+" .. lvl * 10 .. "%" .. (if p then "  >  +" .. (lvl + 1) * 10 .. "%" else "")
-		price.Text = if p then Format.abbrev(p) .. " Coins" else "MAX"
-	end
-	-- Pedestals
-	do
-		local title, value, price = ensureBoardGui(ship.boards.Pedestals)
-		local lvl = data.upgrades.Pedestals
-		local p = Stats.upgradePrice("Pedestals", lvl)
-		title.Text = "Fast Reel"
-		value.Text = "-" .. (lvl - 1) * 8 .. "%" .. (if p then "  >  -" .. lvl * 8 .. "%" else "")
-		price.Text = if p then Format.abbrev(p) .. " Coins" else "MAX"
-	end
+	-- (Egg Luck, Fast Reel and the Shipwright are bought at the Dockyard in town, not from boards)
 	-- Floor 2
 	do
 		local title, value, price = ensureBoardGui(ship.boards.Floor)
@@ -116,25 +99,7 @@ function ShopService.syncBoards(player: Player)
 			price.Text = Format.abbrev(Config.FLOOR2.coins) .. " Coins"
 		end
 	end
-	-- Shipwright
-	do
-		local title, value, price = ensureBoardGui(ship.boards.Ship)
-		local tier = data.shipTier or 0
-		local nextTier = tier + 1
-		title.Text = "Shipwright"
-		if nextTier > #Config.SHIP_TIERS then
-			value.Text = "Royal Flagship!"
-			price.Text = "MAX"
-		else
-			value.Text = Config.SHIP_TIERS[nextTier]
-			if data.bestDepth < Stats.shipTierDepth(nextTier) then
-				price.Text = "Clear stage " .. (Stats.shipTierStage(nextTier) - 2)
-			else
-				price.Text = Format.abbrev(Stats.shipTierPrice(nextTier)) .. " Coins"
-			end
-		end
-	end
-	local icons = { Ship = Config.ICONS.Event, Luck = Config.ICONS.LuckEgg, Pedestals = Config.ICONS.Pedestal, Floor = if data.floor >= 3 then Config.ICONS.Gift else Config.ICONS.Lock }
+	local icons = { Floor = if data.floor >= 3 then Config.ICONS.Gift else Config.ICONS.Lock }
 	for id, b in ship.boards do
 		local gui = b:FindFirstChild("Gui")
 		local icon = gui and gui:FindFirstChild("Icon") :: ImageLabel?
@@ -150,7 +115,7 @@ end
 
 local function upgrade(player: Player, id: string)
 	local data = DataService.get(player)
-	if FarmService.inTutorial(player) and data.tutorial < Config.HUD_UNLOCK_STEP then
+	if FarmService.inTutorial(player) and data.tutorial < Config.SIGNS_UNLOCK_STEP then
 		toast(player, "Finish the tutorial first!", Color3.fromRGB(255, 200, 60))
 		return
 	end
@@ -195,7 +160,8 @@ local function upgrade(player: Player, id: string)
 		data.coins -= price
 		Analytics.event(player, "UnlockFloor3", 1)
 		data.floor = 3
-		toast(player, "Poop Deck unlocked! 4 more nests and +20% coins", Color3.fromRGB(90, 220, 120))
+		player:SetAttribute("AbyssFloor", true) -- the Abyss Rod's balcony is up here (FarmService.syncAbyssRod)
+		toast(player, "Poop Deck unlocked! 4 more nests, +20% coins and the Abyss Rod", Color3.fromRGB(90, 220, 120))
 	elseif id == "Floor" then
 		if data.totalFuses < Config.FLOOR2.fuses then
 			toast(player, "Fuse " .. (Config.FLOOR2.fuses - data.totalFuses) .. " more times to unlock", Color3.fromRGB(255, 200, 60))
@@ -282,7 +248,12 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 		if typeof(arg) ~= "table" then
 			return false, "Pick two monsters"
 		end
-		return FarmService.fuse(player, arg[1], arg[2])
+		-- { uidA, uidB, extra... }: Lv3+ fuses need more than two (Stats.fuseNeeded)
+		local extra = {}
+		for k = 3, math.min(#arg, 20) do
+			table.insert(extra, arg[k])
+		end
+		return FarmService.fuse(player, arg[1], arg[2], extra)
 	end,
 	Code = function(player, arg)
 		return redeem(player, arg)
@@ -367,6 +338,23 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 		end
 		return false, nil
 	end,
+	-- Dockyard (town): arg = "Luck" | "Pedestals" | "Ship". `upgrade` does the checks and toasts;
+	-- we only report whether a level was actually bought so the menu can refresh and chime.
+	Upgrade = function(player, arg)
+		if arg ~= "Luck" and arg ~= "Pedestals" and arg ~= "Ship" then
+			return false, nil
+		end
+		local data = DataService.get(player)
+		if not data then
+			return false, nil
+		end
+		local function level(): number
+			return if arg == "Ship" then (data.shipTier or 0) else data.upgrades[arg]
+		end
+		local before = level()
+		upgrade(player, arg)
+		return level() > before, nil
+	end,
 	Favorite = function(player, arg)
 		return ExtrasService.favorite(player, arg)
 	end,
@@ -389,7 +377,7 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 		end
 		local data = DataService.get(player)
 		data.tutorial = Config.TUTORIAL_DONE
-		data.coins += 100000
+		data.coins += 100000 * Config.COIN_SCALE
 		data.pearls += 500
 		data.bestDepth = math.max(data.bestDepth, 31)
 		for _, sp in Config.SPELLS do

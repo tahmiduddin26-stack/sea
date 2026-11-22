@@ -21,12 +21,13 @@ local MissionService = require(script.Parent.MissionService)
 
 local BattleService = {}
 
-type Fighter = { power: string?, v: string?, uid: string, sp: string, lvl: number, stars: number, elements: { string }, hp: number, maxHp: number, atk: number, interval: number, cd: number, energy: number, nest: number }
+type Fighter = { power: string?, perk: string?, hits: number?, bubble: boolean?, v: string?, uid: string, sp: string, lvl: number, stars: number, elements: { string }, hp: number, maxHp: number, atk: number, interval: number, cd: number, energy: number, nest: number }
 type Run = {
 	player: Player,
 	team: { Fighter },
 	depth: number,
 	startDepth: number,
+	waveLeft: number, -- enemies still to beat before this depth counts (0 = next enemy starts a new depth)
 	enemy: any?,
 	enemyCd: number,
 	waveTimer: number,
@@ -92,7 +93,7 @@ end
 local function teamPayload(run: Run)
 	local list = {}
 	for i, f in run.team do
-		list[i] = { sp = f.sp, lvl = f.lvl, stars = f.stars, v = f.v, hp = f.hp, maxHp = f.maxHp, nest = f.nest }
+		list[i] = { sp = f.sp, lvl = f.lvl, stars = f.stars, v = f.v, perk = f.perk, hp = f.hp, maxHp = f.maxHp, nest = f.nest }
 	end
 	return list
 end
@@ -102,8 +103,17 @@ local function spawnEnemy(run: Run)
 	local def = Config.ENEMIES[e.id]
 	run.enemy = { id = e.id, hp = e.hp, maxHp = e.hp, atk = e.atk, interval = e.interval, kind = e.kind, element = def.element, scale = e.scale }
 	run.enemyCd = e.interval * 0.8
+	for _, f in run.team do
+		if f.perk == "Bubble" then
+			f.bubble = true -- a fresh bubble for every new enemy
+		end
+	end
+	if run.waveLeft <= 0 then
+		-- a new depth: normal depths are a wave of several enemies, mini-boss and boss are single
+		run.waveLeft = if e.kind == "mob" then Config.WAVE_SIZE else 1
+	end
 	local nest = ((DataService.get(run.player).fittings or {}).CrowsNest or 0) * Config.FITTINGS.CrowsNest.bossTime
-	run.bossLeft = if e.kind == "boss" or e.kind == "final" then Config.BOSS_TIME + nest else nil
+	run.bossLeft = if e.kind == "boss" or e.kind == "final" then Stats.bossTime(run.depth) + nest else nil
 	broadcast(run.player, "wave", {
 		depth = run.depth,
 		id = e.id,
@@ -132,7 +142,7 @@ local function giveBossEgg(player: Player, depth: number)
 	local els = { "Tide", "Coral", "Storm", "Abyss" }
 	local el = els[rng:NextInteger(1, #els)]
 	local egg = { sp = Config.STARTER_OF[el], lvl = stage + 2, stars = if rng:NextNumber() < 0.25 then 2 else 1 }
-	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp)) * FarmService.hatchMult(player))
+	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player))
 	if FarmService.giveEgg(player, egg, secs) then
 		toast(player, "The boss dropped a Lv" .. egg.lvl .. " " .. el .. " Egg! It's in a nest", Config.ELEMENTS[el].color)
 	else
@@ -188,6 +198,9 @@ local function killEnemy(run: Run)
 		if f.power == "Greedy" and f.hp > 0 then
 			greedy += 0.25
 		end
+		if f.perk == "Lucky" and f.hp > 0 then
+			greedy += Config.PERKS.Lucky.coins
+		end
 	end
 	local coins = math.floor(Stats.killCoins(run.depth, e.kind) * (coinMult(player) + greedy))
 	-- battles pay coins (and the boss egg) only; pearls, spells and shells come from the
@@ -201,6 +214,15 @@ local function killEnemy(run: Run)
 	MissionService.record(player, "kills", 1)
 	if e.kind == "boss" or e.kind == "final" then
 		MissionService.record(player, "boss", 1)
+	end
+	-- the depth only counts once the whole wave is down
+	run.waveLeft -= 1
+	if run.waveLeft > 0 then
+		broadcast(player, "kill", { coins = coins, pearls = pearls, depth = run.depth })
+		DataService.changed(player)
+		run.enemy = nil
+		run.waveTimer = Config.NEXT_WAVE_DELAY
+		return
 	end
 	if run.depth > data.bestDepth then
 		data.bestDepth = run.depth
@@ -225,6 +247,8 @@ local function killEnemy(run: Run)
 		toast(player, "You beat Maw and rescued your monster! Keep diving for glory", Color3.fromRGB(255, 220, 80))
 	end
 	run.depth += 1
+	-- remember where you are: after a faint or a retreat the next FIGHT carries on from here
+	data.resumeDepth = run.depth
 	run.waveTimer = Config.NEXT_WAVE_DELAY
 end
 
@@ -258,8 +282,40 @@ local function step(run: Run, dt: number)
 				dmg = math.max(1, math.floor(dmg))
 				e.hp = math.max(0, e.hp - dmg)
 				local heals = nil
-				broadcast(run.player, "hit", { from = i, dmg = dmg, super = mult > 1, weak = mult < 1, ability = ability, move = move, heals = heals, hp = e.hp })
+				-- Deep Rod perks: small tricks, never extra hit damage
+				local perkFx: string? = nil
+				if f.perk == "Frost" then
+					f.hits = (f.hits or 0) + 1
+					if f.hits % Config.PERKS.Frost.every == 0 then
+						run.enemyCd = math.max(run.enemyCd, 0) + Config.PERKS.Frost.freeze
+						perkFx = "Frost"
+					end
+				elseif f.perk == "Venom" then
+					local P = Config.PERKS.Venom
+					e.poison = math.max(e.poison or 0, dmg * P.share / P.seconds)
+					e.poisonLeft = P.seconds
+					perkFx = "Venom"
+				elseif f.perk == "Leech" then
+					local before = f.hp
+					f.hp = math.min(f.maxHp, f.hp + math.max(1, math.floor(dmg * Config.PERKS.Leech.heal)))
+					if f.hp > before then
+						heals = { [tostring(i)] = f.hp } -- string key: a sparse number key would not survive the remote
+						perkFx = "Leech"
+					end
+				end
+				broadcast(run.player, "hit", { from = i, dmg = dmg, super = mult > 1, weak = mult < 1, ability = ability, move = move, heals = heals, hp = e.hp, perk = perkFx })
 			end
+		end
+	end
+	-- Venom: poison ticks every step while it lasts
+	if e.poisonLeft and e.poisonLeft > 0 and e.hp > 0 then
+		local t = math.min(dt, e.poisonLeft)
+		e.poisonLeft -= dt
+		e.poisonAcc = (e.poisonAcc or 0) + e.poison * t
+		if e.poisonAcc >= 1 then
+			local tick = math.floor(e.poisonAcc)
+			e.poisonAcc -= tick
+			e.hp = math.max(0, e.hp - tick)
 		end
 	end
 	if e.hp <= 0 then
@@ -276,10 +332,34 @@ local function step(run: Run, dt: number)
 			local f = run.team[i]
 			local mult = Stats.elementMult({ e.element }, f.elements[1])
 			local dmg = math.max(1, math.floor(e.atk * mult * rng:NextNumber(0.9, 1.1)))
+			-- Bubble: the first hit from each new enemy pops the bubble instead
+			if f.perk == "Bubble" and f.bubble then
+				f.bubble = false
+				dmg = 0
+			end
+			-- Abyss Rod perks: Barnacle shrugs off some damage, Thorns hurts the attacker back,
+			-- Second Wind gets back up once per dive
+			local perkFx: string? = nil
+			if f.perk == "Barnacle" and dmg > 0 then
+				dmg = math.max(1, math.floor(dmg * (1 - Config.PERKS.Barnacle.cut)))
+			end
+			if f.perk == "Thorns" and dmg > 0 then
+				e.hp = math.max(0, e.hp - math.max(1, math.floor(dmg * Config.PERKS.Thorns.share)))
+				perkFx = "Thorns"
+			end
 			f.hp = math.max(0, f.hp - dmg)
-			broadcast(run.player, "enemyHit", { to = i, dmg = dmg, hp = f.hp, super = mult > 1 })
+			if f.hp <= 0 and f.perk == "SecondWind" and not (f :: any).windUsed then
+				(f :: any).windUsed = true
+				f.hp = math.max(1, math.floor(f.maxHp * Config.PERKS.SecondWind.hp))
+				perkFx = "SecondWind"
+			end
+			broadcast(run.player, "enemyHit", { to = i, dmg = dmg, hp = f.hp, super = mult > 1, blocked = dmg == 0, perk = perkFx, enemyHp = if perkFx == "Thorns" then e.hp else nil })
 			if f.hp <= 0 then
 				broadcast(run.player, "faint", { who = i })
+			end
+			if e.hp <= 0 then
+				killEnemy(run)
+				return
 			end
 		end
 	end
@@ -364,6 +444,7 @@ local function startRun(player: Player, depth: number, keep: Run?): (boolean, st
 		st.hp = math.max(1, math.floor(st.hp * FarmService.spellMult(player, "hp") * (1 + (fit.Hull or 0) * Config.FITTINGS.Hull.hp)))
 		table.insert(fighters, {
 			power = power,
+			perk = m.perk,
 			v = m.v,
 			uid = m.uid,
 			sp = m.sp,
@@ -385,6 +466,7 @@ local function startRun(player: Player, depth: number, keep: Run?): (boolean, st
 		team = fighters,
 		depth = depth,
 		startDepth = depth,
+		waveLeft = 0,
 		enemy = nil,
 		enemyCd = 0,
 		waveTimer = 1.6,
@@ -433,8 +515,10 @@ function BattleService.startDepthFor(player: Player): number
 	if FarmService.inTutorial(player) then
 		return 1
 	end
-	-- restart from the last stage checkpoint you've cleared
-	return (data.bestDepth // Config.STAGE_LENGTH) * Config.STAGE_LENGTH + 1
+	-- carry on from the depth you left (a boss restarts at full health), never earlier than the
+	-- start of the stage you have reached and never past the next depth you could ever reach
+	local checkpoint = (data.bestDepth // Config.STAGE_LENGTH) * Config.STAGE_LENGTH + 1
+	return math.clamp(math.max(data.resumeDepth or 0, checkpoint), 1, data.bestDepth + 1)
 end
 
 function BattleService.fight(player: Player): (boolean, string?)

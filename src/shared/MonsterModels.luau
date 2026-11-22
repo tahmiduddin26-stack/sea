@@ -214,6 +214,61 @@ function MonsterModels.applyVariant(rig: Rig, variant: string?)
 	end
 end
 
+-- Deep Rod perk look (Config.PERKS): a soft glow in the perk's colour plus its own particles,
+-- so perk monsters stand out on deck and in battle. Client only, attachments on the body part.
+local PERK_FX = {
+	Frost = { texture = "rbxasset://textures/particles/sparkles_main.dds", rate = 9, speed = 0.6, accel = Vector3.new(0, -1.5, 0), size = 0.35, life = 1.6 },
+	Venom = { texture = "rbxasset://textures/particles/smoke_main.dds", rate = 6, speed = 1, accel = Vector3.new(0, 2, 0), size = 0.5, life = 1.2 },
+	Bubble = { texture = "rbxasset://textures/particles/sparkles_main.dds", rate = 8, speed = 1.2, accel = Vector3.new(0, 3, 0), size = 0.45, life = 1.4 },
+	Leech = { texture = "rbxasset://textures/particles/fire_main.dds", rate = 6, speed = 0.8, accel = Vector3.new(0, 1.5, 0), size = 0.4, life = 1 },
+	Lucky = { texture = "rbxasset://textures/particles/sparkles_main.dds", rate = 12, speed = 2, accel = Vector3.new(0, -2, 0), size = 0.4, life = 1 },
+	Thorns = { texture = "rbxasset://textures/particles/fire_main.dds", rate = 7, speed = 1.6, accel = Vector3.new(0, 0, 0), size = 0.3, life = 0.8 },
+	SecondWind = { texture = "rbxasset://textures/particles/sparkles_main.dds", rate = 10, speed = 1.4, accel = Vector3.new(0, 4, 0), size = 0.4, life = 1.2 },
+	Barnacle = { texture = "rbxasset://textures/particles/smoke_main.dds", rate = 4, speed = 0.4, accel = Vector3.new(0, -0.5, 0), size = 0.55, life = 1.6 },
+}
+function MonsterModels.applyPerk(rig: Rig, perk: string?)
+	local def = perk and Config.PERKS[perk]
+	local fx = perk and PERK_FX[perk]
+	if not def or not fx then
+		return
+	end
+	local body = rig.parts[1]
+	local light = Instance.new("PointLight")
+	light.Name = "PerkGlow"
+	light.Color = def.color
+	light.Range = 7 * rig.scale
+	light.Brightness = 1.6
+	light.Parent = body
+	local att = Instance.new("Attachment")
+	att.Name = "PerkFx"
+	att.Position = Vector3.new(0, 0.6 * rig.scale, 0)
+	att.Parent = body
+	local pe = Instance.new("ParticleEmitter")
+	pe.Texture = fx.texture
+	pe.Color = ColorSequence.new(def.color, def.color:Lerp(Color3.new(1, 1, 1), 0.6))
+	pe.LightEmission = 0.8
+	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, fx.size * rig.scale), NumberSequenceKeypoint.new(1, 0) })
+	pe.Transparency = NumberSequence.new(0.15, 1)
+	pe.Lifetime = NumberRange.new(fx.life * 0.7, fx.life)
+	pe.Rate = fx.rate
+	pe.Speed = NumberRange.new(fx.speed * 0.5, fx.speed)
+	pe.Acceleration = fx.accel
+	pe.SpreadAngle = Vector2.new(180, 180)
+	pe.Parent = att
+	-- a slow pulsing ring of light round the feet
+	local ring = Instance.new("ParticleEmitter")
+	ring.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	ring.Color = ColorSequence.new(def.color)
+	ring.LightEmission = 1
+	ring.Size = NumberSequence.new(0.25 * rig.scale, 0)
+	ring.Lifetime = NumberRange.new(0.8)
+	ring.Rate = 14
+	ring.Speed = NumberRange.new(2.2 * rig.scale)
+	ring.SpreadAngle = Vector2.new(0, 180)
+	ring.EmissionDirection = Enum.NormalId.Right
+	ring.Parent = att
+end
+
 -- Rarity aura: 3* sparkles, 4* sparkles + glow, 5* both, bigger and pink. Client only.
 function MonsterModels.addAura(rig: Rig, stars: number)
 	if stars < 3 then

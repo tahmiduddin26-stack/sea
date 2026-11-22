@@ -48,7 +48,7 @@ function DataService.defaultData()
 		totalFuses = 0,
 		totalHatches = 0,
 		nextUid = 1,
-		monsters = {}, -- uid(string) -> { sp, lvl, stars, v?, x6? } (x6 = very rare sixth-star fuse, +1% stats)
+		monsters = {}, -- uid(string) -> { sp, lvl, stars, v?, x6?, perk? } (x6 = very rare sixth-star fuse, +1% stats; perk = Config.PERKS id from the Deep Rod)
 		-- nest index(string) -> { kind = "egg", egg = {sp,lvl,stars}, readyAt }
 		--                     | { kind = "mon", uid }
 		--                     | { kind = "fuse", child = {sp,lvl,stars}, readyAt }
@@ -69,6 +69,11 @@ function DataService.defaultData()
 		luckUntil = 0,
 		luckMult = 1,
 		luck30Until = 0, -- x2 Luck 30m product (egg + fuse luck)
+		nestsRevealed = false, -- the buyable nests have been shown once (they never hide again)
+		deepRodAt = 0, -- os.time of the last Deep Rod cast (Config.DEEP_ROD.cooldown)
+		abyssRodAt = 0, -- os.time of the last Abyss Rod cast (Config.ABYSS_ROD.cooldown)
+		playSeconds = 0, -- time actually played (folded in on every save); see DataService.playSeconds
+		resumeDepth = 0, -- the depth you were fighting when your team fainted / you retreated (0 = none)
 		redeemedCodes = {},
 		receipts = {},
 		starterBought = false,
@@ -103,6 +108,10 @@ local function reconcile(data: any)
 		if data.upgrades[k] == nil then
 			data.upgrades[k] = v
 		end
+	end
+	-- the team cap was lowered: an old save can't keep more slots than the cap
+	if (data.teamSlots or 0) > Config.TEAM_MAX then
+		data.teamSlots = Config.TEAM_MAX
 	end
 	return data
 end
@@ -158,6 +167,16 @@ function DataService.isLoaded(player: Player): boolean
 	return profiles[player] ~= nil
 end
 
+-- Seconds this player has really played, across sessions (drives the fast first minutes)
+function DataService.playSeconds(player: Player): number
+	local data = profiles[player]
+	local s = session[player]
+	if not data or not s then
+		return 0
+	end
+	return (data.playSeconds or 0) + math.max(0, os.time() - (s.playMark or os.time()))
+end
+
 function DataService.snapshot(player: Player): any
 	local data = profiles[player]
 	local s = session[player]
@@ -165,6 +184,7 @@ function DataService.snapshot(player: Player): any
 		return nil
 	end
 	local snap = table.clone(data)
+	snap.playSeconds = DataService.playSeconds(player)
 	snap.receipts = nil
 	snap.passes = s.passes
 	snap.pedestalEggs = s.pedestalEggs
@@ -215,6 +235,13 @@ function DataService.save(player: Player): boolean
 		return false
 	end
 	data.lastSeen = os.time()
+	do -- fold the time played since the last save into the saved total
+		local sess = session[player]
+		if sess then
+			data.playSeconds = DataService.playSeconds(player)
+			sess.playMark = os.time()
+		end
+	end
 	local s = store :: DataStore
 	pendingSaves += 1
 	local ok, err = false, nil
@@ -279,6 +306,7 @@ local function load(player: Player)
 	session[player] = {
 		isNew = data == nil,
 		joinTime = os.time(),
+		playMark = os.time(),
 		passes = {},
 		pedestalEggs = {}, -- index -> { sp, lvl, stars, price } rolled at the winch
 		carrying = nil, -- { sp, lvl, stars } egg held overhead

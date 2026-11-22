@@ -6,12 +6,14 @@
 --   Spellbook      you hold spell cards
 --   Monster Museum you found a new species since you last looked
 --   Power Shrine   you have free spins (after Powers unlock)
+--   Dockyard       you can afford a ship upgrade
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
+local Stats = require(ReplicatedStorage:WaitForChild("Shared").Stats)
 
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
@@ -97,10 +99,56 @@ local function refresh()
 	if a then
 		mark(a, snap.bestDepth >= Config.POWERS_UNLOCK_DEPTH and (snap.spins or 0) > 0)
 	end
+	-- Dockyard: you can afford an Egg Luck / Fast Reel level or the next Shipwright tier
+	local ups = snap.upgrades or {}
+	local lowest = math.huge
+	for _, id in { "Luck", "Pedestals" } do
+		local p = Stats.upgradePrice(id, ups[id] or 0)
+		if p then
+			lowest = math.min(lowest, p)
+		end
+	end
+	local nextTier = (snap.shipTier or 0) + 1
+	if nextTier <= #Config.SHIP_TIERS and snap.bestDepth >= Stats.shipTierDepth(nextTier) then
+		lowest = math.min(lowest, Stats.shipTierPrice(nextTier))
+	end
+	a = anchorOf(hub, "DockyardPrompt")
+	if a then
+		mark(a, snap.coins >= lowest)
+	end
 end
 
 function VendorMarks.init()
 	local last = 0
+	-- Town text (vendor names, the leaderboard...) stays hidden until you are inside the town;
+	-- nothing floats about while you're out at sea. (The bouncing "!" marks stay: they guide you.)
+	local townGuis: { BillboardGui } = {}
+	task.spawn(function()
+		local world = workspace:WaitForChild("World")
+		local hub = world:WaitForChild("Harbour")
+		task.wait(1)
+		for _, d in hub:GetDescendants() do
+			if d:IsA("BillboardGui") and not (d.Parent and marks[d.Parent :: BasePart] == d) then
+				table.insert(townGuis, d)
+			end
+		end
+		local TOWN_RADIUS = Config.HUB_RADIUS + 30
+		local centre = Vector3.new(0, Config.SEA_LEVEL, 0)
+		while true do
+			local char = Players.LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if root then
+				local flat = (root.Position - centre) * Vector3.new(1, 0, 1)
+				local inTown = flat.Magnitude < TOWN_RADIUS
+				for _, g in townGuis do
+					if g.Enabled ~= inTown then
+						g.Enabled = inTown
+					end
+				end
+			end
+			task.wait(0.4)
+		end
+	end)
 	RunService.Heartbeat:Connect(function()
 		local t = os.clock()
 		-- bob every mark

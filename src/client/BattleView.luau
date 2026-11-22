@@ -262,6 +262,7 @@ local function onStart(owner: number, payload: any)
 		local u = newUnit(m.sp, MON_SCALE, home, m.maxHp)
 		if u then
 			MonsterModels.applyVariant(u.rig, m.v)
+			MonsterModels.applyPerk(u.rig, m.perk)
 			-- float half in the water
 			local foot = MonsterModels.footDepth(u.rig)
 			u.home = home * CFrame.new(0, foot * 0.55, 0)
@@ -280,7 +281,62 @@ local function onStart(owner: number, payload: any)
 		Hud.setDepth(payload.depth, "")
 		Sound.music("BattleMusic")
 		Sound.play("Splash", 0.6)
+		BattleView.showArena(f)
 	end
+end
+
+-- Where is my fight? When it starts, the camera glides out to the arena for a moment (the team
+-- flying in from the nests) and back, with a toast, and a big "YOUR BATTLE" sign floats over
+-- the arena for the whole fight so it's easy to find from the deck.
+function BattleView.showArena(f: Fight)
+	local arena = f.arena
+	local sign = Instance.new("BillboardGui")
+	sign.Name = "ArenaSign"
+	sign.Size = UDim2.fromScale(18, 4)
+	sign.StudsOffsetWorldSpace = Vector3.new(0, 22, 0)
+	sign.AlwaysOnTop = true
+	sign.LightInfluence = 0
+	sign.MaxDistance = 600
+	local holder = Instance.new("Part")
+	holder.Name = "ArenaSignAnchor"
+	holder.Anchored = true
+	holder.CanCollide = false
+	holder.CanQuery = false
+	holder.Transparency = 1
+	holder.Size = Vector3.one
+	holder.CFrame = arena
+	holder.Parent = FX
+	sign.Parent = holder
+	UI.label({ Text = "⚔ YOUR BATTLE ⚔", TextColor3 = C.Gold, Size = UDim2.fromScale(1, 1), Parent = sign })
+	task.spawn(function()
+		while fights[f.owner] == f and not f.ending do
+			task.wait(0.5)
+		end
+		holder:Destroy()
+	end)
+	Hud.toast("Your team is battling out at sea, off the side of your ship!", C.Gold)
+	-- the camera glide (skipped during another cinematic)
+	local State = require(script.Parent.State) :: any
+	if State.cinematic then
+		return
+	end
+	local camera = workspace.CurrentCamera
+	local start = camera.CFrame
+	local look = CFrame.lookAt((arena * CFrame.new(0, 26, 46)).Position, arena.Position)
+	local t0 = os.clock()
+	local TOTAL = 2.6
+	local name = "ShowArena" .. tostring(f.owner)
+	RunService:BindToRenderStep(name, Enum.RenderPriority.Camera.Value + 1, function()
+		local t = os.clock() - t0
+		-- out (0.7 s), hold, back (0.6 s)
+		local w = math.clamp(math.min(t / 0.7, (TOTAL - t) / 0.6), 0, 1)
+		w = w * w * (3 - 2 * w)
+		camera.CFrame = camera.CFrame:Lerp(look, w)
+		if t >= TOTAL then
+			RunService:UnbindFromRenderStep(name)
+		end
+	end)
+	local _ = start
 end
 
 local function onWave(owner: number, p: any)
@@ -311,6 +367,14 @@ local function onWave(owner: number, p: any)
 		Hud.setDepth(p.depth, p.stage)
 		Hud.setEnemy(def and def.name or p.id, p.hp, p.maxHp, p.kind == "boss" or p.kind == "final", p.bossTime)
 		if p.kind == "boss" or p.kind == "final" then
+			-- a loud "ping" (two high chimes + a banner) so you notice even away from the arena
+			Hud.toast("BOSS APPEARED: " .. string.upper(def and def.name or p.id) .. "!", C.Coral)
+			task.spawn(function()
+				for k = 1, 2 do
+					Sound.play("ZoneChime", 1, 1.5 + k * 0.15)
+					task.wait(0.18)
+				end
+			end)
 			Cinema.bossIntro(u.rig.model, def and def.name or p.id)
 		elseif p.kind == "miniboss" then
 			Hud.toast("MINI BOSS: " .. (def and def.name or p.id), C.Coral)
@@ -338,6 +402,26 @@ local function onHit(owner: number, p: any)
 			popText(target + Vector3.new(0, 1, 0), (if p.ability then "BOOM " else "") .. Format.abbrev(p.dmg), col, if p.ability then 1 else 0.7)
 			if p.super then
 				popText(target + Vector3.new(0, 3.5, 0), "SUPER!", C.Gold, 0.9)
+			end
+			-- Deep Rod perks: a little word over the enemy (or the healed monster)
+			local perk = p.perk and Config.PERKS[p.perk]
+			if perk and p.perk ~= "Leech" then
+				popText(target + Vector3.new(0, 5.5, 0), if p.perk == "Frost" then "FROZEN!" else "POISON", perk.color, 0.75)
+				if p.perk == "Frost" then
+					burst(target, perk.color, 12, 6, true)
+				end
+			end
+		end
+		-- Leech heals on a normal hit (an ability hit heals inside BattleView.move)
+		if p.heals and not p.ability then
+			for j, hp in p.heals do
+				local u = f.team[tonumber(j) or 0]
+				if u then
+					setHp(u, hp)
+					if (workspace.CurrentCamera.CFrame.Position - u.home.Position).Magnitude < 140 then
+						popText(u.home.Position + Vector3.new(0, 4, 0), "+HP", C.Kelp, 0.7)
+					end
+				end
 			end
 		end
 		if mine(f) then
@@ -462,8 +546,8 @@ function BattleView.move(f: Fight, atk: Unit, e: Unit, element: string, heals: {
 					task.wait(0.31)
 					b:Destroy()
 				end)
-				if heals and heals[j] then
-					setHp(u, heals[j])
+				if heals and (heals[j] or (heals :: any)[tostring(j)]) then
+					setHp(u, heals[j] or (heals :: any)[tostring(j)])
 					if near then
 						popText(u.home.Position + Vector3.new(0, 4, 0), "+HP", C.Kelp, 0.7)
 					end
@@ -493,7 +577,26 @@ local function onEnemyHit(owner: number, p: any)
 		u.flash = -1
 		setHp(u, p.hp)
 		if (workspace.CurrentCamera.CFrame.Position - u.home.Position).Magnitude < 140 then
-			popText(u.home.Position + Vector3.new(0, 3, 0), "-" .. Format.abbrev(p.dmg), C.Coral, 0.6)
+			if p.blocked then
+				popText(u.home.Position + Vector3.new(0, 3, 0), "BUBBLE!", Config.PERKS.Bubble.color, 0.75)
+				burst(u.home.Position + Vector3.new(0, 2, 0), Config.PERKS.Bubble.color, 14, 6, true)
+			else
+				popText(u.home.Position + Vector3.new(0, 3, 0), "-" .. Format.abbrev(p.dmg), C.Coral, 0.6)
+			end
+			-- Abyss Rod perks
+			local perk = p.perk and Config.PERKS[p.perk]
+			if perk then
+				if p.perk == "SecondWind" then
+					popText(u.home.Position + Vector3.new(0, 5.5, 0), "SECOND WIND!", perk.color, 0.9)
+					burst(u.home.Position + Vector3.new(0, 2, 0), perk.color, 20, 8, true)
+				elseif p.perk == "Thorns" then
+					popText(e.home.Position + Vector3.new(0, 5.5, 0), "THORNS", perk.color, 0.75)
+					burst(e.home.Position + Vector3.new(0, 2, 0), perk.color, 10, 6, true)
+				end
+			end
+		end
+		if p.enemyHp then
+			setHp(e, p.enemyHp)
 		end
 	end)
 end
@@ -592,8 +695,13 @@ local function camFov(t: number): number
 	return arr[f * 9 + 9]
 end
 
-function BattleView.castRod(ship: Model, count: number, zone: number, total: number, mine: boolean)
-	local rod = ship:FindFirstChild("Rod") :: Model?
+-- deep = the Deep Rod (starboard): its own trench, Config.DEEP_ZONES and DEEP_ZONE_HEIGHT
+-- kind = "abyss" for the Abyss Rod (Floor 3 balcony, astern); see Config.rodInfo
+function BattleView.castRod(ship: Model, count: number, zone: number, total: number, mine: boolean, deep: any, slot0: number?)
+	local slot = slot0 or 1 -- the pedestal the catch lands on (the Deep and Abyss Rods have their own)
+	local info = Config.rodInfo(deep)
+	local ZONES = info.zones
+	local rod = ship:FindFirstChild(info.model) :: Model?
 	local rodCf = if rod then rod:GetAttribute("RodCf") :: CFrame? else nil
 	local shipCf = ship:GetAttribute("ShipCf") :: CFrame?
 	if not rod or not rodCf or not shipCf or casting[rod] then
@@ -619,8 +727,8 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	end
 
 	-- timeline (seconds)
-	local H = Config.FISH_ZONE_HEIGHT
-	local zdef = Config.FISH_ZONES[zone] or Config.FISH_ZONES[1]
+	local H = info.H
+	local zdef = ZONES[zone] or ZONES[1]
 	local CAST = RodAnim.SPLASH
 	local GRAB = 0.75
 	local FLY = 0.7
@@ -631,9 +739,18 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	local tUp = tGrab + GRAB
 	local tFly = tUp + UP
 
-	local wp = Config.WINCH_POS
-	local column = shipCf * CFrame.new(wp.X - 44, Config.SEA_LEVEL, wp.Z)
-	local splashPos = (base * (trackCf("Hook", CAST))).Position
+	-- the shaft centre (same numbers as WorldBuilder.trenchCenter)
+	local column = shipCf * CFrame.new(info.center.X, Config.SEA_LEVEL, info.center.Z)
+	-- "out to sea" from the ship, for the camera on the way back up
+	local outward = column:VectorToWorldSpace(info.out)
+	-- the Blender cast is authored for a rod on the main deck; a rod standing higher (the Abyss
+	-- Rod on Floor 3) lets the hook fall that much further so it still splashes at the waterline
+	local drop = info.y - Config.DECK_Y
+	local function castHook(t: number): Vector3
+		local u = math.clamp(t / CAST, 0, 1)
+		return (base * (trackCf("Hook", t))).Position - Vector3.new(0, drop * u * u, 0)
+	end
+	local splashPos = castHook(CAST)
 	local bottomY = Config.SEA_LEVEL - (zone - 1) * H - H + 7
 	local stopPos = Vector3.new(column.X, bottomY, column.Z)
 
@@ -760,6 +877,66 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		barb.CFrame = CFrame.new(pos + Vector3.new(0, -1.2, 0)) * CFrame.Angles(0, t * 2, math.sin(t * 6) * 0.2)
 	end
 
+	-- Dive gauge (owner only): one see-through bubble on the LEFT edge that shows the zone the
+	-- hook is passing through and updates in place, so the middle of the screen stays clear to
+	-- watch the hook. A column of small dots below it fills in as the hook passes each zone.
+	local gaugeGui: ScreenGui? = nil
+	local gaugeName: TextLabel? = nil
+	local gaugeSub: TextLabel? = nil
+	local gaugeBubble: Frame? = nil
+	local gaugeDots: { Frame } = {}
+	if mine then
+		local pg = player:WaitForChild("PlayerGui")
+		local g = Instance.new("ScreenGui")
+		g.Name = "DiveGauge"
+		g.ResetOnSpawn = false
+		g.IgnoreGuiInset = true
+		g.DisplayOrder = 5
+		g.Parent = pg
+		gaugeGui = g
+		local bubble = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(120, 210, 255), BackgroundTransparency = 0.72, Size = UDim2.fromOffset(210, 64), Position = UDim2.new(0, 20, 0.3, 0), Parent = g }, {
+			UI.corner(32),
+			UI.new("UIStroke", { Color = Color3.fromRGB(220, 250, 255), Thickness = 2, Transparency = 0.35 }),
+			UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0.1, 0.6) }),
+		})
+		-- a little shine like a soap bubble
+		UI.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.55, Size = UDim2.fromOffset(34, 9), Position = UDim2.fromOffset(18, 8), Rotation = -12, Parent = bubble }, { UI.corner(5) })
+		gaugeBubble = bubble
+		gaugeName = UI.label({ Text = "", MaxText = 22, Size = UDim2.new(1, -24, 0, 30), Position = UDim2.fromOffset(12, 8), Parent = bubble })
+		gaugeSub = UI.label({ Text = "", MaxText = 14, Stroke = 0, TextColor3 = Color3.fromRGB(225, 245, 255), TextTransparency = 0.15, Size = UDim2.new(1, -24, 0, 18), Position = UDim2.fromOffset(12, 38), Parent = bubble })
+		for k = 1, #ZONES do
+			gaugeDots[k] = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(200, 240, 255), BackgroundTransparency = 0.8, Size = UDim2.fromOffset(12, 12), Position = UDim2.new(0, 34 + (k - 1) % 5 * 18, 0.3, 74 + math.floor((k - 1) / 5) * 18), Parent = g }, { UI.corner(6), UI.new("UIStroke", { Color = Color3.new(1, 1, 1), Transparency = 0.5 }) })
+		end
+		bubble.Visible = false
+	end
+	local function gaugeZone(k: number, z: any)
+		if not gaugeBubble or not gaugeName or not gaugeSub then
+			return
+		end
+		gaugeBubble.Visible = true
+		gaugeBubble.BackgroundColor3 = z.color
+		gaugeName.Text = string.upper(z.name)
+		gaugeName.TextColor3 = Color3.new(1, 1, 1)
+		gaugeSub.Text = "Zone " .. k .. " / " .. #ZONES
+		local dot = gaugeDots[k]
+		if dot then
+			dot.BackgroundColor3 = z.color
+			dot.BackgroundTransparency = 0.1
+		end
+		gaugeBubble.Size = UDim2.fromOffset(190, 58)
+		UI.tween(gaugeBubble, 0.35, { Size = UDim2.fromOffset(210, 64) }, Enum.EasingStyle.Back)
+	end
+	local function gaugeCaught(z: any)
+		if not gaugeBubble or not gaugeName or not gaugeSub then
+			return
+		end
+		gaugeName.Text = "EGG CAUGHT!"
+		gaugeName.TextColor3 = Color3.fromRGB(255, 230, 110)
+		gaugeSub.Text = "in " .. z.name
+		gaugeBubble.Size = UDim2.fromOffset(180, 56)
+		UI.tween(gaugeBubble, 0.4, { Size = UDim2.fromOffset(220, 66) }, Enum.EasingStyle.Back)
+	end
+
 	-- the owner's camera follows the hook, blending in and out of the normal camera
 	local camera = workspace.CurrentCamera
 	local savedFov = camera.FieldOfView
@@ -806,7 +983,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		p.Parent = parent
 		return p
 	end
-	local WALL = 23
+	local WALL = info.half - 3
 	local function wallCf(side: number, along: number, y: number, depth: number): CFrame
 		-- a spot on a wall of the shaft, local +Z faces the middle of the shaft
 		return column * CFrame.Angles(0, side * math.pi / 2, 0) * CFrame.new(along, y, -WALL + depth)
@@ -874,7 +1051,8 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		end)
 	end
 	local function spawnZone(k: number)
-		local z = Config.FISH_ZONES[k]
+		local z = ZONES[k]
+		local look = z.look or z.id
 		local top = Config.SEA_LEVEL - (k - 1) * H
 		local f = Instance.new("Folder")
 		f.Name = "Zone" .. k
@@ -886,7 +1064,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		local function onAnyWall(): (number, number)
 			return rng:NextInteger(0, 3), rng:NextNumber(-WALL + 4, WALL - 4)
 		end
-		if z.id == "Shallows" then
+		if look == "Shallows" then
 			for _ = 1, 16 do
 				local s, a = onAnyWall()
 				local cf = wallCf(s, a, yIn(), rng:NextNumber(0, 2))
@@ -904,7 +1082,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			end
 			fishSchool(f, 14, top - H / 2, Color3.fromRGB(255, 200, 70), 16, 0.9)
 			fishSchool(f, 8, top - H * 0.7, Color3.fromRGB(90, 190, 255), 19, -0.7)
-		elseif z.id == "Kelp" then
+		elseif look == "Kelp" then
 			for _ = 1, 22 do
 				local s, a = onAnyWall()
 				sway(f, wallCf(s, a, top - H, rng:NextNumber(0.5, 3)), rng:NextInteger(8, 12), Vector3.new(1.3, 3.6, 0.5), Color3.fromRGB(30, 120, 60), Color3.fromRGB(110, 230, 100), 0.1)
@@ -917,7 +1095,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			fishSchool(f, 16, top - H / 2, Color3.fromRGB(120, 230, 120), 16, 1.0)
 			fishSchool(f, 6, top - H * 0.3, Color3.fromRGB(255, 220, 120), 20, -0.8)
 			jellyfish(f, column.Position + Vector3.new(-9, top - H * 0.4, 7), Color3.fromRGB(170, 255, 190), 3.2)
-		elseif z.id == "Reef" then
+		elseif look == "Reef" then
 			local cols = { Color3.fromRGB(255, 110, 150), Color3.fromRGB(255, 165, 60), Color3.fromRGB(185, 100, 255), Color3.fromRGB(60, 225, 205) }
 			for i = 1, 26 do
 				local s, a = onAnyWall()
@@ -940,7 +1118,41 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			fishSchool(f, 10, top - H * 0.65, Color3.fromRGB(80, 160, 255), 20, -0.9)
 			jellyfish(f, column.Position + Vector3.new(8, top - H * 0.35, -8), Color3.fromRGB(255, 130, 200), 3.6)
 			jellyfish(f, column.Position + Vector3.new(-10, top - H * 0.75, 6), Color3.fromRGB(150, 130, 255), 2.8)
-		elseif z.id == "Wreck" then
+		elseif look == "Ice" then
+			-- frozen walls: ice blocks, glowing crystal spikes and pale drifting jellies
+			for i = 1, 18 do
+				local s, a = onAnyWall()
+				local cf = wallCf(s, a, yIn(), rng:NextNumber(0, 2))
+				mk(f, Vector3.new(rng:NextNumber(3, 7), rng:NextNumber(3, 6), 3), cf, Color3.fromRGB(215, 238, 252), Enum.Material.Ice)
+				if i % 2 == 0 then
+					local c = mk(f, Vector3.new(1.2, 4.5, 1.2), cf * CFrame.new(0, 3, 1.5) * CFrame.Angles(math.rad(-25), 0, math.rad(rng:NextNumber(-25, 25))), z.color, Enum.Material.Neon)
+					local l = Instance.new("PointLight")
+					l.Color = z.color
+					l.Range = 12
+					l.Parent = c
+				end
+			end
+			jellyfish(f, column.Position + Vector3.new(6, top - H * 0.5, -6), Color3.fromRGB(210, 245, 255), 3)
+			fishSchool(f, 10, top - H / 2, Color3.fromRGB(200, 235, 255), WALL - 6, 0.8)
+		elseif look == "Vents" then
+			-- lava vents: black chimneys with glowing tops and rising embers
+			for i = 1, 14 do
+				local s, a = onAnyWall()
+				local h = rng:NextNumber(5, 14)
+				local cf = wallCf(s, a, top - H, rng:NextNumber(0, 2))
+				mk(f, Vector3.new(3.2, h, 3.2), cf * CFrame.new(0, h / 2, 0), Color3.fromRGB(35, 30, 30), Enum.Material.Basalt)
+				local lava = mk(f, Vector3.new(2.4, 0.7, 2.4), cf * CFrame.new(0, h + 0.3, 0), z.color, Enum.Material.Neon)
+				if i % 2 == 0 then
+					local l = Instance.new("PointLight")
+					l.Color = z.color
+					l.Range = 14
+					l.Brightness = 2
+					l.Parent = lava
+				end
+				local _ = i
+			end
+			fishSchool(f, 6, top - H / 2, Color3.fromRGB(255, 160, 90), WALL - 6, 1.1)
+		elseif look == "Wreck" then
 			local WOODW = Color3.fromRGB(95, 70, 52)
 			for i = 1, 7 do
 				-- broken ship ribs curving out of the wall
@@ -1010,6 +1222,8 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		Reef = { tint = Color3.fromRGB(255, 215, 235), brightness = 0.02, contrast = 0.1, saturation = 0.5 },
 		Wreck = { tint = Color3.fromRGB(225, 200, 160), brightness = -0.06, contrast = 0.15, saturation = 0.05 },
 		Abyss = { tint = Color3.fromRGB(165, 125, 255), brightness = -0.22, contrast = 0.25, saturation = 0.35 },
+		Ice = { tint = Color3.fromRGB(200, 235, 255), brightness = 0.02, contrast = 0.12, saturation = -0.05 },
+		Vents = { tint = Color3.fromRGB(255, 185, 150), brightness = -0.08, contrast = 0.2, saturation = 0.3 },
 	}
 	local function setGrade(id: string)
 		if not mine then
@@ -1083,7 +1297,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			if t < CAST then
 				-- Blender cast: wind up, whip, the hook arcs out to sea
 				poseRod(t)
-				hookPos = (base * (trackCf("Hook", t))).Position
+				hookPos = castHook(t)
 				local cf = base * (trackCf("Cam", t))
 				camState.cf = cf
 				camState.fov = camFov(t)
@@ -1102,14 +1316,22 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					nestFolder.Parent = fx
 				end
 				local u = (t - CAST) / DOWN
-				local e = 1 - (1 - u) ^ 2.2
-				local col = splashPos:Lerp(Vector3.new(column.X, splashPos.Y, column.Z), math.min(1, u * 4))
-				hookPos = Vector3.new(col.X + math.sin(t * 4) * 1.2, splashPos.Y + (bottomY - splashPos.Y) * e, col.Z + math.cos(t * 3) * 1.2)
+				-- first glide just under the surface to the middle of the shaft (the rock walls start
+				-- ~28 studs down, so sinking while sliding across went straight through them), then dive
+				local SLIDE = 0.15
+				local h = math.clamp(u / SLIDE, 0, 1)
+				h = h * h * (3 - 2 * h)
+				local du = math.clamp((u - SLIDE) / (1 - SLIDE), 0, 1)
+				local e = 1 - (1 - du) ^ 2.2
+				local col = splashPos:Lerp(Vector3.new(column.X, splashPos.Y, column.Z), h)
+				local shallowY = Config.SEA_LEVEL - 6 * h -- just below the waves while it slides
+				local y = if u < SLIDE then math.min(splashPos.Y, shallowY) else shallowY + (bottomY - shallowY) * e
+				hookPos = Vector3.new(col.X + math.sin(t * 4) * 1.2 * h, y, col.Z + math.cos(t * 3) * 1.2 * h)
 				-- crossing into a new zone: banner + ring flash
-				local inZone = math.clamp(math.floor((Config.SEA_LEVEL - hookPos.Y) / H) + 1, 1, #Config.FISH_ZONES)
+				local inZone = math.clamp(math.floor((Config.SEA_LEVEL - hookPos.Y) / H) + 1, 1, #ZONES)
 				if inZone > passed then
 					passed = inZone
-					local z = Config.FISH_ZONES[inZone]
+					local z = ZONES[inZone]
 					burst(hookPos, z.color, 16, 8, true)
 					trail.Color = ColorSequence.new(Color3.fromRGB(150, 240, 255), z.color)
 					hookLight.Color = z.color
@@ -1119,7 +1341,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					if zoneFolders[inZone - 2] then
 						zoneFolders[inZone - 2]:Destroy()
 					end
-					setGrade(z.id)
+					setGrade(z.look or z.id)
 					-- a glowing gate marks the zone boundary the hook flies through
 					for g = 0, 7 do
 						local ga = g / 8 * math.pi * 2
@@ -1128,7 +1350,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 						UI.tween(gate, 1.4, { Transparency = 0.85 })
 					end
 					if mine then
-						Hud.toast(string.upper(z.name), z.color)
+						gaugeZone(inZone, z)
 						Sound.play("ZoneChime", 0.7, 0.85 + inZone * 0.1)
 					end
 				end
@@ -1144,7 +1366,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					bubbles.Rate = 10
 					burst(hookPos, zdef.color, 30, 12, true)
 					if mine then
-						Hud.splash(string.upper(zdef.name) .. "!", zdef.color)
+						gaugeCaught(zdef)
 						Sound.play("Super", 0.8)
 					end
 					eggs[1].Parent = fx
@@ -1179,7 +1401,16 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				poseRod(RodAnim.GRAB + (RodAnim.HAULEND - RodAnim.GRAB) * e)
 				local tip = tipPos()
 				local top = tip + Vector3.new(0, -2.6, 0)
-				hookPos = stopPos:Lerp(top, e)
+				-- straight up the middle of the shaft first, then out of the water to the rod tip
+				-- (a diagonal line from the bottom cut through the rock walls)
+				local surface = Vector3.new(stopPos.X, Config.SEA_LEVEL - 4, stopPos.Z)
+				local RISE = 0.8
+				if e < RISE then
+					local r = e / RISE
+					hookPos = stopPos:Lerp(surface, r)
+				else
+					hookPos = surface:Lerp(top, (e - RISE) / (1 - RISE))
+				end
 				if hookPos.Y > Config.SEA_LEVEL and not landedFx then
 					landedFx = true
 					splash(Vector3.new(hookPos.X, Config.SEA_LEVEL, hookPos.Z), 7)
@@ -1189,7 +1420,14 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					local a = (i - 1) / #eggs * math.pi * 2 + t * 4
 					eg:PivotTo(CFrame.new(hookPos + Vector3.new(math.cos(a) * (#eggs > 1 and 1.6 or 0), -2.8, math.sin(a) * (#eggs > 1 and 1.6 or 0))) * CFrame.Angles(0, t * 5, 0))
 				end
-				camState.cf = CFrame.lookAt(hookPos - column.RightVector * 14 + Vector3.new(0, -4 + 10 * e, 0), hookPos)
+				-- while in the shaft the camera rides just above the catch, inside the water column
+				-- (out to the side it sat in the rock and the zone scenery hid the egg); above the
+				-- water it swings out to watch the egg fly to the rod
+				local eggAt = hookPos + Vector3.new(0, -2.8, 0)
+				local inShaft = Vector3.new(4, 9, 4)
+				local outside = outward * 14 + Vector3.new(0, 6, 0)
+				local blend = math.clamp((e - RISE) / (1 - RISE), 0, 1)
+				camState.cf = CFrame.lookAt(eggAt + inShaft:Lerp(outside, blend), eggAt)
 				camState.fov = 66
 			else
 				-- the eggs fly off the hook onto the pedestals, still black
@@ -1200,14 +1438,14 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				local u = math.clamp((t - tFly) / FLY, 0, 1)
 				poseRod(RodAnim.HAULEND + (RodAnim.DURATION - RodAnim.HAULEND) * u)
 				for i, eg in eggs do
-					local ped = ship:FindFirstChild("Pedestal" .. i, true) :: BasePart?
+					local ped = ship:FindFirstChild("Pedestal" .. (slot + i - 1), true) :: BasePart?
 					local dest = if ped then ped.Position + Vector3.new(0, 3.2, 0) else hookPos
 					local p = hookPos:Lerp(dest, u) + Vector3.new(0, math.sin(u * math.pi) * 10, 0)
 					eg:PivotTo(CFrame.new(p) * CFrame.Angles(0, u * 8, 0))
 				end
-				local ped1 = ship:FindFirstChild("Pedestal1", true) :: BasePart?
+				local ped1 = ship:FindFirstChild("Pedestal" .. slot, true) :: BasePart?
 				if ped1 then
-					camState.cf = CFrame.lookAt(ped1.Position - column.RightVector * 16 + Vector3.new(0, 14, 0), ped1.Position)
+					camState.cf = CFrame.lookAt(ped1.Position + outward * 16 + Vector3.new(0, 14, 0), ped1.Position)
 				end
 			end
 			placeHook(hookPos, t)
@@ -1231,7 +1469,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			grade:Destroy()
 		end
 		for i = 1, #eggs do
-			local ped = ship:FindFirstChild("Pedestal" .. i, true) :: BasePart?
+			local ped = ship:FindFirstChild("Pedestal" .. (slot + i - 1), true) :: BasePart?
 			if ped then
 				burst(ped.Position + Vector3.new(0, 3, 0), Color3.fromRGB(255, 230, 120), 14, 6, true)
 			end
@@ -1244,6 +1482,9 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			camera.FieldOfView = savedFov
 		end
 		fx:Destroy()
+		if gaugeGui then
+			gaugeGui:Destroy()
+		end
 		casting[rod] = nil
 	end)
 end
@@ -1255,7 +1496,7 @@ local function onShipEvent(owner: number, kind: string, p: any)
 		return
 	end
 	if kind == "haul" then
-		BattleView.castRod(ship, (p and p.count) or 1, (p and p.zone) or 1, (p and p.time) or Config.FISH_TIME, owner == player.UserId)
+		BattleView.castRod(ship, (p and p.count) or 1, (p and p.zone) or 1, (p and p.time) or Config.FISH_TIME, owner == player.UserId, p and (p.rod or p.deep), p and p.slot)
 	elseif kind == "fuse" then
 		local a = ship:FindFirstChild("Nest" .. p.into, true) :: BasePart?
 		if a then

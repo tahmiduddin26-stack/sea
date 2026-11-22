@@ -233,10 +233,22 @@ function Cinema.intro()
 	if not skipping then
 		say(nil)
 		-- open water between the beach and your ship; Maw faces the beach
-		local seaPos = hub + dir * 92
-		local seaSpot = CFrame.lookAt(seaPos, Vector3.new(stagePos.X, seaPos.Y, stagePos.Z)) * CFrame.Angles(0, math.rad(90), 0)
+		-- (beside the dock, in open water: the dock and the bow of the ship are straight ahead)
 		local side = dir:Cross(Vector3.yAxis)
-		local camC = CFrame.lookAt(stagePos + dir * 12 + side * 5 + Vector3.new(0, 3, 0), seaPos + Vector3.new(0, 12, 0))
+		-- 28 studs short of the bow, 30 to one side of the dock. The island is a square, so pick the
+		-- side that is open water for this ship (the other one can still be on the sand)
+		local bowR = Config.SHIP_RING_RADIUS - Config.SHIP_LENGTH / 2
+		local function inWater(p: Vector3): boolean
+			return math.max(math.abs(p.X), math.abs(p.Z)) > Config.HUB_RADIUS + 14
+		end
+		local lateral = side * 30
+		if not inWater(hub + dir * (bowR - 28) + lateral) then
+			lateral = -lateral
+		end
+		local seaPos = hub + dir * (bowR - 28) + lateral
+		local seaSpot = CFrame.lookAt(seaPos, Vector3.new(stagePos.X, seaPos.Y, stagePos.Z)) * CFrame.Angles(0, math.rad(90), 0)
+		-- high and to the dock side so the palms don't block the view of Maw
+		local camC = CFrame.lookAt(stagePos + dir * 16 + side * -10 + Vector3.new(0, 10, 0), seaPos + Vector3.new(0, 10, 0))
 		setCamera(camC, 60)
 		local rig, stopM, moveM = actor("Maw", 2.6, seaSpot * CFrame.new(0, -24, 0) * CFrame.Angles(0, math.rad(-90), 0), true)
 		table.insert(cleanup, stopM)
@@ -244,7 +256,7 @@ function Cinema.intro()
 		local t0 = os.clock()
 		while os.clock() - t0 < 2.2 and not skipping do
 			local k = math.clamp((os.clock() - t0) / 2, 0, 1)
-			moveM(seaSpot * CFrame.new(0, -24 + 22 * (1 - (1 - k) ^ 3) + math.sin(os.clock() * 8) * 0.3 * (1 - k), 0) * CFrame.Angles(0, math.rad(-90), 0))
+			moveM(seaSpot * CFrame.new(0, -24 + 27 * (1 - (1 - k) ^ 3) + math.sin(os.clock() * 8) * 0.3 * (1 - k), 0) * CFrame.Angles(0, math.rad(-90), 0))
 			task.wait()
 		end
 		say("Want your friend back? Find me at <DEPTH " .. Config.FINAL_DEPTH .. ">!", "Maw, the Abyss King", Color3.fromRGB(255, 120, 120))

@@ -296,10 +296,10 @@ def star(x=0, y=-0.3, z=0, s=1.0, color=GOLD):
     block((1.0 * s, 0.35, 1.0 * s), (x, y, z), color, rot=(0, 0, 0))
 
 
-def clover(colors, y=0):
+def clover(colors, y=0, ox=0.0, oz=0.0, s=1.0):
     for i, (dx, dz) in enumerate(((-0.55, 0.55), (0.55, 0.55), (-0.55, -0.35), (0.55, -0.35))):
-        block((1.0, 0.5, 1.0), (dx, y, dz), colors[i], sphere=True)
-    block((0.22, 0.3, 1.0), (0.1, y, -1.0), (50, 140, 60), rot=(0, 0, -25))
+        block((1.0 * s, 0.5, 1.0 * s), (ox + dx * s, y, oz + dz * s), colors[i], sphere=True)
+    block((0.22 * s, 0.3, 1.0 * s), (ox + 0.1 * s, y, oz - 1.0 * s), (50, 140, 60), rot=(0, 0, -25))
 
 
 def icon_Pass_VIP():
@@ -325,6 +325,13 @@ def icon_Pass_FastFuse():
     bolt(0.25, -0.5, 0.0, 1.0)
 
 
+def icon_Pass_DoubleLuck():
+    # two clovers, one stacked behind the other = "x2 luck", with a gold star on top
+    clover([(80, 190, 255)] * 4, y=0.9, ox=0.6, oz=0.45, s=0.95)
+    clover([(70, 200, 100)] * 4, y=0.0, ox=-0.45, oz=-0.25, s=1.0)
+    star(0.95, -0.9, 1.5, 0.65, (255, 230, 80))
+
+
 def icon_Pass_FastBattle():
     icon_Swords()
     bolt(0, -0.6, -0.9, 0.7)
@@ -347,6 +354,16 @@ def icon_Prod_StarterPack():
 def icon_Prod_FuseLuck():
     clover([(70, 200, 100)] * 4)
     star(1.0, -0.4, 1.0, 0.5)
+
+
+def icon_Prod_Luck30():
+    # a green clover with a stopwatch = x2 luck for a limited time
+    clover([(70, 200, 100)] * 4, y=0.0, ox=-0.35, oz=-0.1)
+    # stopwatch, face toward the camera (cylinder axis along y)
+    block((1.5, 0.45, 1.5), (1.0, -0.9, 0.55), WHITE, cyl=True, rot=(0, 0, 0))
+    block((0.18, 0.2, 0.6), (1.0, -1.2, 0.8), NAVY)
+    block((0.45, 0.2, 0.18), (1.2, -1.2, 0.55), NAVY)
+    block((0.4, 0.3, 0.3), (1.0, -0.9, 1.45), GOLD, metal=True)
 
 
 def icon_Prod_InsaneLuck():
@@ -383,11 +400,29 @@ def icon_Prod_CoinsSmall():
 
 
 def icon_Prod_CoinsBig():
-    block((1.8, 1.6, 1.8), (-0.4, 0.2, -0.3), (160, 110, 60), sphere=True)
-    block((0.9, 0.5, 0.3), (-0.4, 0.2, 0.6), (120, 80, 40))
-    coin(0.6, -0.4, -0.7, 0.9)
-    coin(-1.0, -0.7, -0.9, 0.7)
-    coin(0.1, -0.9, 0.05, 0.8)
+    # a whole pirate ship loaded to the rails with gold: much bigger than the Coin Chest
+    # hull (stepped bow and stern) with a red stripe
+    block((3.6, 1.4, 1.1), (0, 0.1, -0.9), WOOD)
+    block((0.7, 1.2, 0.9), (-2.05, 0.1, -0.75), WOOD, rot=(0, 25, 0))
+    block((0.7, 1.2, 1.3), (2.0, 0.1, -0.55), WOOD_D)
+    block((3.7, 1.45, 0.22), (0, 0.1, -0.55), RED)
+    # a mountain of gold spilling over the deck
+    for (x, z, s) in ((-1.2, -0.2, 0.75), (-0.4, 0.0, 0.95), (0.45, 0.05, 0.9), (1.25, -0.15, 0.7), (0.0, 0.45, 0.75), (-0.8, 0.35, 0.55), (0.85, 0.4, 0.55)):
+        block((s, s * 0.9, s * 0.8), (x, 0.1, z), GOLD, sphere=True)
+    # big coins standing in the pile, facing the camera
+    coin(-0.9, -0.55, 0.15, 0.62)
+    coin(0.35, -0.6, 0.35, 0.72)
+    coin(1.35, -0.5, 0.0, 0.5)
+    # a second, higher row of coins piled behind the first
+    for (x, z, s) in ((-0.55, 0.85, 0.55), (0.05, 1.05, 0.6), (0.75, 0.8, 0.52), (-1.25, 0.6, 0.45), (1.35, 0.55, 0.45)):
+        coin(x, -0.25, z, s)
+    # mast with a sail and a red flag
+    block((0.22, 0.22, 2.6), (0.15, 0.5, 1.4), WOOD_D)
+    block((1.6, 0.12, 1.2), (0.15, 0.42, 1.75), WHITE)
+    block((0.55, 0.1, 0.35), (0.45, 0.5, 2.8), RED)
+    # coins tumbling over the side
+    coin(-2.0, -0.6, -0.15, 0.45)
+    coin(2.15, -0.55, 0.2, 0.42)
 
 
 def icon_Prod_PearlDragonPack():
@@ -425,6 +460,7 @@ def icon_Prod_PowerSpins():
 
 
 STORE_ICONS = ["Pass_VIP", "Pass_DoubleCoins", "Pass_FastFuse", "Pass_FastBattle", "Pass_ExtraPedestal",
+               "Pass_DoubleLuck", "Prod_Luck30",
                "Prod_StarterPack", "Prod_FuseLuck", "Prod_InsaneLuck", "Prod_Revive", "Prod_SkipTimer",
                "Prod_CoinsSmall", "Prod_CoinsBig", "Prod_PearlDragonPack", "Prod_ElementBundle",
                "Prod_LimitedRoll", "Prod_PowerSpins"]

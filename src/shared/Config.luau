@@ -8,15 +8,15 @@ Config.GAME_NAME = "Merge Sea Monsters"
 Config.DATASTORE_NAME = "TideTamers_v1"
 Config.AUTOSAVE_INTERVAL = 90
 -- Studio-only admin controls (AdminService re-checks RunService:IsStudio()): TuckerFLNK
-Config.ADMIN_IDS = { 11140921447 } :: { number }
+Config.ADMIN_IDS = { 11140921447, 11110589684 } :: { number } -- 11110589684 = Sylar9719
 
 ---------------------------------------------------------------------------
 -- World layout (studs). Ships sit in a ring round the harbour island.
 ---------------------------------------------------------------------------
 Config.SEA_LEVEL = 0 -- water surface Y
 Config.SHIP_COUNT = 6 -- one per player (6-player servers)
-Config.SHIP_RING_RADIUS = 206 -- harbour centre -> ship centre
-Config.HUB_RADIUS = 78 -- harbour island (town is roomy: vendors, plaza and palms all breathe)
+Config.SHIP_RING_RADIUS = 236 -- harbour centre -> ship centre (pushed out so the bigger island never touches a hull)
+Config.HUB_RADIUS = 96 -- harbour island (was 78: the town felt cramped once the Dockyard joined the vendors)
 Config.TOWN_SCALE = Config.HUB_RADIUS / 62 -- how much bigger the town is than v1 (layout numbers below are v1 x this)
 Config.DECK_Y = 9 -- top of the main deck
 Config.UPPER_DECK_Y = 19 -- top of the quarterdeck (Floor 2)
@@ -25,8 +25,8 @@ Config.SHIP_WIDTH = 68
 Config.ARENA_OFFSET = 80 -- ship centre -> arena centre, out to sea
 Config.ARENA_RADIUS = 24
 -- Invisible wall ring (radius from the harbour centre) that keeps swimmers in the play area. The
--- farthest thing in the world (a ship's stern plus its arena / trench off the side) is about 315 out.
-Config.SWIM_RADIUS = 345
+-- farthest thing in the world (a ship's stern plus its arena / trench off the side) is about 345 out.
+Config.SWIM_RADIUS = 410 -- wide enough for the Abyss Rod's cast and shaft astern of each ship
 
 -- Nest slots on a ship (local to the ship: +X = starboard, -Z = bow towards the harbour).
 -- The first START_NESTS are free; the rest are bought (and stay hidden until the tutorial
@@ -53,7 +53,14 @@ Config.NEST_SLOTS = {
 Config.QUARTERDECK_Z = 54 -- the raised stern deck (Floor 2) starts here
 Config.MAST_POS = Vector3.new(0, 0, 36)
 Config.START_NESTS = 3
-Config.NEST_BASE_PRICE = 1500 -- the cheapest a nest can ever be
+Config.NEST_REVEAL_MONSTERS = 3 -- the buyable nests appear once you own this many monsters
+-- Coin inflation, for looks only: EVERY coin amount (what you earn AND what things cost) is this
+-- many times bigger, so the economy plays exactly as before but shows thousands and millions
+-- (you start with 250K, a first egg is tens of thousands). Prices that follow income (nests,
+-- upgrades, fittings, floors) scale on their own through COINS_BASE / COINS_PER_DEPTH below; the
+-- fixed amounts (start coins, paints, Floor 2, eggs, gifts, Robux packs) are multiplied by it.
+Config.COIN_SCALE = 100
+Config.NEST_BASE_PRICE = 1500 * Config.COIN_SCALE -- the cheapest a nest can ever be
 Config.NEST_MINUTES = 5 -- a nest costs about this many minutes of battle coins at its stage (see Stats.nestPrice)
 
 Config.WINCH_POS = Vector3.new(-24, 0, -40) -- the fishing rod, casting over the port rail
@@ -72,6 +79,93 @@ Config.ROD_SCALE = 1.7 -- the Blender rod is scaled up this much on deck so the 
 Config.FISH_BASE = 8.5
 Config.FISH_PER_ZONE = 1.0
 Config.FISH_TIME = Config.FISH_BASE + #Config.FISH_ZONES * Config.FISH_PER_ZONE -- longest cast
+
+-- The Deep Rod: a second rod on the STARBOARD rail. It unlocks after DEEP_ROD.unlockMinutes of
+-- play, casts once every DEEP_ROD.cooldown seconds, and dives a deeper trench of its own
+-- (Config.DEEP_ZONES). Its eggs are always free, rarity luck is x DEEP_ROD.luck (50% better than
+-- the first rod), and each egg may carry a PERK (Config.PERKS): a small battle trick, never
+-- extra damage. `look` picks how a zone is dressed (the first rod's looks plus Ice and Vents).
+-- `trench` = the shaft centre from the rod (ship space): out past the starboard rail and a bit
+-- toward the bow, so the shaft stays clear of the arena (x 80, z -24..24) and the harbour.
+Config.DEEP_ROD = { unlockMinutes = 20, cooldown = 600, luck = 1.5, pos = Vector3.new(24, 0, -40), trench = Vector3.new(44, 0, -24), half = 22 }
+Config.DEEP_ZONE_HEIGHT = 32
+Config.DEEP_ZONES = {
+	{ id = "Glimmer", name = "Glimmer Lagoon", element = "Tide", look = "Shallows", weight = 20, perk = 0.25, color = Color3.fromRGB(120, 235, 255) },
+	{ id = "Frostkelp", name = "Frost Kelp", element = "Coral", look = "Ice", weight = 17, perk = 0.3, color = Color3.fromRGB(170, 230, 255) },
+	{ id = "Thunder", name = "Thunder Reef", element = "Storm", look = "Reef", weight = 14, perk = 0.35, color = Color3.fromRGB(255, 230, 80) },
+	{ id = "Ghostwreck", name = "Ghost Fleet", element = "Abyss", look = "Wreck", weight = 12, perk = 0.4, color = Color3.fromRGB(150, 255, 200) },
+	{ id = "Vents", name = "Lava Vents", element = "Coral", look = "Vents", weight = 10, perk = 0.45, color = Color3.fromRGB(255, 120, 40) },
+	{ id = "Crystal", name = "Crystal Caves", element = "Tide", look = "Ice", weight = 8, perk = 0.5, color = Color3.fromRGB(140, 200, 255) },
+	{ id = "Stormdeep", name = "Storm Deep", element = "Storm", look = "Kelp", weight = 7, perk = 0.55, color = Color3.fromRGB(200, 255, 90) },
+	{ id = "Ember", name = "Ember Trench", element = "Abyss", look = "Vents", weight = 5, perk = 0.6, color = Color3.fromRGB(255, 70, 90) },
+	{ id = "Midnight", name = "Midnight Zone", element = nil, look = "Abyss", weight = 4, perk = 0.7, color = Color3.fromRGB(120, 110, 255) },
+	{ id = "Maw", name = "Maw's Doorstep", element = nil, look = "Abyss", weight = 3, perk = 0.85, color = Color3.fromRGB(255, 60, 200) },
+}
+Config.DEEP_FISH_TIME = Config.FISH_BASE + #Config.DEEP_ZONES * 0.7 -- longest deep cast (0.7 s per zone)
+
+-- The Abyss Rod: a third rod on a balcony off the STERN of the poop deck (Floor 3). It unlocks
+-- after ABYSS_ROD.unlockMinutes of play AND Floor 3, casts once every ABYSS_ROD.cooldown seconds and
+-- dives the deepest shaft: the Deep Rod's ten zones plus five new ones at the bottom. Eggs are
+-- always free, luck is x ABYSS_ROD.luck, perks are likelier (and three perks only it gives), and
+-- the five new zones can hold Legendary (4-star) eggs, the very last one even a Mythic.
+-- `pos` = the rod on the balcony; `trench` = shaft centre from the rod (straight out astern, so
+-- the shaft never meets the arena, the other trenches or a neighbour ship); `pedestal` = its own
+-- egg pedestal on the balcony, so the catch never flies back across the ship.
+Config.ABYSS_ROD = {
+	unlockMinutes = 120,
+	cooldown = 1200, -- one cast every 20 minutes
+	luck = 2,
+	pos = Vector3.new(-5, 0, 92),
+	trench = Vector3.new(5, 0, 28),
+	half = 18,
+	perZone = 0.55,
+	pedestal = Vector3.new(8, 0, 92),
+}
+Config.ABYSS_ZONE_HEIGHT = 30
+Config.ABYSS_ZONES = {}
+for _, z in Config.DEEP_ZONES do
+	local c = table.clone(z)
+	c.perk = math.min(1, z.perk + 0.15)
+	table.insert(Config.ABYSS_ZONES, c)
+end
+for _, z in {
+	{ id = "BoneGarden", name = "Bone Gardens", element = "Abyss", look = "Wreck", weight = 3, perk = 1, legend = 0.12, color = Color3.fromRGB(235, 225, 200) },
+	{ id = "Palace", name = "Sunken Palace", element = nil, look = "Reef", weight = 2.5, perk = 1, legend = 0.18, color = Color3.fromRGB(255, 200, 90) },
+	{ id = "Glowfall", name = "Glowfall Chasm", element = "Storm", look = "Ice", weight = 2, perk = 1, legend = 0.25, color = Color3.fromRGB(90, 255, 230) },
+	{ id = "LeviathanRest", name = "Leviathan's Rest", element = "Tide", look = "Abyss", weight = 1.5, perk = 1, legend = 0.35, color = Color3.fromRGB(80, 140, 255) },
+	{ id = "Heart", name = "Heart of the Trench", element = nil, look = "Vents", weight = 1, perk = 1, legend = 0.45, mythic = 0.04, color = Color3.fromRGB(255, 40, 120) },
+} do
+	table.insert(Config.ABYSS_ZONES, z)
+end
+Config.ABYSS_FISH_TIME = Config.FISH_BASE + #Config.ABYSS_ZONES * Config.ABYSS_ROD.perZone
+
+-- Everything that differs between the three rods, in one place (server, world and client all use
+-- it). kind: nil = the Egg Rod, "deep" (or true) = the Deep Rod, "abyss" = the Abyss Rod.
+function Config.rodInfo(kind: any)
+	if kind == "abyss" then
+		local r = Config.ABYSS_ROD
+		return { kind = "abyss", zones = Config.ABYSS_ZONES, H = Config.ABYSS_ZONE_HEIGHT, half = r.half, center = r.pos + r.trench, perZone = r.perZone, model = "AbyssRod", y = Config.FLOOR3_Y, out = Vector3.zAxis }
+	elseif kind == "deep" or kind == true then
+		local r = Config.DEEP_ROD
+		return { kind = "deep", zones = Config.DEEP_ZONES, H = Config.DEEP_ZONE_HEIGHT, half = r.half, center = r.pos + r.trench, perZone = 0.7, model = "DeepRod", y = Config.DECK_Y, out = Vector3.xAxis }
+	end
+	return { kind = nil, zones = Config.FISH_ZONES, H = Config.FISH_ZONE_HEIGHT, half = 26, center = Config.WINCH_POS + Vector3.new(-44, 0, 0), perZone = Config.FISH_PER_ZONE, model = "Rod", y = Config.DECK_Y, out = -Vector3.xAxis }
+end
+-- Perks from the Deep Rod (`perk` on the monster). Same damage as a plain monster, just a little
+-- trick in battle. A fused child keeps one of its parents' perks.
+Config.PERKS = {
+	Frost = { name = "Frost", desc = "Every 4th hit freezes the enemy for 1.5s", color = Color3.fromRGB(150, 230, 255), every = 4, freeze = 1.5 },
+	Venom = { name = "Venom", desc = "Hits poison the enemy a little", color = Color3.fromRGB(140, 255, 90), share = 0.15, seconds = 3 },
+	Bubble = { name = "Bubble", desc = "A bubble blocks the first hit from each enemy", color = Color3.fromRGB(120, 200, 255) },
+	Leech = { name = "Leech", desc = "Heals 10% of the damage it deals", color = Color3.fromRGB(255, 90, 130), heal = 0.1 },
+	Lucky = { name = "Lucky", desc = "+10% coins from kills while it's alive", color = Color3.fromRGB(255, 210, 60), coins = 0.1 },
+	-- Abyss Rod only
+	Thorns = { name = "Thorns", desc = "Enemies take 20% of the damage they deal it", color = Color3.fromRGB(255, 140, 60), share = 0.2 },
+	SecondWind = { name = "Second Wind", desc = "Once per dive, gets back up with 35% HP", color = Color3.fromRGB(120, 255, 170), hp = 0.35 },
+	Barnacle = { name = "Barnacle", desc = "Takes 20% less damage", color = Color3.fromRGB(200, 180, 150), cut = 0.2 },
+}
+Config.PERK_ORDER = { "Frost", "Venom", "Bubble", "Leech", "Lucky" }
+Config.ABYSS_PERK_ORDER = { "Frost", "Venom", "Bubble", "Leech", "Lucky", "Thorns", "SecondWind", "Barnacle", "Thorns", "SecondWind", "Barnacle" } -- new perks twice as likely
 Config.PEDESTAL_POS = { Vector3.new(-8, 0, -36), Vector3.new(4, 0, -36), Vector3.new(16, 0, -36), Vector3.new(-2, 0, -24), Vector3.new(10, 0, -24) }
 Config.SPAWN_POS = Vector3.new(0, 0, 27) -- where you stand when you join
 -- Deck cannons (Ship Workshop > Cannons): level L puts cannon pairs at the first L entries of
@@ -84,7 +178,7 @@ Config.CANNON_BASE = 2.2
 ---------------------------------------------------------------------------
 -- Currencies and economy
 ---------------------------------------------------------------------------
-Config.START_COINS = 2500
+Config.START_COINS = 2500 * Config.COIN_SCALE
 Config.ROLL_COOLDOWN = 3 -- extra guard; a cast also blocks the next until it lands
 -- Timers are a power curve of the level, then x rarity: seconds = max(HATCH_MIN, A * lvl^P) * star.
 -- A smooth curve, so timers climb gradually and only the very top reaches the 6 hour ceiling
@@ -96,16 +190,36 @@ Config.FUSE_FACTOR = 0.9
 -- the same level). Timers are wall-clock (os.time), so they keep running while you are offline.
 Config.TIMER_STAR_MULT = { 1, 1.6, 2.6, 4.5, 8 }
 Config.TIMER_MAX_SECONDS = 6 * 3600 -- no single timer is longer than 6 hours
+-- A new player's first TIMER_FAST_MINUTES of play are all fast: egg / fuse timers keep their short curve
+-- (HATCH_CURVE.min). After that the shortest timer rises smoothly over TIMER_RAMP_MINUTES up to
+-- TIMER_FLOOR_SECONDS and stays there. (This stretches the first 100 depths to about 6-7 hours while the
+-- first stages still fly by.)
+Config.TIMER_FLOOR_SECONDS = 1800
+Config.TIMER_FAST_MINUTES = 15
+Config.TIMER_RAMP_MINUTES = 60
+-- Secret luck for new players: eggs from the rod are EARLY_LUCK times luckier for the first
+-- EARLY_LUCK_MINUTES of play, then it fades to nothing over EARLY_LUCK_FADE_MINUTES. Never shown on
+-- screen, so the first finds just feel generous.
+Config.EARLY_LUCK = 2.5
+Config.EARLY_LUCK_MINUTES = 30
+Config.EARLY_LUCK_FADE_MINUTES = 30
 -- Harder to build the higher you go: a monster can only be fused up to (stages cleared + this).
 -- Clear the boss of a stage to raise the cap by one. Nothing you can buy skips it.
 Config.LEVEL_CAP_BASE = 3
+-- A fuse of Lv N monsters takes N of them (at least 2), but never more than this. Without the cap a
+-- stage-20 monster took 420 eggs (20 x 21); capped it is at most 4 x 4 = 16 at any stage.
+Config.FUSE_NEEDED_MAX = 4
 -- Lose a fight (a monster faints) and it has to rest this long before it can fight again.
 -- Paying for a Revive right after the defeat skips the rest.
 Config.REST_SECONDS = 30
 -- Selling a hatched monster pays this fraction of what an egg like it costs (so buying an egg
 -- and selling the baby always loses coins). Golden / Rainbow sell for more, like their eggs.
 Config.SELL_RATIO = 0.5
+-- ...and a sale never pays more than this many kills' worth of coins at your best depth
+-- (Stats.killCoins of a normal enemy). 70 kills is about 5 minutes of nonstop fighting.
+Config.SELL_CAP_KILLS = 70
 Config.SKIP_PEARLS_PER_MINUTE = 5 -- pearls to finish a timer early (min 1)
+Config.HATCH_NOW_SECONDS = 300 -- the Hatch Now product: instant eggs and fuses for 5 minutes
 
 -- Upgrade boards on the ship
 Config.UPGRADES = {
@@ -150,11 +264,20 @@ Config.PAINTS = {
 		{ id = "Ink", name = "Ink", color = Color3.fromRGB(40, 44, 70), price = 4000 },
 	},
 }
+for _, list in Config.PAINTS do
+	for _, p in list do
+		p.price *= Config.COIN_SCALE -- coin inflation
+	end
+end
 -- Some fished eggs cost coins: a "Treasure Egg" costs coins but is a level higher
 Config.EGG_PRICE_CHANCE = 0.3
-Config.FLOOR2 = { fuses = 20, coins = 130000 } -- the quarterdeck + Lighthouse boost: 12 minutes of income at stage 4
--- Floor 3 (the poop deck, 4 more nests): needs stage 10 cleared, 150 fuses and ~10 minutes of battle coins
-Config.FLOOR3 = { fuses = 150, depth = 150, minutes = 10 }
+-- Floor 2 (the quarterdeck + Lighthouse boost): 10 fuses and 2M coins (about 9 minutes of income at
+-- stage 2). Meant to land around the 30 minute mark.
+Config.FLOOR2 = { fuses = 10, coins = 20000 * Config.COIN_SCALE }
+-- Floor 3 (the poop deck, 4 more nests): needs stage 3 cleared (depth 45), 40 fuses and 8 minutes of
+-- battle coins at that depth (about 4M). Meant to be reachable in about 1h 50m of play, just before
+-- the Abyss Rod (which needs Floor 3 AND ABYSS_ROD.unlockMinutes = 2 hours of play) opens up.
+Config.FLOOR3 = { fuses = 40, depth = 45, minutes = 8 }
 Config.FLOOR3_Y = 29 -- top of the poop deck (the quarterdeck is UPPER_DECK_Y = 19)
 Config.FLOOR3_COIN_BONUS = 0.2
 Config.LIGHTHOUSE_COIN_BONUS = 0.15
@@ -290,6 +413,11 @@ Config.MOVES = {
 Config.CORAL_HEAL = 0.18 -- fraction of max HP healed on every teammate
 
 -- Base stats of a Lv1, 1-star monster (role multiplies them)
+-- Number inflation, for looks only: EVERY health and damage number (monsters AND enemies, so
+-- every fight plays out exactly as before) is multiplied by this. At 550 a Lv1 Splashfin does
+-- 2,500 damage per second (instead of 4.5) and a strong late-game monster shows around a million.
+-- Balance, coins, timers and prices do not change: only Stats.monster and Stats.enemy use it.
+Config.NUMBER_SCALE = 550
 Config.BASE_HP = 120
 Config.BASE_ATK = 5
 Config.BASE_ATTACK_INTERVAL = 1.1 -- seconds between attacks at rate 1
@@ -303,7 +431,7 @@ Config.ABILITY_MULT = 3.5 -- ability hit = this x attack
 Config.ELEMENT_WEIGHTS = { Tide = 30, Coral = 25, Storm = 25, Abyss = 20 }
 Config.STAR_WEIGHTS = { 86, 12, 2 } -- winch rarity: 1*, 2*, 3* (luck shifts it up)
 Config.EGG_LEVEL_WEIGHTS = { 80, 17, 3 } -- Lv1/2/3 from the winch
-Config.EGG_PRICE_BASE = 350
+Config.EGG_PRICE_BASE = 350 * Config.COIN_SCALE
 Config.EGG_PRICE_LEVEL_GROWTH = 2.0
 Config.EGG_LEVEL_PER_STAGE = 1 -- winch eggs gain a level for every stage you've reached
 Config.EGG_PRICE_STAR = { 1, 1.8, 3.5, 8, 20 }
@@ -332,16 +460,18 @@ Config.TICK = 0.1
 -- Battles last longer: enemies have 4x the HP they had and hit about 40% softer, so a fight
 -- is a few seconds of back and forth instead of a blink (a team near its limit takes roughly
 -- 4-10 s per enemy, a team far above its depth 2-4 s). Boss timer doubled to match.
-Config.ENEMY_BASE_HP = 56
-Config.ENEMY_HP_PER_DEPTH = 0.12 -- within a stage
--- Progressive pacing: each new stage multiplies enemy HP by a step that grows from FIRST to LAST
--- across the 15 stage changes (tuned for ~2 h to reach stage 5, ~40-70 h to beat Maw).
--- 26 stages (390 depths). Each stage is 1.8x the one before; with the level cap (cleared + 3) a team needs
--- about one more level per stage, so there is always a next timer to wait on and a next upgrade to chase.
--- Simulated with the pacing sim: best-case team ~40 h, good team ~46 h, average ~29 h of hatching.
-Config.STAGE_COUNT = 26
-Config.ENEMY_HP_STEP_FIRST = 1.8
-Config.ENEMY_HP_STEP_LAST = 1.8
+Config.ENEMY_BASE_HP = 240
+Config.ENEMY_HP_PER_DEPTH = 0 -- no creep inside a stage: enemies only get tougher when a new stage starts
+Config.ENEMY_ATK_PER_DEPTH = 0
+-- Every normal depth is a wave of this many enemies (one after another); mini-boss and boss depths are single.
+-- The depth number only goes up when the whole wave is down.
+Config.WAVE_SIZE = 3
+-- Pacing: 20 stages x 15 depths = 300 depths (Maw at the end). The enemy HP step per stage eases
+-- from FIRST to LAST over the stage changes. Simulated new player (3 Lv1 monsters, nonstop play): depth 100 in
+-- about 8 h, depth 300 in about 45-55 h (stage clears come quickly at first and slow down later).
+Config.STAGE_COUNT = 20
+Config.ENEMY_HP_STEP_FIRST = 1.81
+Config.ENEMY_HP_STEP_LAST = 1.68
 Config.ENEMY_ATK_STEP_RATIO = 0.9 -- attack steps are this fraction of the HP step
 Config.ENEMY_BASE_ATK = 3
 Config.FINAL_ATK_EXTRA = 1.5 -- Maw hits harder than a normal boss (HP is a normal boss's)
@@ -350,17 +480,18 @@ Config.MINIBOSS_HP_MULT = 4
 Config.MINIBOSS_ATK_MULT = 1.6
 Config.BOSS_HP_MULT = 10
 Config.BOSS_ATK_MULT = 1.4
-Config.BOSS_TIME = 60 -- seconds to beat a boss
+Config.BOSS_TIME = 60 -- seconds to beat a boss (stages 1-10)
+Config.BOSS_TIME_PER_STAGE = 2 -- + this many seconds per stage past 10 (stage 20: 80 s), so the late climb stays fair
 Config.NEXT_WAVE_DELAY = 1.0
 -- Coins per kill = (BASE + PER_DEPTH * depth) * STAGE_MULT^(stage - 1). Tuned so that a cap-level egg costs
 -- about 5 minutes of battling at stage 1, falling to about 1-2 minutes late: coins always matter.
-Config.COINS_BASE = 55
-Config.COINS_PER_DEPTH = 1
+Config.COINS_BASE = 55 * Config.COIN_SCALE
+Config.COINS_PER_DEPTH = 1 * Config.COIN_SCALE
 Config.COINS_STAGE_MULT = 1.95
-Config.BOSS_COIN_BONUS = 500
+Config.BOSS_COIN_BONUS = 500 * Config.COIN_SCALE
 Config.PEARL_CHANCE = 0.3 -- per kill
 Config.RUN_END_PEARLS_PER_STAGE = 25
-Config.FINAL_DEPTH = Config.STAGE_COUNT * Config.STAGE_LENGTH -- the last boss (Maw) is the end of stage 26
+Config.FINAL_DEPTH = Config.STAGE_COUNT * Config.STAGE_LENGTH -- the last boss (Maw) is the end of the last stage (depth 300)
 Config.REVIVE_WINDOW = 15 -- seconds the Revive offer stays up
 
 -- Stage themes (repeat after the list ends, stronger each loop)
@@ -407,47 +538,49 @@ Config.TUTORIAL = {
 	{ text = "Take your new <EGG>!", target = "pedestal" },
 	{ text = "Put your egg in a <NEST>!", target = "nest" },
 	{ text = "Open your egg when it's <READY>!", target = "egg" },
-	{ text = "Press E on a monster, then another, to <FUSE>!", target = "mon" },
+	-- the arrow points at the pink Fuse heart; pressing it opens the tray and only THEN does the
+	-- guide draw the trail to the monsters (FuseView sets Guide.helper)
+	{ text = "Press the pink <FUSE> heart to fuse your monsters!", target = "fuse" },
 	{ text = "Your monsters are <FUSING>...", target = nil },
-	{ text = "Fish up one more <EGG>!", target = "winch" },
-	{ text = "Take the <REEF EGG>!", target = "pedestal" },
-	{ text = "Put your egg in a <NEST>!", target = "nest" },
-	{ text = "Open your egg when it's <READY>!", target = "egg" },
-	{ text = "Beat the <BOSS> at Depth 15!", target = "fight" },
+	-- the tutorial ends when the first fuse opens (FarmService.tutorial(player, 11))
 }
 Config.TUTORIAL_DONE = #Config.TUTORIAL + 1
 -- Scripted winch hauls during the tutorial (step -> egg). Prices fit the starting coins.
 Config.TUTORIAL_EGGS = {
 	[1] = { sp = "Splashfin", lvl = 1, stars = 1, price = 800 },
 	[6] = { sp = "Zapjelly", lvl = 1, stars = 1, price = 1500 },
-	[12] = { sp = "Reefback", lvl = 1, stars = 1, price = 300 },
 }
+for _, e in Config.TUTORIAL_EGGS do
+	e.price *= Config.COIN_SCALE -- coin inflation
+end
 Config.HUD_UNLOCK_STEP = 12 -- the full HUD (menus, offers) appears from this step
+Config.SIGNS_UNLOCK_STEP = 10 -- the ship's upgrade signs can be bought from this step (the Fuse step)
 
 ---------------------------------------------------------------------------
 -- Monetization. id = 0 means "not created yet" (Studio simulates the purchase).
 ---------------------------------------------------------------------------
 Config.GAMEPASSES = {
-	VIP = { id = 2093567317, price = 349, name = "VIP Captain", desc = "+25% coins, gold name tag and a gold nest." },
-	DoubleCoins = { id = 2093447301, price = 219, name = "x2 Coins", desc = "Double coins from every battle." },
-	FastFuse = { id = 2094359336, price = 299, name = "x2 Fuse Speed", desc = "Eggs hatch and monsters fuse twice as fast." },
-	FastBattle = { id = 2096773204, price = 59, name = "x2 Battle Speed", desc = "Unlocks the x2 battle speed toggle." },
-	ExtraPedestal = { id = 2092505182, price = 149, name = "Fast Reel", desc = "The fishing rod reels in eggs 8% faster." },
-	DoubleLuck = { id = 2093183555, price = 100, name = "x2 Luck", desc = "Double egg luck and fuse luck forever." },
+	VIP = { id = 2093567317, price = 175, name = "VIP Captain", desc = "+25% coins, gold name tag and a gold nest." },
+	DoubleCoins = { id = 2093447301, price = 110, name = "x2 Coins", desc = "Double coins from every battle." },
+	FastFuse = { id = 2094359336, price = 150, name = "x2 Fuse Speed", desc = "Eggs hatch and monsters fuse twice as fast." },
+	FastBattle = { id = 2096773204, price = 30, name = "x2 Battle Speed", desc = "Unlocks the x2 battle speed toggle." },
+	ExtraPedestal = { id = 2092505182, price = 75, name = "Fast Reel", desc = "The fishing rod reels in eggs 8% faster." },
+	DoubleLuck = { id = 2093183555, price = 50, name = "x2 Luck", desc = "Double egg luck and fuse luck forever." },
 }
 Config.PRODUCTS = {
-	StarterPack = { id = 3734236479, price = 69, name = "Starter Pack", desc = "A Lv3 Kelpdrake, 5,000 coins and 50 pearls." },
-	FuseLuck = { id = 3734236499, price = 20, name = "Fuse Luck", desc = "x2 star and secret chance for 15 minutes." },
-	InsaneLuck = { id = 3734236523, price = 50, name = "Insane Fuse Luck", desc = "x4 star and secret chance for 15 minutes." },
-	Luck30 = { id = 0, price = 10, name = "x2 Luck 30m", desc = "Double egg luck and fuse luck for 30 minutes." }, -- id 0 until created on Roblox
-	Revive = { id = 3734236545, price = 39, name = "Revive", desc = "Bring your team back at full health and keep diving." },
-	SkipTimer = { id = 3734236563, price = 25, name = "Hatch Now", desc = "Finish every egg and fuse timer right now." },
-	CoinsSmall = { id = 3734236578, price = 49, name = "Coin Chest", desc = "A chest of coins (scales with your best depth)." },
-	CoinsBig = { id = 3734236692, price = 199, name = "Coin Ship", desc = "A shipload of coins (scales with your best depth)." },
-	PearlDragonPack = { id = 3734236716, price = 499, name = "Pearl Dragon", desc = "The Legendary Pearl Dragon (4 stars) at Lv5." },
-	ElementBundle = { id = 3734236734, price = 199, name = "Elemental Bundle", desc = "One 2-star egg of every element." },
-	LimitedRoll = { id = 3734236748, price = 99, name = "Abyss Crate", desc = "Roll the Abyss Crate (5% Leviathan)." },
-	PowerSpins = { id = 3734236771, price = 79, name = "5 Power Spins", desc = "Five spins of the Power wheel." },
+	StarterPack = { id = 3734236479, price = 35, name = "Starter Pack", desc = "A Lv3 Kelpdrake, " .. (5 * Config.COIN_SCALE) .. "K coins and 50 pearls." },
+	FuseLuck = { id = 3734236499, price = 10, name = "Fuse Luck", desc = "x2 star and secret chance for 15 minutes." },
+	InsaneLuck = { id = 3734236523, price = 25, name = "Insane Fuse Luck", desc = "x4 star and secret chance for 15 minutes." },
+	Luck30 = { id = 3734813463, price = 5, name = "x2 Luck 30m", desc = "Double egg luck and fuse luck for 30 minutes." },
+	Revive = { id = 3734236545, price = 20, name = "Revive", desc = "Bring your team back at full health and keep diving." },
+	-- timed: for HATCH_NOW_SECONDS every egg and fuse finishes instantly (also the "Hatch Now" nest prompt)
+	SkipTimer = { id = 3734236563, price = 5, name = "Hatch Now", desc = "Every egg and fuse hatches instantly for 5 minutes." },
+	CoinsSmall = { id = 3734236578, price = 25, name = "Coin Chest", desc = "A chest of coins (scales with your best depth)." },
+	CoinsBig = { id = 3734236692, price = 100, name = "Coin Ship", desc = "A shipload of coins (scales with your best depth)." },
+	PearlDragonPack = { id = 3734236716, price = 250, name = "Pearl Dragon", desc = "The Legendary Pearl Dragon (4 stars) at Lv5." },
+	ElementBundle = { id = 3734236734, price = 100, name = "Elemental Bundle", desc = "One 2-star egg of every element." },
+	LimitedRoll = { id = 3734236748, price = 50, name = "Abyss Crate", desc = "Roll the Abyss Crate (5% Leviathan)." },
+	PowerSpins = { id = 3734236771, price = 40, name = "5 Power Spins", desc = "Five spins of the Power wheel." },
 }
 -- One icon per pass / product (rendered by assets/icons/build_icons.py, uploaded to the group).
 -- The same PNGs (assets/icons/png/store/*.png) are what you set as the item icon in Creator Hub.
@@ -457,13 +590,15 @@ Config.STORE_ICONS = {
 	FastFuse = "rbxassetid://94377732401142",
 	FastBattle = "rbxassetid://84081021718145",
 	ExtraPedestal = "rbxassetid://107902905956530",
+	DoubleLuck = "rbxassetid://74834594009844",
+	Luck30 = "rbxassetid://78112106934758",
 	StarterPack = "rbxassetid://104199940950385",
 	FuseLuck = "rbxassetid://83171630655834",
 	InsaneLuck = "rbxassetid://97724225922785",
 	Revive = "rbxassetid://114382509497655",
 	SkipTimer = "rbxassetid://100768135562227",
 	CoinsSmall = "rbxassetid://87718050215696",
-	CoinsBig = "rbxassetid://126928939257506",
+	CoinsBig = "rbxassetid://91988282025667",
 	PearlDragonPack = "rbxassetid://90967136736990",
 	ElementBundle = "rbxassetid://137302013461895",
 	LimitedRoll = "rbxassetid://112329307204969",
@@ -480,7 +615,7 @@ Config.OFFER_ROTATE = 25
 
 Config.CODES = {
 	SEAMONSTER = { pearls = 50 },
-	AHOY = { coins = 2000 },
+	AHOY = { coins = 2000 * Config.COIN_SCALE },
 	FREESPIN = { spins = 1 },
 }
 
@@ -488,9 +623,13 @@ Config.CODES = {
 -- Team: how many monsters go out to fight (the rest stay on deck)
 ---------------------------------------------------------------------------
 Config.TEAM_START = 3
-Config.TEAM_MAX = 8
--- 4th..8th slot: 12 minutes of income at stages 2, 6, 10, 14, 18 (Stats.stagePrice)
-Config.TEAM_SLOT_PRICES = { 26000, 650000, 14000000, 260000000, 4600000000 }
+Config.TEAM_MAX = 6 -- a team never has more than this many (3 to start, 3 slots to buy)
+-- 4th..6th slot: 12 minutes of income at stages 2, 6, 10 (Stats.stagePrice). One price per slot to
+-- buy, so there is nothing left to sell once the team is at TEAM_MAX.
+Config.TEAM_SLOT_PRICES = { 26000, 650000, 14000000 }
+for i, p in Config.TEAM_SLOT_PRICES do
+	Config.TEAM_SLOT_PRICES[i] = p * Config.COIN_SCALE -- coin inflation (was missing: slots cost 0.12 min of income, not 12)
+end
 
 ---------------------------------------------------------------------------
 -- Powers: spin a random passive onto one monster (unlocks at a depth)
@@ -647,6 +786,11 @@ Config.GIFTS = {
 	{ min = 20, egg = 2 }, -- egg = levels above your stage
 	{ min = 30, pearls = 75, spell = "final" },
 }
+for _, g in Config.GIFTS do
+	if g.coins then
+		g.coins *= Config.COIN_SCALE -- coin inflation
+	end
+end
 Config.DAILY_PEARLS = { 10, 15, 20, 30, 40, 60, 100 } -- by streak day
 Config.GROUP_ID = 865496476 -- the owning group (the Gift Chest has a plain "Join the Crew" button, no reward)
 Config.FRIEND_BOOST = 0.1 -- +10% battle coins for each friend in your server

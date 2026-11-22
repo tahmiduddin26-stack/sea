@@ -20,7 +20,7 @@ local ROWS: { { label: string, cmd: string, n: number?, color: Color3? } } = {
 	{ label = "Skip tutorial", cmd = "SkipTutorial" },
 	{ label = "+10K coins", cmd = "Coins", n = 10000 },
 	{ label = "+1M coins", cmd = "Coins", n = 1000000 },
-	{ label = "Set coins to 2,500", cmd = "SetCoins", n = 2500 },
+	{ label = "Set coins to the start amount", cmd = "SetCoins", n = 2500 * 100 }, -- = Config.START_COINS
 	{ label = "+500 pearls", cmd = "Pearls", n = 500 },
 	{ label = "Best depth 0", cmd = "BestDepth", n = 0 },
 	{ label = "Best depth 30", cmd = "BestDepth", n = 30 },
@@ -31,6 +31,9 @@ local ROWS: { { label: string, cmd: string, n: number?, color: Color3? } } = {
 	{ label = "Finish all timers", cmd = "FinishTimers" },
 	{ label = "Unlock Floor 2", cmd = "Floor2" },
 	{ label = "Unlock Floor 3", cmd = "Floor3" },
+	{ label = "Deep Rod ready now", cmd = "DeepRod" },
+	{ label = "Abyss Rod ready now", cmd = "AbyssRod" },
+	{ label = "Play new-player intro", cmd = "Intro" },
 	{ label = "+9 Common spell cards", cmd = "Spells", n = 9 },
 	{ label = "Ship tier 0", cmd = "ShipTier", n = 0 },
 	{ label = "Ship tier 6", cmd = "ShipTier", n = 6 },

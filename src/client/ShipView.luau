@@ -46,11 +46,15 @@ folder.Parent = workspace
 
 ShipView.hidden = {} :: { [BasePart]: boolean } -- nests whose monster is away fighting / fusing
 ShipView.prompts = {} :: { [number]: { ProximityPrompt } } -- ship index -> its prompts
-ShipView.marks = {} :: { [BasePart]: string } -- in-world fusing: "picked" | "ok" | "dim"
+ShipView.marks = {} :: { [BasePart]: string } -- in-world fusing: "picked" | "ok" | "ready" (can fuse, plain full colour) | "dim" (can't fuse: see-through)
 ShipView.flights = {} :: { [BasePart]: { t0: number, dur: number, to: Vector3 } } -- fuse swoops
 
+-- Name tags keep their normal size but only show when you are close (TAG_DISTANCE studs):
+-- a tag that shrinks with distance is unreadable on a phone, and a tag that stays big from far
+-- away floats about the whole ship. Nothing is shown until you walk up to the monster.
+local TAG_DISTANCE = 24
 local function tag(parent: Instance, size: UDim2, offset: Vector3): BillboardGui
-	return UI.new("BillboardGui", { Size = size, StudsOffsetWorldSpace = offset, LightInfluence = 0, MaxDistance = 90, AlwaysOnTop = false, Parent = parent })
+	return UI.new("BillboardGui", { Size = size, StudsOffsetWorldSpace = offset, LightInfluence = 0, MaxDistance = TAG_DISTANCE, AlwaysOnTop = false, Parent = parent })
 end
 
 local function variantPrefix(v: string?): string
@@ -92,6 +96,12 @@ local function nameTag(slot: Slot, sp: string, lvl: number, stars: number, heigh
 			UI.new("Frame", { Size = UDim2.fromOffset(14, 14), BackgroundColor3 = Config.ELEMENTS[el].color, Parent = row }, { UI.corner(7), UI.stroke(2) })
 		end
 	end
+	-- Deep Rod perk: a little coloured word next to the element dots
+	local perkId = slot.anchor:GetAttribute("Perk") :: string?
+	local perk = perkId and Config.PERKS[perkId]
+	if perk then
+		UI.label({ Text = string.upper(perk.name), TextColor3 = perk.color, Size = UDim2.fromOffset(56, 15), Parent = row })
+	end
 	local _ = col
 	slot.gui = gui
 end
@@ -120,6 +130,7 @@ local function nestSig(pad: BasePart): string
 		tostring(pad:GetAttribute("Stars")),
 		tostring(pad:GetAttribute("Price")),
 		tostring(pad:GetAttribute("Variant")),
+		tostring(pad:GetAttribute("Perk")),
 	}, "|")
 end
 
@@ -138,6 +149,7 @@ local function buildNest(slot: Slot)
 			slot.rig = rig
 			MonsterModels.addAura(rig, stars)
 			MonsterModels.applyVariant(rig, pad:GetAttribute("Variant") :: string?)
+			MonsterModels.applyPerk(rig, pad:GetAttribute("Perk") :: string?)
 			local foot = MonsterModels.footDepth(rig)
 			slot.base = pad.CFrame * CFrame.new(0, pad.Size.Y / 2 + foot, 0) * CFrame.Angles(0, math.rad(180), 0)
 			nameTag(slot, sp, lvl, stars, MonsterModels.height(rig) + foot, pad:GetAttribute("Variant") :: string?)
@@ -294,23 +306,32 @@ local function filterPrompts()
 	local snap = State.snapshot
 	local myShip = player:GetAttribute("Ship")
 	local carrying = player:GetAttribute("Carrying") ~= nil
-	-- holding an egg with every nest taken: say what to do (once per egg)
-	if carrying and myShip then
-		local world = workspace:FindFirstChild("World")
-		local ship = world and world:FindFirstChild("Ship" .. tostring(myShip))
-		local free = false
-		if ship then
-			for _, d in ship:GetDescendants() do
-				if d:IsA("BasePart") and d:GetAttribute("NestIndex") and d:GetAttribute("State") == "empty" then
+	-- Every nest taken: say what to do, once each time it fills up. Not only while holding an egg:
+	-- you can buy another nest any time (the "Buy Nest" prompt on an empty nest with a coin tag).
+	local tutorialDone = snap ~= nil and snap.tutorial >= Config.TUTORIAL_DONE
+	if myShip and (carrying or tutorialDone) then
+		local free, buyable = false, false
+		for _, pp in ShipView.prompts[myShip :: number] or {} do
+			if pp.Name == "NestPrompt" then
+				local state = (pp.Parent :: Instance):GetAttribute("State")
+				if state == "empty" then
 					free = true
 					break
+				elseif state == "locked" then
+					buyable = true
 				end
 			end
 		end
-		if not free and not nestsFullWarned then
+		if free then
+			nestsFullWarned = false
+		elseif not nestsFullWarned and (buyable or carrying) then
 			nestsFullWarned = true
 			local Hud = require(script.Parent.Hud) :: any
-			Hud.toast("Nests full! Buy a new nest or FUSE two monsters to free one", C.Coral)
+			if buyable then
+				Hud.toast("Nests full! Buy another nest (the Buy Nest tags on the empty nests) or FUSE monsters to free one", C.Coral)
+			else
+				Hud.toast("Nests full! FUSE or sell monsters to free a nest", C.Coral)
+			end
 		end
 	else
 		nestsFullWarned = false
@@ -328,14 +349,18 @@ local function filterPrompts()
 							show = carrying
 						elseif state == "locked" then
 							-- you can buy a nest even while holding an egg (that's when you need one)
-							show = snap ~= nil and snap.tutorial >= Config.HUD_UNLOCK_STEP
+							show = snap ~= nil and snap.tutorial >= Config.SIGNS_UNLOCK_STEP
 						end
 					elseif mine and pp.Name == "BuyPrompt" then
-						show = not carrying
+						-- holding an egg: only an EMPTY pedestal shows (as "Put Back")
+						show = not carrying or parent:GetAttribute("Sp") == nil
 					elseif mine and pp.Name == "WinchPrompt" then
 						show = true -- you can always fish, even holding an egg
+					elseif mine and (pp.Name == "DeepRodPrompt" or pp.Name == "AbyssRodPrompt") then
+						-- after the tutorial; while locked / cooling down a press says how long is left
+						show = snap ~= nil and snap.tutorial >= Config.TUTORIAL_DONE
 					elseif mine and pp.Name == "UpgradePrompt" then
-						show = snap ~= nil and snap.tutorial >= Config.HUD_UNLOCK_STEP
+						show = snap ~= nil and snap.tutorial >= Config.SIGNS_UNLOCK_STEP
 					end
 					-- the server says whether a prompt is live; the client owns Enabled
 					pp.Enabled = show and pp:GetAttribute("Live") ~= false
@@ -420,6 +445,74 @@ function ShipView.init()
 		carried[p] = nil
 	end)
 
+	-- the Deep Rod sign over MY ship counts down: unlock (play time), then the 10 minute cooldown.
+	-- Other ships keep the plain "DEEP ROD" sign.
+	task.spawn(function()
+		local wasLocked: boolean? = nil
+		local abyssWasLocked: boolean? = nil
+		while true do
+			task.wait(0.5)
+			-- the Abyss Rod (Floor 3 balcony): needs Floor 3 and 2 hours of play, then a cooldown
+			do
+				local floorOk = player:GetAttribute("AbyssFloor") == true
+				local unlockAt = player:GetAttribute("AbyssUnlockAt") :: number? or 0
+				local readyAt = player:GetAttribute("AbyssReadyAt") :: number? or 0
+				local now = State.now()
+				local locked = not floorOk or now < unlockAt
+				if abyssWasLocked == true and not locked then
+					local Hud = require(script.Parent.Hud) :: any
+					Hud.splash("ABYSS ROD UNLOCKED!", Color3.fromRGB(255, 70, 160))
+					Hud.toast("The rod on the Floor 3 balcony fishes 15 zones, with Legendary eggs at the bottom!", Color3.fromRGB(255, 70, 160))
+				end
+				if player:GetAttribute("AbyssUnlockAt") ~= nil then
+					abyssWasLocked = locked
+				end
+				local myShip0 = player:GetAttribute("Ship")
+				local ship0 = myShip0 and world:FindFirstChild("Ship" .. tostring(myShip0))
+				local sign0 = ship0 and ship0:FindFirstChild("AbyssSign", true)
+				local text0 = sign0 and sign0:FindFirstChild("Text") :: TextLabel?
+				if text0 then
+					if not floorOk then
+						text0.Text = "ABYSS ROD  🔒 FLOOR 3"
+					elseif now < unlockAt then
+						text0.Text = "ABYSS ROD  🔒 " .. Format.time(unlockAt - now)
+					elseif now < readyAt then
+						text0.Text = "ABYSS ROD  " .. Format.time(readyAt - now)
+					else
+						text0.Text = "ABYSS ROD READY!"
+					end
+				end
+			end
+			-- the moment it unlocks: a big splash so the player goes and tries it
+			local unlockAt0 = player:GetAttribute("DeepUnlockAt") :: number?
+			if unlockAt0 then
+				local locked = State.now() < unlockAt0
+				if wasLocked == true and not locked then
+					local Hud = require(script.Parent.Hud) :: any
+					Hud.splash("DEEP ROD UNLOCKED!", Color3.fromRGB(170, 130, 255))
+					Hud.toast("A new rod on the starboard side fishes 10 deeper, rarer zones!", Color3.fromRGB(170, 130, 255))
+				end
+				wasLocked = locked
+			end
+			local myShip = player:GetAttribute("Ship")
+			local ship = myShip and world:FindFirstChild("Ship" .. tostring(myShip))
+			local sign = ship and ship:FindFirstChild("DeepSign", true)
+			local text = sign and sign:FindFirstChild("Text") :: TextLabel?
+			if text then
+				local now = State.now()
+				local unlockAt = player:GetAttribute("DeepUnlockAt") :: number? or 0
+				local readyAt = player:GetAttribute("DeepReadyAt") :: number? or 0
+				if now < unlockAt then
+					text.Text = "DEEP ROD  🔒 " .. Format.time(unlockAt - now)
+				elseif now < readyAt then
+					text.Text = "DEEP ROD  " .. Format.time(readyAt - now)
+				else
+					text.Text = "DEEP ROD READY!"
+				end
+			end
+		end
+	end)
+
 	local lastFilter = 0
 	RunService.RenderStepped:Connect(function()
 		local t = os.clock()
@@ -450,7 +543,7 @@ function ShipView.init()
 				-- highlight: gold = picked, green = a valid partner, faded = can't fuse with it
 				local mark = ShipView.marks[anchor]
 				local hl = slot.rig.model:FindFirstChild("FuseMark") :: Highlight?
-				if mark and mark ~= "dim" then
+				if mark and mark ~= "dim" and mark ~= "ready" then
 					if not hl then
 						hl = Instance.new("Highlight")
 						hl.Name = "FuseMark"
@@ -468,7 +561,7 @@ function ShipView.init()
 				local dimNow = mark == "dim"
 				if (slot :: any).dimmed ~= dimNow then
 					(slot :: any).dimmed = dimNow
-					MonsterModels.fade(slot.rig, if dimNow then 0.6 else 0)
+					MonsterModels.fade(slot.rig, if dimNow then 0.72 else 0)
 				end
 			end
 			if slot.gui then
@@ -503,6 +596,28 @@ function ShipView.init()
 			filterGates()
 		end
 	end)
+end
+
+-- The nest of MY monster closest to a screen point (a tap), within `maxPx` pixels: tapping a
+-- monster works from anywhere on screen, not only up close. Monsters away fighting are skipped.
+function ShipView.monsterNear(screenPos: Vector2, maxPx: number): BasePart?
+	local cam = workspace.CurrentCamera
+	local best: BasePart? = nil
+	local bestD = maxPx
+	for anchor, slot in slots do
+		if slot.rig and anchor:GetAttribute("State") == "mon" and anchor:GetAttribute("Owner") == player.UserId and not ShipView.hidden[anchor] and anchor:GetAttribute("InBattle") ~= true then
+			local p, onScreen = cam:WorldToViewportPoint(slot.base.Position + Vector3.new(0, 2.2, 0))
+			if onScreen and p.Z > 0 then
+				local d = (Vector2.new(p.X, p.Y) - screenPos).Magnitude
+				-- farther monsters are smaller, so give them a bit less room
+				if d < bestD then
+					bestD = d
+					best = anchor
+				end
+			end
+		end
+	end
+	return best
 end
 
 -- World position of one of my nests / pedestals / the winch (tutorial arrows, camera)

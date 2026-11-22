@@ -34,9 +34,10 @@ function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string
 	local role = Config.ROLES[def and def.role or "balanced"]
 	local grow = Config.LEVEL_STAT_GROWTH ^ (lvl - 1)
 	local star = Config.STAR_MULT[math.clamp(Stats.stars(sp), 1, 5)] * Stats.variant(variant).mult * (if sixth then Config.SIXTH_STAR_MULT else 1)
+	local k = Config.NUMBER_SCALE -- inflation, matched in Stats.enemy
 	return {
-		hp = math.floor(Config.BASE_HP * role.hp * grow * star),
-		atk = math.max(1, math.floor(Config.BASE_ATK * role.atk * grow * star)),
+		hp = math.floor(Config.BASE_HP * role.hp * grow * star * k),
+		atk = math.max(1, math.floor(Config.BASE_ATK * role.atk * grow * star * k)),
 		interval = Config.BASE_ATTACK_INTERVAL / role.rate,
 	}
 end
@@ -79,7 +80,7 @@ end
 -- climb gets steadily longer. Stage 1 = 1.
 function Stats.stageScale(stage: number, ratio: number): number
 	local scale = 1
-	local changes = 15 -- stage changes from stage 2 to the last stage (16)
+	local changes = math.max(2, Config.STAGE_COUNT - 1) -- stage changes from stage 2 to the last stage
 	for k = 1, stage - 1 do
 		local t = math.clamp((k - 1) / (changes - 1), 0, 1)
 		local step = Config.ENEMY_HP_STEP_FIRST + (Config.ENEMY_HP_STEP_LAST - Config.ENEMY_HP_STEP_FIRST) * t
@@ -97,7 +98,7 @@ function Stats.enemy(depth: number, pick: number): EnemyStats
 	local kind = Stats.waveKind(depth)
 	local inStage = (depth - 1) % Config.STAGE_LENGTH
 	local hp = Config.ENEMY_BASE_HP * Stats.stageScale(stage, 1) * (1 + Config.ENEMY_HP_PER_DEPTH * inStage)
-	local atk = Config.ENEMY_BASE_ATK * Stats.stageScale(stage, Config.ENEMY_ATK_STEP_RATIO) * (1 + 0.05 * inStage)
+	local atk = Config.ENEMY_BASE_ATK * Stats.stageScale(stage, Config.ENEMY_ATK_STEP_RATIO) * (1 + Config.ENEMY_ATK_PER_DEPTH * inStage)
 	local id: string
 	local scale = 1
 	if kind == "final" then
@@ -117,6 +118,9 @@ function Stats.enemy(depth: number, pick: number): EnemyStats
 		id = info.mobs[math.clamp(math.floor(pick * #info.mobs) + 1, 1, #info.mobs)]
 	end
 	local def = Config.ENEMIES[id]
+	-- the same inflation as the monsters (Stats.monster), so the fight itself is unchanged
+	hp *= Config.NUMBER_SCALE
+	atk *= Config.NUMBER_SCALE
 	return {
 		id = id,
 		hp = math.max(1, math.floor(hp)),
@@ -125,6 +129,11 @@ function Stats.enemy(depth: number, pick: number): EnemyStats
 		kind = kind,
 		scale = (def and def.scale or 1) * scale,
 	}
+end
+
+-- Seconds to beat the boss at a depth (longer in the late stages, Config.BOSS_TIME_PER_STAGE)
+function Stats.bossTime(depth: number): number
+	return Config.BOSS_TIME + math.max(0, Stats.stageOf(depth) - 10) * Config.BOSS_TIME_PER_STAGE
 end
 
 function Stats.killCoins(depth: number, kind: string): number
@@ -192,29 +201,57 @@ function Stats.shipTierPrice(tier: number): number
 	return math.floor(perKill * 10 * Config.SHIPWRIGHT.minutes / 50) * 50
 end
 
+-- Coins from a Robux coin pack (Config.COIN_PACK_MINUTES of battle income at your best depth,
+-- with a floor). The shop card shows this same number, so it is what the purchase pays.
+function Stats.coinPack(name: string, bestDepth: number): number
+	local minutes = Config.COIN_PACK_MINUTES[name] or 0
+	local coins = math.floor(Stats.coinsPerMinute(bestDepth) * minutes)
+	return math.max(coins, if name == "CoinsSmall" then 5000 * Config.COIN_SCALE else 25000 * Config.COIN_SCALE)
+end
+
 -- Floor 3 costs Config.FLOOR3.minutes of battle income at the stage it unlocks
 function Stats.floor3Price(): number
 	return math.floor(Stats.coinsPerMinute(Config.FLOOR3.depth) * Config.FLOOR3.minutes / 50) * 50
 end
 
--- What a hatched monster sells for
-function Stats.sellPrice(sp: string, lvl: number, variant: string?): number
+-- What a hatched monster sells for: half an egg's price, but never more than SELL_CAP_KILLS kills'
+-- worth of coins at your best depth (so selling one rare monster can't beat fighting). Pass the
+-- player's best depth; without it there is no cap.
+function Stats.sellPrice(sp: string, lvl: number, variant: string?, bestDepth: number?): number
 	local v = if variant == "Rainbow" then 6 elseif variant == "Golden" then 2.5 else 1
-	return math.max(1, math.floor(Stats.eggPrice(sp, lvl, Stats.stars(sp), 0.5) * v * Config.SELL_RATIO))
+	local price = Stats.eggPrice(sp, lvl, Stats.stars(sp), 0.5) * v * Config.SELL_RATIO
+	if bestDepth then
+		price = math.min(price, Stats.killCoins(math.max(5, bestDepth), "mob") * Config.SELL_CAP_KILLS)
+	end
+	return math.max(1, math.floor(price))
 end
 
-function Stats.hatchSeconds(lvl: number, stars: number?): number
+-- The shortest an egg / fuse timer can be for a player who has played `playSeconds` so far: it stays
+-- at HATCH_CURVE.min for the whole fast start, then rises smoothly to TIMER_FLOOR_SECONDS.
+function Stats.timerFloor(playSeconds: number?): number
+	local t = math.clamp(((playSeconds or 0) - Config.TIMER_FAST_MINUTES * 60) / (Config.TIMER_RAMP_MINUTES * 60), 0, 1)
+	return Config.HATCH_CURVE.min + (Config.TIMER_FLOOR_SECONDS - Config.HATCH_CURVE.min) * t
+end
+
+-- floor: the player's current Stats.timerFloor (omit it for the plain curve)
+function Stats.hatchSeconds(lvl: number, stars: number?, floor: number?): number
 	local c = Config.HATCH_CURVE
-	return math.min(Config.TIMER_MAX_SECONDS, math.floor(math.max(c.min, c.a * lvl ^ c.p) * starMult(stars)))
+	return math.min(Config.TIMER_MAX_SECONDS, math.floor(math.max(floor or c.min, c.a * lvl ^ c.p) * starMult(stars)))
 end
 
 -- A fuse's rarity is the rarer parent's stars (so the client can show the time up front)
 -- (lvl = the parents' level; the fuse makes lvl + 1)
-function Stats.fuseSeconds(lvl: number, stars: number?): number
-	return math.max(4, math.floor(Stats.hatchSeconds(lvl, stars) * Config.FUSE_FACTOR))
+function Stats.fuseSeconds(lvl: number, stars: number?, floor: number?): number
+	return math.max(4, math.floor(Stats.hatchSeconds(lvl, stars, floor) * Config.FUSE_FACTOR))
 end
 
 -- Highest level a monster can be fused up to: 3 + the stages you have cleared (bosses beaten)
+-- How many monsters of level `lvl` a fuse takes: Lv1 and Lv2 need 2, then it's the level itself
+-- (Lv3 needs 3, Lv4 needs 4, Lv5 needs 5 -> one Lv6, and so on).
+function Stats.fuseNeeded(lvl: number): number
+	return math.clamp(lvl, 2, Config.FUSE_NEEDED_MAX)
+end
+
 function Stats.levelCap(bestDepth: number): number
 	return math.min(Config.MAX_LEVEL, Config.LEVEL_CAP_BASE + bestDepth // Config.STAGE_LENGTH)
 end

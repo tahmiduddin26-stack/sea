@@ -16,6 +16,7 @@ local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
 local Hud = require(script.Parent.Hud)
 local Sound = require(script.Parent.Sound)
+local Platform = require(script.Parent.Platform)
 
 local Guide = {}
 
@@ -30,6 +31,10 @@ folder.Name = "GuideTrail"
 local chevrons: { { BasePart } } = {}
 local marker: Model
 local guiArrow: TextLabel
+-- the Fuse hint is a little tag beside the Fuse button, not the big top banner
+local fuseTag: Frame
+local fuseTagLbl: TextLabel
+local fuseTagTail: TextLabel
 
 local function bar(): BasePart
 	local b = Instance.new("Part")
@@ -89,14 +94,6 @@ local function worldTarget(target: string?): BasePart?
 				return d
 			end
 		end
-	elseif target == "mon" then
-		-- point at a monster to pick (or the partner, once one is picked)
-		local ShipView = require(script.Parent.ShipView) :: any
-		for _, d in ship:GetDescendants() do
-			if d:IsA("BasePart") and d:GetAttribute("NestIndex") and d:GetAttribute("State") == "mon" and ShipView.marks[d] ~= "picked" then
-				return d
-			end
-		end
 	elseif target == "nest" or target == "egg" then
 		local best: BasePart? = nil
 		for _, d in ship:GetDescendants() do
@@ -127,9 +124,19 @@ end
 
 local lastStep = 0
 
+-- An on-demand helper, set by a view while it is open (the Fuse tray): the same red trail, bobbing
+-- arrow and banner as the tutorial, but driven by what the view says is the next thing to do.
+--   text()  the banner line
+--   world() a part in the world to walk / look at (or nil)
+--   gui()   a button on screen to press (or nil)
+Guide.helper = nil :: { text: () -> string, world: () -> BasePart?, gui: () -> GuiObject? }?
+
 function Guide.init(screen: ScreenGui)
 	marker = buildMarker()
 	guiArrow = UI.label({ Text = "▼", TextColor3 = ARROW, Size = UDim2.fromOffset(60, 60), AnchorPoint = Vector2.new(0.5, 1), Visible = false, ZIndex = 20, Parent = screen })
+	fuseTag = UI.panel({ Size = UDim2.fromOffset(250, 78), AnchorPoint = Vector2.new(1, 0.5), Color = Color3.fromRGB(40, 140, 235), Radius = 18, Visible = false, ZIndex = 20, Parent = screen })
+	fuseTagLbl = UI.label({ Text = "", MaxText = 24, Size = UDim2.new(1, -24, 1, -14), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2, ZIndex = 21, Parent = fuseTag })
+	fuseTagTail = UI.label({ Text = "▶", TextColor3 = Color3.fromRGB(40, 140, 235), Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, 14, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 19, Parent = fuseTag })
 
 	Remotes.event("Tutorial").OnClientEvent:Connect(function(step)
 		if step > 1 then
@@ -149,17 +156,27 @@ function Guide.init(screen: ScreenGui)
 		local step = if snap then snap.tutorial else 0
 		local info = Config.TUTORIAL[step]
 		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing
+		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open
+		local helper = Guide.helper
+		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing
 		-- the "lose the first fight" step waits for the battle to finish
-		if not info or State.cinematic then
+		-- the Fuse step shows beside the Fuse button instead of in the top banner
+		local tagText: string? = nil
+		if helping and helper then
+			Hud.banner(helper.text())
+		elseif not info or State.cinematic then
 			Hud.banner(nil)
+		elseif active and info.target == "fuse" then
+			Hud.banner(nil)
+			tagText = (string.gsub(info.text, "{PRESS}", Platform.press()))
 		elseif active or Hud.inBattle then
-			Hud.banner(info.text)
+			Hud.banner((string.gsub(info.text, "{PRESS}", Platform.press())))
 		end
 		if step ~= lastStep then
 			lastStep = step
 		end
 		local target = if active and info then info.target else nil
-		local part = worldTarget(target)
+		local part = if helping and helper then helper.world() else worldTarget(target)
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		-- carrying an egg changes "nest" targets from the winch side; fine as is
@@ -183,7 +200,7 @@ function Guide.init(screen: ScreenGui)
 						b.Transparency = 0.5 - glow * 0.45
 					end
 					local p = from + dir * (1.5 + i * SPACING)
-					placeChevron(bars, CFrame.lookAt(p, p - dir))
+					placeChevron(bars, CFrame.lookAt(p, p + dir)) -- the V points toward the target
 				elseif chevrons[i] then
 					for _, b in chevrons[i] do
 						b:Destroy()
@@ -195,7 +212,7 @@ function Guide.init(screen: ScreenGui)
 			folder.Parent = nil
 		end
 		-- HUD target: bouncing arrow over the button
-		local gui = hudTarget(target)
+		local gui = if helping and helper then helper.gui() else hudTarget(target)
 		if gui and gui.Visible then
 			guiArrow.Visible = true
 			local pos = gui.AbsolutePosition
@@ -208,13 +225,39 @@ function Guide.init(screen: ScreenGui)
 			end
 			local x = (pos.X - inset.X + size.X / 2) / scale
 			local y = (pos.Y - inset.Y) / scale
-			local above = target == "fuse"
-			guiArrow.Rotation = if above then 0 else 180
-			guiArrow.AnchorPoint = if above then Vector2.new(0.5, 1) else Vector2.new(0.5, 0)
+			local above = target == "fuse" or (helping and helper ~= nil)
 			local bob = math.abs(math.sin(t * 4)) * 10
-			guiArrow.Position = if above then UDim2.fromOffset(x, y - 4 - bob) else UDim2.fromOffset(x, y + size.Y / scale + 30 + bob)
+			if above then
+				guiArrow.Rotation = 0
+				guiArrow.AnchorPoint = Vector2.new(0.5, 1)
+				guiArrow.Position = UDim2.fromOffset(x, y - 4 - bob)
+			else
+				-- beside the button (pointing at it), not under it: under the FIGHT button sit
+				-- "Team Power" and the tutorial banner, and the arrow landed on top of their words
+				guiArrow.Rotation = 90 -- the down arrow turned to point left, at the button
+				guiArrow.AnchorPoint = Vector2.new(0.5, 0.5)
+				guiArrow.Position = UDim2.fromOffset(x + size.X / scale / 2 + 34 + bob, y + size.Y / scale / 2)
+			end
 		else
 			guiArrow.Visible = false
+		end
+		-- the tag: sits to the left of the Fuse button, pointing at it
+		local fuseGui = Hud.fuseButton()
+		if tagText and fuseGui.Visible then
+			local sc = screen:FindFirstChildOfClass("UIScale")
+			local scale = if sc then sc.Scale else 1
+			local inset = screen.AbsolutePosition
+			local pos, size = fuseGui.AbsolutePosition, fuseGui.AbsoluteSize
+			local new = UI.keyword(tagText)
+			if fuseTagLbl.Text ~= new or not fuseTag.Visible then
+				fuseTagLbl.Text = new
+				fuseTag.Visible = true
+				UI.pop(fuseTag, 0.85)
+			end
+			local bob = math.abs(math.sin(t * 4)) * 6
+			fuseTag.Position = UDim2.fromOffset((pos.X - inset.X) / scale - 30 - bob, (pos.Y - inset.Y + size.Y / 2) / scale)
+		else
+			fuseTag.Visible = false
 		end
 		local _ = C
 	end)

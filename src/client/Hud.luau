@@ -22,6 +22,7 @@ local MonsterModels = require(Shared.MonsterModels)
 
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
+local Platform = require(script.Parent.Platform)
 
 local Hud = {}
 
@@ -31,6 +32,9 @@ local player = Players.LocalPlayer
 
 local root: Frame
 local fightBtn: TextButton
+local teamBtn: TextButton -- "Pick Team", beside FIGHT
+local slotBadge: Frame -- the red "!" on it when you can afford your next team slot
+local slotPromptedFor = -1 -- the team size we last told the player about (once per new slot)
 local powerLbl: TextLabel
 local depthBar: Frame
 local depthLbl: TextLabel
@@ -47,7 +51,9 @@ local coinLbl: TextLabel
 local pearlLbl: TextLabel
 local leftCol: Frame
 local rightCol: Frame
+local rightLayout: UIListLayout
 local fuseBtn: ImageButton
+local sellBtn: ImageButton
 local banner: Frame
 local bannerLbl: TextLabel
 local toastHolder: Frame
@@ -77,6 +83,7 @@ end
 Hud.press = fire
 
 Hud.inBattle = false
+Hud.fuseOpen = false -- FuseView's tray is open (the heart button gives way to it)
 Hud.indexSeen = 0
 local bossEnds = 0
 local bossTotal = 0
@@ -366,9 +373,16 @@ local function currency(y: number, icon: string, size: number, infoName: string)
 	hit.Activated:Connect(function()
 		fire(infoName)
 	end)
-	local q = UI.new("Frame", { BackgroundColor3 = C.Brass, Size = UDim2.fromOffset(22, 22), Position = UDim2.new(0, 214, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), ZIndex = 4, Parent = f }, { UI.corner(22), UI.stroke(2) })
+	local q = UI.new("Frame", { Name = "Info", BackgroundColor3 = C.Brass, Size = UDim2.fromOffset(22, 22), Position = UDim2.new(0, 120, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), ZIndex = 4, Parent = f }, { UI.corner(22), UI.stroke(2) })
 	UI.label({ Text = "?", Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 1.5, ZIndex = 5, Parent = q })
-	return UI.label({ Text = "0", TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.fromOffset(190, size * 0.78), Position = UDim2.new(0, size + 6, 0.11, 0), Stroke = 3, MaxText = 40, Parent = f })
+	local amount = UI.label({ Text = "0", TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.fromOffset(190, size * 0.78), Position = UDim2.new(0, size + 6, 0.11, 0), Stroke = 3, MaxText = 40, Parent = f })
+	-- keep the "?" snug against the number as it grows (788K, 1.2M ...)
+	-- (TextBounds is useless for scaled text, so the width is estimated from the digit count)
+	amount:GetPropertyChangedSignal("Text"):Connect(function()
+		local fs = math.min(40, size * 0.78)
+		q.Position = UDim2.new(0, size + 6 + #amount.Text * 0.56 * fs + 8, 0.5, 0)
+	end)
+	return amount
 end
 
 ---------------------------------------------------------------------------
@@ -464,7 +478,10 @@ end
 local function refreshOffer()
 	-- skip passes the player already owns
 	for _ = 1, #Config.OFFER_ROTATION do
-		if Config.GAMEPASSES[currentOffer()] and State.hasPass(currentOffer()) then
+		local o = currentOffer()
+		local info = Config.GAMEPASSES[o] or Config.PRODUCTS[o]
+		-- skip passes already owned, and anything not created on Roblox yet (id 0) outside Studio
+		if (Config.GAMEPASSES[o] and State.hasPass(o)) or (info and info.id == 0 and not game:GetService("RunService"):IsStudio()) then
 			OFFER_INDEX += 1
 		else
 			break
@@ -517,8 +534,25 @@ function Hud.refresh()
 	for _ in snap.monsters do
 		monsters += 1
 	end
-	fuseBtn.Visible = snap.tutorial >= 10 and not Hud.inBattle
+	-- the heart is replaced by the fuse tray while the tray is open
+	fuseBtn.Visible = snap.tutorial >= 10 and not Hud.inBattle and not Hud.fuseOpen
+	-- Sell sits beside it once the tutorial is done (the server won't sell before that)
+	sellBtn.Visible = snap.tutorial >= Config.TUTORIAL_DONE and monsters > 0 and not Hud.inBattle and not Hud.fuseOpen
+	-- toasts ride above the tray so the two never overlap
+	if toastHolder then
+		toastHolder.Position = UDim2.new(0.5, 0, 1, if Hud.fuseOpen then -176 else -140)
+	end
 	fightBtn.Visible = not Hud.inBattle and snap.tutorial >= 5 and monsters > 0 and not snap.carrying
+	-- "Pick Team" sits beside FIGHT once the tutorial is done (same moments FIGHT shows)
+	teamBtn.Visible = fightBtn.Visible and snap.tutorial >= Config.TUTORIAL_DONE
+	-- Enough coins for the next team slot? Show a red "!" on Pick Team and say so once per slot.
+	local slotPrice = Config.TEAM_SLOT_PRICES[snap.teamSlots - Config.TEAM_START + 1]
+	local canBuySlot = snap.tutorial >= Config.TUTORIAL_DONE and snap.teamSlots < Config.TEAM_MAX and slotPrice ~= nil and snap.coins >= slotPrice
+	slotBadge.Visible = canBuySlot
+	if canBuySlot and slotPromptedFor ~= snap.teamSlots and not Hud.inBattle then
+		slotPromptedFor = snap.teamSlots
+		Hud.toast("You can afford a new team slot! (" .. Format.abbrev(slotPrice) .. " coins) Open Pick Team to buy it", C.Gold)
+	end
 	-- team power (the team that will actually fight)
 	local power = 0
 	local team = 0
@@ -591,10 +625,28 @@ end
 function Hud.init(screen: ScreenGui)
 	root = UI.new("Frame", { Name = "Hud", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = screen })
 
+	-- FIGHT gently pulses while it is waiting to be pressed (grows and shrinks a few percent)
+	task.spawn(function()
+		local small, big = UDim2.fromOffset(190, 58), UDim2.fromOffset(204, 62)
+		local up = true
+		while true do
+			if fightBtn and fightBtn.Visible and not Hud.inBattle and fightBtn.Parent then
+				UI.tween(fightBtn, 0.7, { Size = if up then big else small }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+				up = not up
+			end
+			task.wait(0.75)
+		end
+	end)
 	-- FIGHT + Team Power
 	fightBtn = UI.button({ Text = "FIGHT!", Color = C.Coral, Size = UDim2.fromOffset(190, 58), Position = UDim2.new(0.5, 0, 0, 8), AnchorPoint = Vector2.new(0.5, 0), Visible = false, Parent = root }, function()
 		fire("Fight")
 	end)
+	-- Pick Team: to the right of FIGHT, same height, a different colour so the two read apart
+	teamBtn = UI.button({ Text = "Pick Team", Color = C.Sea, Size = UDim2.fromOffset(150, 58), Position = UDim2.new(0.5, 205, 0, 8), AnchorPoint = Vector2.new(0.5, 0), Visible = false, Parent = root }, function()
+		fire("Team")
+	end)
+	slotBadge = UI.new("Frame", { BackgroundColor3 = C.Coral, Size = UDim2.fromOffset(28, 28), Position = UDim2.new(1, -6, 0, 2), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false, ZIndex = 5, Parent = teamBtn }, { UI.corner(14), UI.stroke(2.5) })
+	UI.label({ Text = "!", Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), ZIndex = 6, Parent = slotBadge })
 	local pwr = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(240, 30), Position = UDim2.new(0.5, 0, 1, 6), AnchorPoint = Vector2.new(0.5, 0), Parent = fightBtn })
 	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I.Swords, Size = UDim2.fromOffset(30, 30), Parent = pwr })
 	powerLbl = UI.label({ Text = "", TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -36, 1, 0), Position = UDim2.fromOffset(36, 0), Parent = pwr })
@@ -602,7 +654,7 @@ function Hud.init(screen: ScreenGui)
 
 	-- banner
 	-- a solid rounded sea-blue pill: no dark fade behind the words, so they stay crisp
-	banner = UI.panel({ Size = UDim2.fromOffset(600, 50), Position = UDim2.new(0.5, 0, 0, 104), AnchorPoint = Vector2.new(0.5, 0), Color = Color3.fromRGB(40, 140, 235), Radius = 25, Visible = false, Parent = root })
+	banner = UI.panel({ Size = UDim2.fromOffset(600, 50), Position = UDim2.new(0.5, 0, 0, 116), AnchorPoint = Vector2.new(0.5, 0), Color = Color3.fromRGB(40, 140, 235), Radius = 25, Visible = false, Parent = root })
 	bannerLbl = UI.label({ Text = "", MaxText = 28, Size = UDim2.new(1, -40, 0.72, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2.5, Parent = banner })
 
 	-- currencies (pearls above coins, coins bigger)
@@ -615,11 +667,25 @@ function Hud.init(screen: ScreenGui)
 		local touch = m == "touch"
 		local pf, cf = pearlLbl.Parent :: Frame, coinLbl.Parent :: Frame
 		if touch then
-			cf.Position = UDim2.new(0, 14, 0, 6)
-			pf.Position = UDim2.new(0, 14, 0, 64)
+			-- the HUD runs to the top edge on phones; only the top-left (Roblox's own menu and
+			-- chat buttons) is left clear. Coins and pearls sit side by side under those buttons,
+			-- the missions below them, and nothing reaches the thumbstick (bottom-left).
+			local off = Platform.topInset()
+			cf.Size = UDim2.fromOffset(206, 56)
+			pf.Size = UDim2.fromOffset(150, 44)
+			cf.Position = UDim2.new(0, 14, 0, off + 2)
+			pf.Position = UDim2.new(0, 14 + 210, 0, off + 8)
+			-- the Starter Pack and the offer stay in a column down the right edge (the jump button
+			-- is small and sits lower), starting under the top-right row
 			rightCol.AnchorPoint = Vector2.new(1, 0)
-			rightCol.Position = UDim2.new(1, -10, 0, 74)
+			rightCol.Position = UDim2.new(1, -10, 0, 70)
+			rightCol.Size = UDim2.fromOffset(140, 300)
+			rightLayout.FillDirection = Enum.FillDirection.Vertical
 		else
+			cf.Size = UDim2.fromOffset(260, 56)
+			pf.Size = UDim2.fromOffset(260, 44)
+			rightCol.Size = UDim2.fromOffset(140, 300)
+			rightLayout.FillDirection = Enum.FillDirection.Vertical
 			pf.Position = UDim2.new(0, 14, 1, -118)
 			cf.Position = UDim2.new(0, 14, 1, -68)
 			rightCol.AnchorPoint = Vector2.new(1, 0.5)
@@ -651,7 +717,7 @@ function Hud.init(screen: ScreenGui)
 
 	-- right column: Starter Pack (creature art) + rotating offer
 	rightCol = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(140, 300), Position = UDim2.new(1, -10, 0.5, -30), AnchorPoint = Vector2.new(1, 0.5), Visible = false, Parent = root })
-	UI.new("UIListLayout", { Padding = UDim.new(0, 18), HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = rightCol })
+	rightLayout = UI.new("UIListLayout", { Padding = UDim.new(0, 18), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Top, Parent = rightCol })
 	local sb = UI.new("ImageButton", { BackgroundTransparency = 1, Image = "", Size = UDim2.fromOffset(130, 120), Parent = rightCol })
 	creatureArt(sb, { "Kelpdrake", "Splashfin" }, UDim2.new(1, 0, 0, 92))
 	priceChip(sb, Config.PRODUCTS.StarterPack.price, -12)
@@ -738,6 +804,20 @@ function Hud.init(screen: ScreenGui)
 	fl.TextColor3 = C.Gold
 	fl.Size = UDim2.new(1.2, 0, 0, 34)
 	fl.Position = UDim2.new(0.5, 0, 0.55, 0)
+	-- Sell button left of the heart: opens the team screen in Sell mode (tap a monster twice to sell it)
+	-- on the LEFT edge, just under the middle (below the Missions board, clear of the bottom-left
+	-- thumbstick on phones), not in the centre with Fuse
+	sellBtn = iconButton(root, I.Coin, "", 84, function()
+		fire("Sell")
+	end)
+	sellBtn.Position = UDim2.new(0, 66, 0.5, 30)
+	sellBtn.AnchorPoint = Vector2.new(0.5, 0)
+	sellBtn.Visible = false
+	local sl = sellBtn:FindFirstChild("Label") :: TextLabel
+	sl.Text = "Sell!"
+	sl.TextColor3 = C.Gold
+	sl.Size = UDim2.new(1.2, 0, 0, 30)
+	sl.Position = UDim2.new(0.5, 0, 0.62, 0)
 	hotbar = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(70, 70), Position = UDim2.new(0.5, 90, 1, -16), AnchorPoint = Vector2.new(0, 1), Visible = false, Parent = root })
 	hotbarSlot = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(20, 40, 80), BackgroundTransparency = 0.25, Size = UDim2.fromScale(1, 1), Parent = hotbar }, { UI.corner(10), UI.stroke(3, Color3.fromRGB(80, 200, 255)) })
 	UI.label({ Text = "1", Size = UDim2.fromOffset(16, 16), Position = UDim2.fromOffset(4, 2), ZIndex = 3, Parent = hotbar })
@@ -778,6 +858,14 @@ end
 
 function Hud.fuseButton(): GuiObject
 	return fuseBtn
+end
+
+function Hud.teamButton(): GuiObject
+	return teamBtn
+end
+
+function Hud.sellButton(): GuiObject
+	return sellBtn
 end
 
 function Hud.fightButton(): GuiObject

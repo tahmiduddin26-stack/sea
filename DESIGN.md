@@ -273,4 +273,11 @@ timers, odds, combat and currency.
 - **Price rule:** every coin sink costs about N minutes of battle income at the stage it is meant for (`Stats.stagePrice`), so prices keep pace with income (nests, Egg Luck, Fast Reel, fittings, Floor 2, team slots; the Shipwright and Floor 3 already worked this way). A new player has about 11K coins after 10 minutes.
 - **Offline:** 10% of the live coin rate, 8 h cap (`Config.OFFLINE_RATE`).
 - **Rewards:** no reward for joining the group (Roblox rule); friends in the server give +10% coins each, max +30%.
+- **Deep Rod (retention after ~20 min):** a second rod on the starboard rail (`Config.DEEP_ROD`). Unlocks after 20 minutes of play, casts once every 10 minutes, dives its own 10-zone trench (`Config.DEEP_ZONES`, Ice and Lava Vents looks added) with x1.5 rarity luck, and its eggs are always free. Each catch may carry one of 5 **perks** (`Config.PERKS`: Frost freeze, Venom poison, Bubble shield, Leech heal, Lucky coins). Perks add no hit damage; a fused child keeps one parent's perk. The sign over the rod counts down the unlock and cooldown.
 - **Sounds (ElevenLabs, `assets/audio`):** Cannon, ZoneChime, EggPop, Cast, Upgrade (uploaded to the group; moderation was still reviewing them).
+
+## 12. Dockyard and the bigger harbour
+- **Dockyard:** a vendor in town (inner ring, blue pier shed with a ship's wheel, anchor and a Shipwright NPC). It sells Egg Luck, Fast Reel and the Shipwright tiers (server action `Upgrade`, client `Menus.dockyard`) and opens the Ship Workshop. A red "!" floats over it when you can afford a level. These boards are no longer on the deck; only the Floor board, Team board, Gift Chest and the Fuse Luck sign stay on the ship.
+- **Island:** `HUB_RADIUS` 78 -> 96, `SHIP_RING_RADIUS` 206 -> 236, `SWIM_RADIUS` 410. Vendor slots, palms, towers, lamps, paths and flowers scale with `TOWN_K = HUB_RADIUS / 78` in `WorldBuilder.buildHub`.
+- **Tutorial:** the ship's upgrade signs (and the Dockyard purchases) work from tutorial step 10 (`Config.SIGNS_UNLOCK_STEP`); the Fuse step hint is a tag beside the Fuse button, not the top banner.
+- **NPC clearance:** NPCs are 1.15x scale (about 9.6 studs tall with a hat). Keep a roof at least 10 above the feet, or lower the NPC `scale` (Pirate 1.0, Festival Host 0.9) so hats never poke through a roof.

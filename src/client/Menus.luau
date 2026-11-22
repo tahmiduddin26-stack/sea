@@ -54,11 +54,12 @@ end
 
 local function window(title: string, size: Vector2, color: Color3?): (Frame, Frame)
 	Menus.close()
-	local f, body = UI.window({ Title = title, Accent = color or C.Sea, Size = UDim2.fromOffset(size.X, size.Y), Position = UDim2.fromScale(0.5, 0.52), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 10, Parent = screenRef }, Menus.close)
+	local f, body = UI.window({ Title = title, Accent = color or C.Sea, Size = UDim2.fromOffset(size.X, size.Y), Position = UDim2.fromScale(0.5, 0.46), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 10, Parent = screenRef }, Menus.close)
 	f.Parent = screenRef
 	open = f
 	-- phones are shorter than most menus: shrink to fit the screen
 	local fit = Platform.fit(size)
+	f.Position = Platform.menuPosition(size, fit)
 	UI.pop(f, 0.7 * fit, fit)
 	Platform.menuChanged(true)
 	if Menus.onOpen then
@@ -91,7 +92,9 @@ local function creatureView(parent: GuiObject, id: string, size: UDim2, pos: UDi
 	return vp
 end
 
-local function prompt(kind: string, name: string)
+-- The real purchase (Roblox's own confirm window). Players normally reach it from the detail window
+-- below, which says what the item is first; only the Revive button (a 15 second window) buys directly.
+local function buy(kind: string, name: string)
 	local info = if kind == "Pass" then Config.GAMEPASSES[name] else Config.PRODUCTS[name]
 	if not info then
 		return
@@ -114,7 +117,101 @@ local function prompt(kind: string, name: string)
 		MarketplaceService:PromptProductPurchase(player, info.id)
 	end
 end
-Menus.prompt = prompt
+Menus.buy = buy
+
+-- What each pack / pass actually gives, one short line each (shown with a tick in the detail window).
+-- Numbers come from Config / Stats so the text can never drift from what the purchase really grants.
+local function detailLines(kind: string, name: string): ({ string }, string)
+	local snap = State.snapshot
+	local depth = (snap and snap.bestDepth) or 0
+	local coins = Format.abbrev(5 * Config.COIN_SCALE * 1000)
+	if name == "StarterPack" then
+		return { "A Lv3 Kelpdrake (2-star) in a free nest", coins .. " coins", "50 pearls" }, "One-time offer"
+	elseif name == "PearlDragonPack" then
+		return { "The Legendary Pearl Dragon (4-star)", "Starts at Lv5", "Goes straight into a free nest" }, "One-time offer"
+	elseif name == "ElementBundle" then
+		return { "4 eggs, one of each element:", "Tide, Coral, Storm and Abyss", "Each is a 2-star Lv1 egg", "Needs 4 free nests: they go straight in" }, "4 eggs"
+	elseif name == "LimitedRoll" then
+		local lines = { "One roll of the Abyss Crate: a 2-star egg" }
+		local odds = {}
+		for _, o in Config.LIMITED.odds do
+			table.insert(odds, Config.MONSTERS[o.sp].name .. " " .. math.floor(o.chance * 100 + 0.5) .. "%")
+		end
+		table.insert(lines, table.concat(odds, ", ", 1, math.min(3, #odds)))
+		if #odds > 3 then
+			table.insert(lines, table.concat(odds, ", ", 4))
+		end
+		table.insert(lines, "Needs a free nest. The odds are shown above")
+		return lines, "A random egg"
+	elseif name == "PowerSpins" then
+		return { "5 spins of the Power wheel", "Each spin wins a random battle boost" }, "5 spins"
+	elseif name == "Luck30" then
+		return { "x2 egg luck from the rods", "x2 fuse luck (stars and secrets)", "Lasts 30 minutes" }, "Boost"
+	elseif name == "FuseLuck" then
+		return { "x2 chance of a star-up when fusing", "x2 chance of a secret monster", "Lasts 15 minutes" }, "Boost"
+	elseif name == "InsaneLuck" then
+		return { "x4 chance of a star-up when fusing", "x4 chance of a secret monster", "Lasts 15 minutes" }, "Boost"
+	elseif name == "SkipTimer" then
+		return { "Every egg hatches instantly", "Every fuse finishes instantly", "Lasts 5 minutes (buy again to add more)" }, "Boost"
+	elseif name == "Revive" then
+		return { "Your whole team comes back at full health", "Keep diving from the same depth", "Use it right after a defeat" }, "Use after a defeat"
+	elseif Config.COIN_PACK_MINUTES[name] then
+		return {
+			"+" .. Format.abbrev(Stats.coinPack(name, depth)) .. " coins, paid right away",
+			"About " .. Config.COIN_PACK_MINUTES[name] .. " minutes of fighting at your best depth",
+			"Grows as you get deeper",
+		}, "Coins"
+	elseif name == "VIP" then
+		return { "+25% coins from every battle", "Gold VIP Captain name tag", "Gold nests on your ship", "[VIP] tag in chat" }, "Game pass: yours forever"
+	elseif name == "DoubleCoins" then
+		return { "Double coins from every battle" }, "Game pass: yours forever"
+	elseif name == "FastFuse" then
+		return { "Eggs hatch twice as fast", "Monsters fuse twice as fast" }, "Game pass: yours forever"
+	elseif name == "FastBattle" then
+		return { "Unlocks the x2 battle speed button", "Fights finish twice as fast" }, "Game pass: yours forever"
+	elseif name == "ExtraPedestal" then
+		return { "The fishing rods reel in eggs 8% faster" }, "Game pass: yours forever"
+	elseif name == "DoubleLuck" then
+		return { "x2 egg luck", "x2 fuse luck (stars and secrets)" }, "Game pass: yours forever"
+	end
+	local info = if kind == "Pass" then Config.GAMEPASSES[name] else Config.PRODUCTS[name]
+	return { if info then info.desc else "" }, ""
+end
+
+-- The window every pack / offer / sign opens: the picture, what it is, a ticked list of what you get,
+-- the price and a Buy button, like a shop card but with the details.
+local function detail(kind: string, name: string)
+	local info = if kind == "Pass" then Config.GAMEPASSES[name] else Config.PRODUCTS[name]
+	if not info then
+		return
+	end
+	local owned = kind == "Pass" and State.hasPass(name)
+	local lines, tag = detailLines(kind, name)
+	local rowH = 36
+	local h = 250 + #lines * rowH + 96
+	local _, body = window(info.name, Vector2.new(520, h), C.Gold)
+	local ICONKEY = { StarterPack = "Team", PearlDragonPack = "Pearl", FuseLuck = "LuckEgg", InsaneLuck = "Crate", SkipTimer = "Speed", CoinsSmall = "Coin", CoinsBig = "Shop", VIP = "Event", DoubleCoins = "Coin", FastFuse = "Heart", FastBattle = "Speed", ExtraPedestal = "Pedestal", Luck30 = "LuckEgg", DoubleLuck = "LuckEgg" }
+	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = Config.STORE_ICONS[name] or Config.ICONS[ICONKEY[name] or "Coin"], Size = UDim2.fromOffset(96, 96), Position = UDim2.new(0.5, 0, 0, 2), AnchorPoint = Vector2.new(0.5, 0), Parent = body })
+	if tag ~= "" then
+		UI.label({ Text = tag, Stroke = 0, TextColor3 = Color3.fromRGB(200, 120, 0), MaxText = 20, Size = UDim2.new(1, -20, 0, 26), Position = UDim2.fromOffset(10, 102), Parent = body })
+	end
+	UI.label({ Text = "What you get", TextColor3 = C.Ink, Stroke = 0, MaxText = 24, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -30, 0, 30), Position = UDim2.fromOffset(18, 136), Parent = body })
+	for i, text in lines do
+		local y = 170 + (i - 1) * rowH
+		-- a green tick box, then the line
+		UI.new("Frame", { BackgroundColor3 = C.Kelp, Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(20, y + 3), Parent = body }, { UI.corner(7), UI.stroke(2.5) })
+		UI.label({ Text = "✓", MaxText = 22, Size = UDim2.fromOffset(26, 26), Position = UDim2.fromOffset(20, y + 3), ZIndex = 3, Parent = body })
+		UI.label({ Text = text, Stroke = 0, TextColor3 = C.Ink, MaxText = 20, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -86, 0, 32), Position = UDim2.fromOffset(60, y + 2), Parent = body })
+	end
+	UI.button({ Text = if owned then "Owned" else ("Buy   R$ " .. info.price), Color = if owned then C.Muted else C.Kelp, Size = UDim2.new(1, -40, 0, 56), Position = UDim2.new(0, 20, 1, -64), Parent = body }, function()
+		if owned then
+			return
+		end
+		Menus.close()
+		buy(kind, name)
+	end)
+end
+Menus.prompt = detail -- (signs, the Starter Pack and the offers open the detail window)
 
 function Menus.promptOffer(name: string)
 	if Config.GAMEPASSES[name] then
@@ -122,9 +219,9 @@ function Menus.promptOffer(name: string)
 			Hud.toast("You already own " .. Config.GAMEPASSES[name].name, C.Kelp)
 			return
 		end
-		prompt("Pass", name)
+		detail("Pass", name)
 	else
-		prompt("Product", name)
+		detail("Product", name)
 	end
 end
 
@@ -194,7 +291,7 @@ function Menus.fuse()
 				creatureView(card, o.sp, UDim2.new(1, 0, 0, 90), nil, not found)
 				UI.label({ Text = math.floor(o.chance * 1000 + 0.5) / 10 .. "%", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 94), TextColor3 = C.Gold, Parent = card })
 			end
-			hint.Text = "Lv." .. a.lvl .. " + Lv." .. b.lvl .. " = Lv." .. (a.lvl + 1) .. "   |   " .. Format.time(Stats.fuseSeconds(a.lvl, math.max(Stats.stars(a.sp), Stats.stars(b.sp))) * (if State.hasPass("FastFuse") then 0.5 else 1))
+			hint.Text = "Lv." .. a.lvl .. " + Lv." .. b.lvl .. " = Lv." .. (a.lvl + 1) .. "   |   " .. Format.time(Stats.fuseSeconds(a.lvl, math.max(Stats.stars(a.sp), Stats.stars(b.sp)), Stats.timerFloor(snap.playSeconds)) * (if State.hasPass("FastFuse") then 0.5 else 1))
 		else
 			hint.Text = "Pick two monsters of the same level"
 		end
@@ -272,7 +369,7 @@ function Menus.shop()
 	-- short lines only: every card is icon, name, one line, price, so nothing gets cut
 	local SHORT = {
 		StarterPack = "Lv3 Kelpdrake + coins", PearlDragonPack = "Legendary dragon", FuseLuck = "x2 fuse luck 15m",
-		InsaneLuck = "x4 fuse luck 15m", SkipTimer = "Finish all timers", CoinsSmall = "A chest of coins", CoinsBig = "A ship of coins",
+		InsaneLuck = "x4 fuse luck 15m", SkipTimer = "Instant hatch 5 min", CoinsSmall = "A chest of coins", CoinsBig = "A ship of coins",
 		VIP = "+25% coins forever", DoubleCoins = "x2 coins forever", FastFuse = "x2 hatch speed", FastBattle = "x2 battle speed",
 		ExtraPedestal = "rod reels 8% faster", Luck30 = "x2 luck for 30m", DoubleLuck = "x2 luck forever", PowerSpins = "5 Power wheel spins", ElementBundle = "1 egg of each element",
 			LimitedRoll = "Roll the Abyss Crate", Revive = "Use after a defeat",
@@ -287,15 +384,22 @@ function Menus.shop()
 		local c = UI.panel({ Size = UDim2.fromOffset(176, 196), Color = color, LayoutOrder = order, Parent = scroll })
 		UI.new("ImageLabel", { BackgroundTransparency = 1, Image = Config.STORE_ICONS[name] or Config.ICONS[ICON[name] or "Coin"], Size = UDim2.fromOffset(72, 72), Position = UDim2.new(0.5, 0, 0, 6), AnchorPoint = Vector2.new(0.5, 0), Parent = c })
 		UI.label({ Text = info.name, MaxText = 20, Size = UDim2.new(1, -12, 0, 24), Position = UDim2.fromOffset(6, 80), Parent = c })
-		UI.label({ Text = SHORT[name] or "", Stroke = 0, TextColor3 = C.Ink, MaxText = 15, Size = UDim2.new(1, -12, 0, 20), Position = UDim2.fromOffset(6, 106), Parent = c })
+		local line = SHORT[name] or ""
+		if Config.COIN_PACK_MINUTES[name] then
+			-- coin packs show exactly what they pay at your best depth
+			line = "+" .. Format.abbrev(Stats.coinPack(name, State.snapshot.bestDepth or 0)) .. " Coins"
+		end
+		UI.label({ Text = line, Stroke = 0, TextColor3 = if Config.COIN_PACK_MINUTES[name] then Color3.fromRGB(200, 140, 0) else C.Ink, MaxText = 15, Size = UDim2.new(1, -12, 0, 20), Position = UDim2.fromOffset(6, 106), Parent = c })
 		UI.button({ Text = if owned then "Owned" else ("R$ " .. info.price), Color = if owned then C.Muted else C.Kelp, Size = UDim2.new(1, -20, 0, 44), Position = UDim2.new(0, 10, 1, -54), Parent = c }, function()
 			if not owned then
-				prompt(kind, name)
+				detail(kind, name) -- what it is first, then Buy
 			end
 		end)
 	end
 	for _, name in { "StarterPack", "PearlDragonPack", "ElementBundle", "LimitedRoll", "PowerSpins", "Luck30", "FuseLuck", "InsaneLuck", "SkipTimer", "Revive", "CoinsSmall", "CoinsBig" } do
-		if not (name == "StarterPack" and State.snapshot.starterBought) then
+		local info = Config.PRODUCTS[name]
+		-- products not created on Roblox yet (id 0) stay hidden outside Studio
+		if not (name == "StarterPack" and State.snapshot.starterBought) and (info.id ~= 0 or RunService:IsStudio()) then
 			card("Product", name, Config.PRODUCTS[name], Color3.fromRGB(255, 240, 200))
 		end
 	end
@@ -393,7 +497,7 @@ function Menus.battleEnd(p: any)
 	if p.timeUp then
 		Hud.splash("TIME'S UP!", C.Coral)
 	end
-	local why = if p.retreat then "You swam back safely." elseif p.timeUp then "The boss swam away! Beat it in " .. Config.BOSS_TIME .. "s." else "Your team needs to get stronger!"
+	local why = if p.retreat then "You swam back safely." elseif p.timeUp then "The boss swam away! Beat it in " .. Stats.bossTime(p.depth or 1) .. "s." else "Your team needs to get stronger!"
 	local lines = {
 		why,
 		"Depth reached: " .. p.depth,
@@ -409,7 +513,7 @@ function Menus.battleEnd(p: any)
 	if p.canRevive then
 		local btn = UI.button({ Text = "Revive & Continue  R$" .. Config.PRODUCTS.Revive.price, Color = C.Kelp, Size = UDim2.new(1, -20, 0, 54), Position = UDim2.new(0, 10, 1, -120), Parent = body }, function()
 			Menus.close()
-			prompt("Product", "Revive")
+			buy("Product", "Revive") -- straight to the purchase: the Revive offer only lasts 15 seconds
 		end)
 		local secs = Config.REVIVE_WINDOW
 		task.spawn(function()
@@ -476,13 +580,22 @@ function Menus.reveal(kind: string, p: any)
 		if st >= 3 then
 			Hud.splash(rarityName .. "!", rarity.color)
 		end
+		-- Deep Rod perk: say what it does under the title
+		local perk = p.perk and Config.PERKS[p.perk]
+		if perk then
+			local pl = UI.label({ Text = string.upper(perk.name) .. ' PERK  <font color="#FFFFFF">' .. perk.desc .. "</font>", TextColor3 = perk.color, MaxText = 22, Size = UDim2.fromOffset(560, 30), Position = UDim2.new(0.5, 0, 0.19, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, Parent = f })
+			UI.pop(pl, 0.5)
+			if st < 3 then
+				Hud.splash(string.upper(perk.name) .. " PERK!", perk.color)
+			end
+		end
 		UI.pop(name, 0.5)
 		UI.pop(vp :: any, 0.6)
 			dmgSticker.Visible = true
 			UI.pop(dmgSticker, 0.4)
 		Sound.play("Win", 0.6)
 	end)
-	local tap = UI.label({ Text = "Tap to continue", Size = UDim2.fromOffset(300, 30), Position = UDim2.new(0.5, 0, 0.965, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, TextTransparency = 1, Parent = f })
+	local tap = UI.label({ Text = if Platform.mode() == "pad" then "Press the button to continue" elseif Platform.mode() == "key" then "Click to continue" else "Tap to continue", Size = UDim2.fromOffset(300, 30), Position = UDim2.new(0.5, 0, 0.965, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, TextTransparency = 1, Parent = f })
 	task.delay(1.4, function()
 		tap.TextTransparency = 0
 	end)
@@ -501,7 +614,19 @@ function Menus.reveal(kind: string, p: any)
 		f:Destroy()
 	end
 	btn.Activated:Connect(done)
-	task.delay(5, done)
+	-- a controller needs no cursor here: A, B or X continues
+	local pad
+	pad = game:GetService("UserInputService").InputBegan:Connect(function(input)
+		local k = input.KeyCode
+		if k == Enum.KeyCode.ButtonA or k == Enum.KeyCode.ButtonB or k == Enum.KeyCode.ButtonX then
+			pad:Disconnect()
+			done()
+		end
+	end)
+	task.delay(5, function()
+		pad:Disconnect()
+		done()
+	end)
 end
 
 ---------------------------------------------------------------------------
@@ -531,7 +656,19 @@ end
 
 local teamSellMode = false -- (Sell mode stays on while you sell several in a row)
 
-function Menus.team()
+-- The Sell button: the team screen with Sell mode already on
+function Menus.sell()
+	teamSellMode = true
+	Menus.team(true)
+end
+
+-- keepSell: stay in Sell mode (the Sell button, or the redraw after a sale). Opening the team screen
+-- any other way (the sign, the Team button) always starts with Sell mode OFF, so a monster can't be
+-- sold by accident while you are just picking your team.
+function Menus.team(keepSell: boolean?)
+	if keepSell ~= true then
+		teamSellMode = false
+	end
 	local snap = State.snapshot
 	local list = sortedMonsters(snap)
 	local chosen: { string } = table.clone(snap.team)
@@ -540,9 +677,11 @@ function Menus.team()
 			table.insert(chosen, list[i].uid)
 		end
 	end
-	local f, body = window("Team " .. #chosen .. "/" .. snap.teamSlots, Vector2.new(760, 480), C.Pearl)
+	local f, body = window("Manage Team " .. #chosen .. "/" .. snap.teamSlots, Vector2.new(760, 480), C.Pearl)
 	local scroll = UI.new("ScrollingFrame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -64), ScrollBarThickness = 8, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), BorderSizePixel = 0, Parent = body }, { UI.new("UIPadding", { PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6) }) })
-	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(112, 140), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scroll })
+	-- three roomy columns so everything reads easily
+	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(226, 172), CellPadding = UDim2.fromOffset(10, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scroll })
+	local CARD_COLOR = Color3.fromRGB(255, 244, 216)
 	local cards = {}
 	-- Sell mode: tap a monster once to arm it (its card turns red and shows the price), tap again to sell
 	local sellMode = teamSellMode
@@ -553,25 +692,19 @@ function Menus.team()
 			local on = table.find(chosen, uid) ~= nil
 			if sellMode then
 				(card:FindFirstChild("Tick") :: GuiObject).Visible = false
-				local st = card:FindFirstChildOfClass("UIStroke")
-				if st then
-					st.Color = if uid == armed then C.Coral else C.Ink
-					st.Thickness = if uid == armed then 5 else 3.5
-				end
+				card.BackgroundColor3 = if uid == armed then Color3.fromRGB(255, 160, 150) else CARD_COLOR
 				continue
 			end
-			local st = card:FindFirstChildOfClass("UIStroke")
-			if st then
-				st.Color = if on then C.Kelp else C.Ink
-				st.Thickness = if on then 5 else 3.5
-			end
-			(card:FindFirstChild("Tick") :: GuiObject).Visible = on
+			-- no outlines: a chosen monster just gets a green card and an "IN" tag
+			card.BackgroundColor3 = if on then Color3.fromRGB(165, 235, 170) else CARD_COLOR
+			local tick = card:FindFirstChild("Tick") :: GuiObject
+			tick.Visible = on
 		end
 	end
 	for i, e in list do
-		local card = UI.button({ Text = "", Color = Color3.fromRGB(255, 244, 216), Size = UDim2.fromOffset(112, 140), LayoutOrder = i, Parent = scroll }, function()
+		local card = UI.button({ Text = "", Color = Color3.fromRGB(255, 244, 216), Size = UDim2.fromOffset(226, 172), LayoutOrder = i, Parent = scroll }, function()
 			if sellMode then
-				local price = Stats.sellPrice(e.m.sp, e.m.lvl, e.m.v)
+				local price = Stats.sellPrice(e.m.sp, e.m.lvl, e.m.v, snap.bestDepth)
 				if armed ~= e.uid then
 					armed = e.uid
 					Hud.toast("Tap again to sell for " .. Format.abbrev(price) .. " coins", C.Coral)
@@ -583,7 +716,7 @@ function Menus.team()
 				if ok then
 					Sound.play("Coin", 0.7)
 					task.wait(0.5) -- (the snapshot with the sale arrives a moment later)
-					Menus.team() -- (redraws without the sold monster)
+					Menus.team(true) -- (redraws without the sold monster, still in Sell mode)
 				end
 				return
 			end
@@ -597,13 +730,17 @@ function Menus.team()
 			end
 			redraw()
 		end)
-		creatureView(card, e.m.sp, UDim2.new(1, 0, 0, 80))
-		UI.label({ Text = "Lv." .. e.m.lvl .. (if e.m.power then " " .. e.m.power else ""), Size = UDim2.new(1, 0, 0, 18), Position = UDim2.fromOffset(0, 78), Parent = card })
+		local cst = card:FindFirstChildOfClass("UIStroke")
+		if cst then
+			cst.Thickness = 0
+		end
+		creatureView(card, e.m.sp, UDim2.new(1, 0, 0, 92))
+		UI.label({ Text = "Lv." .. e.m.lvl .. (if e.m.power then " " .. e.m.power else ""), MaxText = 22, Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 92), Parent = card })
 		-- damage sticker: how hard this monster hits, per second
-		local dmg = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 9, Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 98), Parent = card })
-		UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(e.m.sp, e.m.lvl, e.m.stars, e.m.v, e.m.x6) + 0.5)) .. "/s", MaxText = 14, Size = UDim2.new(1, -8, 0.8, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = dmg })
-		UI.label({ Text = "Power " .. Format.abbrev(e.p), TextColor3 = C.Gold, MaxText = 15, Size = UDim2.new(1, 0, 0, 16), Position = UDim2.fromOffset(0, 120), Parent = card })
-		UI.label({ Name = "Tick", Text = "IN", TextColor3 = C.Kelp, Size = UDim2.fromOffset(34, 22), Position = UDim2.fromOffset(4, 4), Parent = card })
+		local dmg = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 10, Size = UDim2.new(1, -24, 0, 26), Position = UDim2.fromOffset(12, 118), Parent = card })
+		UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(e.m.sp, e.m.lvl, e.m.stars, e.m.v, e.m.x6) + 0.5)) .. "/s", MaxText = 19, Size = UDim2.new(1, -8, 0.85, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = dmg })
+		UI.label({ Text = "Power " .. Format.abbrev(e.p), TextColor3 = C.Gold, MaxText = 19, Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 146), Parent = card })
+		UI.label({ Name = "Tick", Text = "IN", MaxText = 22, TextColor3 = C.Kelp, Size = UDim2.fromOffset(44, 28), Position = UDim2.fromOffset(6, 4), Parent = card })
 		cards[e.uid] = card
 	end
 	redraw()
@@ -613,28 +750,30 @@ function Menus.team()
 		Menus.close()
 		Hud.toast("Team saved!", C.Kelp)
 	end)
-	UI.button({ Text = "Auto Best", Color = C.Sea, Size = UDim2.fromOffset(150, 50), Position = UDim2.new(1, -206, 1, -12), AnchorPoint = Vector2.new(1, 1), Parent = f }, function()
+	UI.button({ Text = "Auto Best", Color = C.Sea, Size = UDim2.fromOffset(130, 50), Position = UDim2.new(1, -206, 1, -12), AnchorPoint = Vector2.new(1, 1), Parent = f }, function()
 		State.action("Team", {})
 		Menus.close()
 		Hud.toast("Your strongest monsters will fight", C.Kelp)
 	end)
-	sellBtn = UI.button({ Text = if sellMode then "Sell: ON" else "Sell: off", Color = C.Muted, Size = UDim2.fromOffset(130, 50), Position = UDim2.new(0, 226, 1, -12), AnchorPoint = Vector2.new(0, 1), Parent = f }, function()
+	-- a bright orange button that says what it does; it turns red while Sell mode is on
+	local SELL_OFF, SELL_ON = Color3.fromRGB(255, 150, 40), Color3.fromRGB(235, 60, 60)
+	sellBtn = UI.button({ Text = if sellMode then "SELLING!" else "Sell Monsters", Color = SELL_OFF, Size = UDim2.fromOffset(184, 50), Position = UDim2.new(0, 204, 1, -12), AnchorPoint = Vector2.new(0, 1), Parent = f }, function()
 		sellMode = not sellMode
 		teamSellMode = sellMode
 		armed = nil
-		UI.setText(sellBtn :: GuiObject, if sellMode then "Sell: ON" else "Sell: off")
-		;(sellBtn :: GuiObject).BackgroundColor3 = if sellMode then C.Coral else Color3.new(1, 1, 1)
+		UI.setText(sellBtn :: GuiObject, if sellMode then "SELLING!" else "Sell Monsters")
+		;(sellBtn :: GuiObject).BackgroundColor3 = if sellMode then SELL_ON else SELL_OFF
 		if sellMode then
 			Hud.toast("Tap a monster twice to sell it", C.Coral)
 		end
 		redraw()
 	end)
 	if sellMode then
-		(sellBtn :: GuiObject).BackgroundColor3 = C.Coral
+		(sellBtn :: GuiObject).BackgroundColor3 = SELL_ON
 	end
 	redraw()
 	if nextPrice then
-		UI.button({ Text = "+1 Slot  " .. Format.abbrev(nextPrice), Color = C.Gold, Size = UDim2.fromOffset(200, 50), Position = UDim2.new(0, 16, 1, -12), AnchorPoint = Vector2.new(0, 1), Parent = f }, function()
+		UI.button({ Text = "+1 Slot  " .. Format.abbrev(nextPrice), Color = C.Gold, Size = UDim2.fromOffset(176, 50), Position = UDim2.new(0, 16, 1, -12), AnchorPoint = Vector2.new(0, 1), Parent = f }, function()
 			local ok, msg = State.action("TeamSlot")
 			Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
 			if ok then
@@ -797,7 +936,7 @@ function Menus.powers()
 		end
 	end)
 	UI.button({ Text = "5 Spins  R$" .. Config.PRODUCTS.PowerSpins.price, Color = C.Pearl, Size = UDim2.fromOffset(200, 54), Position = UDim2.new(1, -268, 1, -12), AnchorPoint = Vector2.new(1, 1), Parent = f }, function()
-		prompt("Product", "PowerSpins")
+		detail("Product", "PowerSpins")
 	end)
 end
 
@@ -806,24 +945,26 @@ end
 ---------------------------------------------------------------------------
 function Menus.gifts()
 	local snap = State.snapshot
-	local _, body = window("Free Gifts", Vector2.new(760, 590), C.Kelp)
-	local grid = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 340), Parent = body })
-	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 160), CellPadding = UDim2.fromOffset(10, 10), Parent = grid })
+	-- compact: 2 rows of cards, then the social buttons, then the Daily Chest: 530 units tall so
+	-- the whole window fits a phone (the menu is scaled to fit on top of this)
+	local _, body = window("Free Gifts", Vector2.new(760, 530), C.Kelp)
+	local grid = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 300), Parent = body })
+	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 140), CellPadding = UDim2.fromOffset(10, 10), Parent = grid })
 	local labels = {}
 	for i, g in Config.GIFTS do
-		local c = UI.panel({ Size = UDim2.fromOffset(170, 160), Color = Color3.fromRGB(255, 244, 216), Parent = grid })
+		local c = UI.panel({ Size = UDim2.fromOffset(170, 140), Color = Color3.fromRGB(255, 244, 216), Parent = grid })
 		local icon = if g.coins then Config.ICONS.Coin elseif g.pearls then Config.ICONS.Pearl elseif g.spins then Config.ICONS.Power else Config.ICONS.LuckEgg
 		local what = if g.coins then Format.abbrev(g.coins) .. " Coins" elseif g.pearls then g.pearls .. " Pearls" elseif g.spins then "Power Spin" else "Mystery Egg"
 		if g.spell then
 			what ..= " + Spell"
 		end
-		UI.new("ImageLabel", { BackgroundTransparency = 1, Image = icon, Size = UDim2.fromOffset(52, 52), Position = UDim2.new(0.5, 0, 0, 4), AnchorPoint = Vector2.new(0.5, 0), Parent = c })
-		UI.label({ Text = what, Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 56), Parent = c })
+		UI.new("ImageLabel", { BackgroundTransparency = 1, Image = icon, Size = UDim2.fromOffset(44, 44), Position = UDim2.new(0.5, 0, 0, 4), AnchorPoint = Vector2.new(0.5, 0), Parent = c })
+		UI.label({ Text = what, Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 50), Parent = c })
 		-- bonus line: festival shells ride along on some gifts
 		if g.shells then
-			UI.label({ Text = "+ " .. g.shells .. " Shells", TextColor3 = Color3.fromRGB(255, 160, 60), MaxText = 16, Size = UDim2.new(1, -10, 0, 18), Position = UDim2.fromOffset(5, 82), Parent = c })
+			UI.label({ Text = "+ " .. g.shells .. " Shells", TextColor3 = Color3.fromRGB(255, 160, 60), MaxText = 16, Size = UDim2.new(1, -10, 0, 18), Position = UDim2.fromOffset(5, 72), Parent = c })
 		end
-		local btn = UI.button({ Text = "", Color = C.Kelp, Size = UDim2.new(1, -20, 0, 30), Position = UDim2.new(0, 10, 1, -36), Parent = c }, function()
+		local btn = UI.button({ Text = "", Color = C.Kelp, Size = UDim2.new(1, -20, 0, 30), Position = UDim2.new(0, 10, 1, -38), Parent = c }, function()
 			local ok, msg = State.action("Gift", i)
 			Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
 		end)
@@ -831,12 +972,13 @@ function Menus.gifts()
 	end
 	-- social row: joining the group is just a button (no reward for joining); friends who play in
 	-- your server each add +10% battle coins, up to +30% (Config.FRIEND_BOOST / FRIEND_BOOST_MAX)
-	UI.button({ Text = "Join the Crew", Color = C.Sea, Size = UDim2.new(0.5, -16, 0, 50), Position = UDim2.fromOffset(10, 352), Parent = body }, function()
+	UI.button({ Text = "Join the Crew", Color = C.Sea, Size = UDim2.new(0.5, -16, 0, 48), Position = UDim2.fromOffset(10, 308), Parent = body }, function()
 		pcall(function()
 			game:GetService("GroupService"):PromptJoinAsync(Config.GROUP_ID)
 		end)
 	end)
-	UI.button({ Text = "Invite Friends: +10% coins each (max 30%)", Color = Color3.fromRGB(255, 140, 60), Size = UDim2.new(0.5, -16, 0, 50), Position = UDim2.new(0.5, 6, 0, 352), Parent = body }, function()
+	UI.label({ Text = "Friends in your server give +10% coins each (up to +30%)", Stroke = 0, TextColor3 = C.Ink, MaxText = 20, Size = UDim2.new(1, -20, 0, 24), Position = UDim2.fromOffset(10, 360), Parent = body })
+	UI.button({ Text = "Invite Friends", Color = Color3.fromRGB(255, 140, 60), Size = UDim2.new(0.5, -16, 0, 48), Position = UDim2.new(0.5, 6, 0, 308), Parent = body }, function()
 		local SocialService = game:GetService("SocialService")
 		local ok, can = pcall(function()
 			return SocialService:CanSendGameInviteAsync(player)
@@ -1118,6 +1260,84 @@ function Menus.workshop()
 end
 
 ---------------------------------------------------------------------------
+-- Dockyard (harbour): the ship's store. Egg Luck, Fast Reel and the Shipwright are bought here
+-- (the server's "Upgrade" action); the fourth card opens the Ship Workshop.
+---------------------------------------------------------------------------
+function Menus.dockyard()
+	local frame, body = window("Dockyard", Vector2.new(880, 480), Color3.fromRGB(70, 150, 255))
+	local function redraw()
+		for _, ch in body:GetChildren() do
+			ch:Destroy()
+		end
+		local snap = State.snapshot
+		if not snap then
+			return
+		end
+		local function card(i: number, icon: string, name: string, desc: string, status: string, btn: string, canBuy: boolean, onClick: () -> ())
+			local c = UI.panel({ Size = UDim2.new(0.25, -10, 0, 340), Position = UDim2.new(0.25 * (i - 1), 5, 0, 0), Color = Color3.fromRGB(230, 242, 255), Parent = body })
+			UI.new("ImageLabel", { BackgroundTransparency = 1, Image = icon, Size = UDim2.fromOffset(72, 72), Position = UDim2.new(0.5, 0, 0, 8), AnchorPoint = Vector2.new(0.5, 0), Parent = c })
+			UI.label({ Text = name, MaxText = 24, Size = UDim2.new(1, -10, 0, 30), Position = UDim2.fromOffset(5, 86), Parent = c })
+			UI.label({ Text = desc, Stroke = 0, TextColor3 = C.Ink, MaxText = 16, TextWrapped = true, Size = UDim2.new(1, -16, 0, 52), Position = UDim2.fromOffset(8, 120), Parent = c })
+			UI.label({ Text = status, Stroke = 0, TextColor3 = C.Deep, MaxText = 18, TextWrapped = true, Size = UDim2.new(1, -16, 0, 50), Position = UDim2.fromOffset(8, 180), Parent = c })
+			UI.button({ Text = btn, Color = if canBuy then C.Kelp else C.Muted, Size = UDim2.new(1, -20, 0, 48), Position = UDim2.new(0, 10, 1, -58), Parent = c }, onClick)
+		end
+		local function buy(id: string)
+			return function()
+				local ok = State.action("Upgrade", id) -- the server toasts what happened
+				if ok then
+					Sound.play("Upgrade", 0.8)
+				end
+			end
+		end
+		local ups = snap.upgrades or {}
+		-- Egg Luck
+		local luck = ups.Luck or 0
+		local luckPrice = Stats.upgradePrice("Luck", luck)
+		card(1, Config.ICONS.LuckEgg, Config.UPGRADES.Luck.name, Config.UPGRADES.Luck.desc,
+			"Level " .. luck .. " / " .. Config.UPGRADES.Luck.max .. "\n+" .. luck * 10 .. "% luck" .. (if luckPrice then "  >  +" .. (luck + 1) * 10 .. "%" else ""),
+			if luckPrice then Format.abbrev(luckPrice) .. " Coins" else "MAX", luckPrice ~= nil and snap.coins >= luckPrice, buy("Luck"))
+		-- Fast Reel
+		local reel = ups.Pedestals or 1
+		local reelPrice = Stats.upgradePrice("Pedestals", reel)
+		card(2, Config.ICONS.Pedestal, Config.UPGRADES.Pedestals.name, Config.UPGRADES.Pedestals.desc,
+			"Level " .. reel .. " / " .. Config.UPGRADES.Pedestals.max .. "\n-" .. (reel - 1) * 8 .. "% reel time" .. (if reelPrice then "  >  -" .. reel * 8 .. "%" else ""),
+			if reelPrice then Format.abbrev(reelPrice) .. " Coins" else "MAX", reelPrice ~= nil and snap.coins >= reelPrice, buy("Pedestals"))
+		-- Shipwright
+		local tier = snap.shipTier or 0
+		local nextTier = tier + 1
+		local shipStatus, shipBtn, shipCan = "", "MAX", false
+		if nextTier > #Config.SHIP_TIERS then
+			shipStatus = "Royal Flagship!\nEvery upgrade built"
+		else
+			shipStatus = "Tier " .. nextTier .. " / " .. #Config.SHIP_TIERS .. "\nNext: " .. Config.SHIP_TIERS[nextTier]
+			if snap.bestDepth < Stats.shipTierDepth(nextTier) then
+				shipBtn = "Clear stage " .. (Stats.shipTierStage(nextTier) - 2)
+			else
+				local p = Stats.shipTierPrice(nextTier)
+				shipBtn = Format.abbrev(p) .. " Coins"
+				shipCan = snap.coins >= p
+			end
+		end
+		card(3, Config.ICONS.Event, "Shipwright", "A better-looking ship, a little more coins and faster hatching with every tier.", shipStatus, shipBtn, shipCan, buy("Ship"))
+		-- Ship Workshop
+		card(4, Config.ICONS.Shop, "Ship Workshop", "Cannons, hull plating and paint. Small battle boosts and a ship that is yours.", "Fittings + paint", "Open", true, function()
+			Sound.play("Click")
+			Menus.workshop()
+		end)
+		UI.label({ Text = 'You have <font color="#FFCD32">' .. Format.abbrev(snap.coins) .. " coins</font>. Battle to earn more!", Stroke = 0, TextColor3 = C.Ink, MaxText = 18, Size = UDim2.new(1, -12, 0, 28), Position = UDim2.fromOffset(6, 352), Parent = body })
+	end
+	redraw()
+	local conn: RBXScriptConnection
+	conn = State.Changed:Connect(function()
+		if open ~= frame then
+			conn:Disconnect()
+			return
+		end
+		redraw()
+	end)
+end
+
+---------------------------------------------------------------------------
 -- Egg Shop (harbour)
 ---------------------------------------------------------------------------
 function Menus.eggShop()
@@ -1150,7 +1370,7 @@ local GUIDE_PAGES = {
 	{ icon = "LuckEgg", title = "1. Fish for Eggs", text = "Go to the <font color=\"#FFCD32\">fishing rod</font> on your ship. It dives through the sea zones, and the deeper it goes the rarer the egg. Buy the egg on a pedestal with <font color=\"#FFCD32\">coins</font> and carry it to a <font color=\"#FFCD32\">nest</font>." },
 	{ icon = "Heart", title = "2. Hatch and Fuse", text = "When the timer ends, <font color=\"#FFCD32\">open</font> your egg. To <font color=\"#FFCD32\">FUSE</font>, pick one monster and then another of the <font color=\"#FFCD32\">same level</font>. Both are used up and one new, stronger monster comes out!" },
 	{ icon = "Swords", title = "3. Dive and Fight", text = "Press <font color=\"#FFCD32\">FIGHT!</font> and your team battles by itself. Every 15 depths is a <font color=\"#FFCD32\">boss</font> with a timer. You earn coins and pearls even when you lose, and your team keeps fighting while you are away." },
-	{ icon = "Pedestal", title = "4. Upgrade Your Ship", text = "The wooden boards on your deck buy <font color=\"#FFCD32\">Egg Luck</font>, more <font color=\"#FFCD32\">pedestals</font> and nests. Fuse 20 times and save 30K coins to unlock the <font color=\"#FFCD32\">Quarterdeck</font> with extra nests." },
+	{ icon = "Pedestal", title = "4. Upgrade Your Ship", text = "The <font color=\"#FFCD32\">Dockyard</font> in the harbour sells <font color=\"#FFCD32\">Egg Luck</font>, a <font color=\"#FFCD32\">faster reel</font>, ship upgrades and paint. Fuse " .. Config.FLOOR2.fuses .. " times and save " .. Format.abbrev(Config.FLOOR2.coins) .. " coins to unlock the <font color=\"#FFCD32\">Quarterdeck</font> with extra nests." },
 	{ icon = "Shop", title = "5. Explore the Harbour", text = "<font color=\"#FFCD32\">Treasure Shop</font>: boosts and codes. <font color=\"#FFCD32\">Egg Shop</font>: rare eggs for pearls. <font color=\"#FFCD32\">Museum</font>: your monster index. <font color=\"#FFCD32\">Power Shrine</font> and <font color=\"#FFCD32\">Spellbook</font>: buffs. A red <font color=\"#FF5A5A\">!</font> means something is waiting for you." },
 	{ icon = "Gift", title = "Free Stuff!", text = "Your ship has a <font color=\"#FFCD32\">Gift Chest</font> with presents for playing and a daily chest. Only you can board your ship, so everything on it is yours. Good luck, Captain!" },
 }

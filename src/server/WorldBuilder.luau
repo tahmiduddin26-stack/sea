@@ -21,8 +21,10 @@ export type Ship = {
 	model: Model,
 	nests: { BasePart }, -- nest pads, in Config.NEST_SLOTS order
 	winch: BasePart,
+	deepWinch: BasePart, -- the Deep Rod's hit box (DeepRodPrompt, DeepSign)
+	abyssWinch: BasePart, -- the Abyss Rod's hit box on the Floor 3 balcony (AbyssRodPrompt, AbyssSign)
 	pedestals: { BasePart },
-	boards: { [string]: BasePart }, -- Luck, Pedestals, Floor
+	boards: { [string]: BasePart }, -- Floor (the rest of the upgrades are bought at the town's Dockyard)
 	arenaCf: CFrame, -- arena centre at the water surface, -Z faces the enemy side
 	spawnCf: CFrame,
 	sign: BillboardGui,
@@ -75,7 +77,7 @@ local function label(parent: Instance, text: string, size: UDim2, offset: Vector
 	bb.Size = UDim2.fromScale(size.X.Offset / 22, size.Y.Offset / 22)
 	bb.StudsOffset = offset
 	bb.LightInfluence = 0
-	bb.MaxDistance = 140
+	bb.MaxDistance = 45 -- signs on a ship show only when you are near them
 	bb.Parent = parent
 	local t = Instance.new("TextLabel")
 	t.Name = "Text"
@@ -138,6 +140,7 @@ local function buildHub(world: Folder)
 	local c = CFrame.new(WorldBuilder.hubCenter)
 	-- stacked blocky island: sand ring then grass top
 	local r = Config.HUB_RADIUS
+	local TOWN_K = r / 78 -- how much roomier the island is than the layout the numbers below were drawn on
 	box(hub, c, Vector3.new(r * 2, 6, r * 2), Vector3.new(0, -1, 0), SAND, Enum.Material.Sand)
 	box(hub, c, Vector3.new(r * 1.7, 3, r * 1.7), Vector3.new(0, 3.5, 0), GRASS, Enum.Material.Grass)
 	for i = 0, 7 do
@@ -211,10 +214,10 @@ local function buildHub(world: Folder)
 	-- three palms in front of the outer vendors, and a ring near the shore that keeps clear of
 	-- the docks (every 60 deg), the vendors (30 + 60k) and the striped towers (diagonals)
 	for i, az in { 90, 210, 330 } do
-		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 38), 100 + i)
+		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 38 * TOWN_K), 100 + i)
 	end
 	for i, az in { 14, 74, 106, 166, 194, 254, 286, 346 } do
-		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 62), 200 + i)
+		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 58 * TOWN_K), 200 + i)
 	end
 
 	---------------------------------------------------------------------------
@@ -222,8 +225,9 @@ local function buildHub(world: Folder)
 	-- between the dock paths: six on the outer ring, three on the inner ring. Their fronts
 	-- face the lighthouse (+Z of the frame). The town is 25% roomier than v1 (TOWN_SCALE).
 	---------------------------------------------------------------------------
+	-- `radius` is in the old (HUB_RADIUS 78) layout; TOWN_K spreads every vendor out with the island
 	local function slot(angDeg: number, radius: number): CFrame
-		return c * CFrame.Angles(0, math.rad(angDeg), 0) * CFrame.new(0, 5, -radius)
+		return c * CFrame.Angles(0, math.rad(angDeg), 0) * CFrame.new(0, 5, -radius * TOWN_K)
 	end
 	-- the invisible anchor carries the prompt and the floating name
 	local function vendorTag(m: Model, f: CFrame, title: string, sub: string, color: Color3, signY: number, promptName: string, action: string)
@@ -485,6 +489,90 @@ local function buildHub(world: Folder)
 		vendorTag(m, f, "Power Shrine", "Spin Tide Powers", O, 17, "PowerPrompt", "Open")
 	end
 
+	-- Dockyard (inner, blue): the ship's store. A pier shed with a ship's wheel, an anchor, paint
+	-- cans and a model ship on the counter. Egg Luck, Fast Reel, the Shipwright and the Ship
+	-- Workshop are bought here (client Menus.dockyard) instead of from boards on the deck.
+	-- Roof underside is 11 up and the Shipwright's hat ends near 9.5, so nothing clips.
+	do
+		local f = slot(150, 30)
+		local m = newVendor("Dockyard")
+		local NAVY = Color3.fromRGB(35, 70, 130)
+		local BLUE = Color3.fromRGB(70, 150, 255)
+		local METAL = Color3.fromRGB(70, 74, 96)
+		local function cyl(x: number, y: number, z: number, h: number, d: number, color: Color3, mat: Enum.Material?): BasePart
+			-- an upright cylinder (Roblox cylinders lie along X, so turn it up)
+			local p = box(m, f, Vector3.new(h, d, d), Vector3.zero, color, mat)
+			p.Shape = Enum.PartType.Cylinder
+			p.CFrame = f * CFrame.new(x, y, z) * CFrame.Angles(0, 0, math.rad(90))
+			return p
+		end
+		-- pier deck and the shed: back wall, two back posts, two front posts, a stepped blue roof
+		box(m, f, Vector3.new(26, 1, 17), Vector3.new(0, 0.5, 0), WOOD_LIGHT, Enum.Material.Wood)
+		box(m, f, Vector3.new(22, 9.5, 1), Vector3.new(0, 5.75, -7), Color3.fromRGB(60, 110, 175))
+		for _, x in { -11, 11 } do
+			box(m, f, Vector3.new(1.2, 10.4, 1.2), Vector3.new(x, 6.2, -7), WOOD_DARK)
+			box(m, f, Vector3.new(1.2, 10.4, 1.2), Vector3.new(x, 6.2, 6), WOOD_DARK)
+		end
+		box(m, f, Vector3.new(27, 1.2, 16.5), Vector3.new(0, 11.6, -0.5), NAVY)
+		box(m, f, Vector3.new(23, 1.2, 12.5), Vector3.new(0, 12.8, -0.5), Color3.fromRGB(55, 105, 185))
+		box(m, f, Vector3.new(17, 1.2, 8), Vector3.new(0, 14, -0.5), BLUE)
+		-- white stripe along the front of the roof
+		box(m, f, Vector3.new(27.2, 0.5, 0.5), Vector3.new(0, 11.6, 7.8), Color3.fromRGB(250, 250, 255))
+		-- pennant on top
+		box(m, f, Vector3.new(0.4, 4, 0.4), Vector3.new(0, 16.6, -0.5), WOOD_DARK)
+		box(m, f, Vector3.new(0.3, 1.6, 3), Vector3.new(0, 17.6, 1.2), Color3.fromRGB(240, 60, 60))
+		-- the ship's wheel on the back wall (right of the Shipwright)
+		do
+			local wc = Vector3.new(6.8, 7.4, -6.2)
+			for _, deg in { 0, 45, 90, 135 } do
+				box(m, f * CFrame.new(wc) * CFrame.Angles(0, 0, math.rad(deg)), Vector3.new(0.5, 5.4, 0.5), Vector3.zero, WOOD_DARK)
+			end
+			ball(m, f, Vector3.new(1.7, 1.7, 1.7), wc, WOOD)
+			for _, deg in { 0, 45, 90, 135, 180, 225, 270, 315 } do
+				local tip = f * CFrame.new(wc) * CFrame.Angles(0, 0, math.rad(deg)) * CFrame.new(0, 3, 0)
+				ball(m, tip, Vector3.new(0.8, 0.8, 0.8), Vector3.zero, WOOD_LIGHT)
+			end
+		end
+		-- a big anchor leaning on the back wall (left of the Shipwright)
+		do
+			local ax = -7.2
+			box(m, f, Vector3.new(0.9, 8, 0.9), Vector3.new(ax, 5.2, -6), METAL, Enum.Material.Metal)
+			box(m, f, Vector3.new(4.2, 0.9, 0.9), Vector3.new(ax, 8.6, -6), METAL, Enum.Material.Metal)
+			box(m, f, Vector3.new(5.6, 0.9, 0.9), Vector3.new(ax, 2.2, -6), METAL, Enum.Material.Metal)
+			for _, s in { -1, 1 } do
+				box(m, f * CFrame.new(ax + s * 2.6, 3.2, -6) * CFrame.Angles(0, 0, math.rad(s * -35)), Vector3.new(0.9, 2.4, 0.9), Vector3.zero, METAL, Enum.Material.Metal)
+			end
+			ball(m, f, Vector3.new(1.4, 1.4, 1.4), Vector3.new(ax, 9.6, -6), METAL, Enum.Material.Metal)
+		end
+		-- counter (front), with a model ship, a blueprint and paint cans on top
+		box(m, f, Vector3.new(15, 3, 2.4), Vector3.new(0, 2.5, 3.5), WOOD_LIGHT)
+		box(m, f, Vector3.new(15.6, 0.5, 3), Vector3.new(0, 4.25, 3.5), WOOD)
+		do
+			box(m, f, Vector3.new(5, 1.1, 1.8), Vector3.new(4.5, 5.05, 3.5), Color3.fromRGB(150, 90, 50))
+			box(m, f, Vector3.new(0.3, 3.8, 0.3), Vector3.new(4.5, 7.5, 3.5), WOOD_DARK)
+			box(m, f, Vector3.new(2.8, 2.6, 0.2), Vector3.new(4.5, 7.7, 3.5), Color3.fromRGB(250, 246, 232))
+			box(m, f, Vector3.new(2.8, 0.5, 0.25), Vector3.new(4.5, 7.7, 3.5), Color3.fromRGB(240, 60, 60))
+			box(m, f, Vector3.new(2.6, 0.12, 1.6), Vector3.new(-4.6, 4.56, 3.5), Color3.fromRGB(190, 225, 255))
+			local paints = { Color3.fromRGB(255, 150, 80), Color3.fromRGB(190, 90, 220), Color3.fromRGB(70, 210, 200) }
+			for k, col in paints do
+				cyl(-1.4 + (k - 1) * 1.6, 5.05, 3.4, 1.5, 1.2, col)
+			end
+		end
+		-- barrels and crates just off the pier
+		for _, x in { -14.2, 14.2 } do
+			cyl(x, 1.3, 1, 2.6, 2.4, WOOD)
+			cyl(x, 1.3, 1, 0.5, 2.55, WOOD_DARK)
+			box(m, f, Vector3.new(3, 3, 3), Vector3.new(x, 1.5, -3.8), WOOD_LIGHT)
+			box(m, f, Vector3.new(3.1, 0.4, 3.1), Vector3.new(x, 3, -3.8), WOOD_DARK)
+		end
+		-- lanterns on the front posts
+		for _, x in { -11, 11 } do
+			local lamp = ball(m, f, Vector3.new(1.5, 1.5, 1.5), Vector3.new(x, 9.2, 6.8), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
+			glow(m, lamp, Color3.fromRGB(255, 200, 120), 12, 0.8)
+		end
+		vendorTag(m, f, "Dockyard", "Ship upgrades", BLUE, 19, "DockyardPrompt", "Open")
+	end
+
 	-- the Deepest Divers leaderboard: a big wooden board on two posts (outer ring)
 	do
 		local f = slot(330, 55)
@@ -543,13 +631,16 @@ local function buildHub(world: Folder)
 			local m = hub:FindFirstChild(vendor) or hub
 			Npc.build(m, f * CFrame.new(pos) * CFrame.Angles(0, math.pi + math.rad(yawDeg), 0), spec, seed)
 		end
-		stand("TreasureShop", slot(30, 55), Vector3.new(0, 1, -0.5), 0, { name = "Pirate", anim = "present", shirt = Color3.fromRGB(190, 55, 55), hat = "tricorn", hatColor = Color3.fromRGB(40, 36, 50), beard = Color3.fromRGB(50, 34, 24), skin = Color3.fromRGB(224, 172, 120) }, 1)
+		stand("TreasureShop", slot(30, 55), Vector3.new(0, 1, -0.5), 0, { name = "Pirate", scale = 1.0, anim = "present", shirt = Color3.fromRGB(190, 55, 55), hat = "tricorn", hatColor = Color3.fromRGB(40, 36, 50), beard = Color3.fromRGB(50, 34, 24), skin = Color3.fromRGB(224, 172, 120) }, 1)
 		stand("EggShopStand", slot(90, 55), Vector3.new(0, 0, 8.6), 0, { name = "Egg Farmer", anim = "present", shirt = Color3.fromRGB(80, 160, 240), hat = "straw", pants = Color3.fromRGB(110, 80, 50) }, 2)
-		stand("EventStand", slot(150, 55), Vector3.new(0, 0, -2.6), 0, { name = "Festival Host", anim = "wave", shirt = Color3.fromRGB(255, 140, 40), hat = "party", hatColor = Color3.fromRGB(255, 90, 90) }, 3)
+		stand("EventStand", slot(150, 55), Vector3.new(0, 0, -2.6), 0, { name = "Festival Host", scale = 0.9, anim = "wave", shirt = Color3.fromRGB(255, 140, 40), hat = "party", hatColor = Color3.fromRGB(255, 90, 90) }, 3)
 		stand("CrateStand", slot(210, 55), Vector3.new(0, 3, 2), 0, { name = "Mystic", anim = "hover", shirt = Color3.fromRGB(110, 60, 180), hat = "hood", hatColor = Color3.fromRGB(80, 44, 140), skin = Color3.fromRGB(245, 195, 150) }, 4)
 		stand("BundleStand", slot(270, 55), Vector3.new(0, 0, 6.2), 0, { name = "Gift Wrapper", anim = "present", shirt = Color3.fromRGB(60, 200, 120), hat = "cap", hatColor = Color3.fromRGB(255, 90, 120), prop = "gift" }, 5)
 		stand("Museum", slot(210, 30), Vector3.new(0, 0.8, 5.4), 0, { name = "Curator", anim = "read", shirt = Color3.fromRGB(70, 150, 255), glasses = true, prop = "book", pants = Color3.fromRGB(50, 56, 90) }, 6)
 		stand("PowerShrine", slot(330, 30), Vector3.new(0, 2, 5.2), 0, { name = "Shrine Keeper", anim = "hover", shirt = Color3.fromRGB(235, 150, 45), hat = "hood", hatColor = Color3.fromRGB(200, 110, 30), skin = Color3.fromRGB(176, 120, 80) }, 7)
+		-- the Shipwright: behind the counter (z -1.5 keeps the forward-held arms clear of it) on the
+		-- pier deck (top y = 1); the roof is 11 up so the cap fits under it
+		stand("Dockyard", slot(150, 30), Vector3.new(0, 1, -1.5), 0, { name = "Shipwright", anim = "present", shirt = Color3.fromRGB(70, 150, 255), pants = Color3.fromRGB(40, 56, 100), hat = "cap", hatColor = Color3.fromRGB(35, 70, 130), beard = Color3.fromRGB(120, 78, 44), skin = Color3.fromRGB(224, 172, 120) }, 10)
 		stand("Spellbook", slot(90, 30), Vector3.new(-6.2, 0, 3.4), -25, { name = "Wizard", anim = "read", shirt = Color3.fromRGB(110, 50, 170), hat = "wizard", hatColor = Color3.fromRGB(90, 44, 150), beard = Color3.fromRGB(240, 240, 245), prop = "scroll" }, 8)
 
 		-- the Guide, at the lighthouse door
@@ -574,14 +665,14 @@ local function buildHub(world: Folder)
 		for i = 1, Config.SHIP_COUNT do
 			local a = (i - 1) / Config.SHIP_COUNT * math.pi * 2
 			local f = grassTop * CFrame.Angles(0, a, 0)
-			for k = 0, 8 do
+			for k = 0, 11 do
 				box(hub, f, Vector3.new(5.5, 0.2, 4), Vector3.new((k % 2) * 0.7 - 0.35, 0, 22 + k * 5.2), STONE, Enum.Material.Slate)
 			end
 		end
 		local towerCols = { Color3.fromRGB(150, 90, 230), Color3.fromRGB(60, 160, 255), Color3.fromRGB(255, 120, 160), Color3.fromRGB(80, 200, 140) }
 		for i = 0, 3 do
 			local a = (i + 0.5) / 4 * math.pi * 2
-			local tf = c * CFrame.Angles(0, a, 0) * CFrame.new(0, 5, -62)
+			local tf = c * CFrame.Angles(0, a, 0) * CFrame.new(0, 5, -76)
 			for k = 0, 4 do
 				box(hub, tf, Vector3.new(6 - k * 0.3, 3, 6 - k * 0.3), Vector3.new(0, 1.5 + k * 3, 0), if k % 2 == 0 then Color3.fromRGB(245, 245, 250) else towerCols[i + 1])
 			end
@@ -597,13 +688,13 @@ local function buildHub(world: Folder)
 		local flowerCols = { Color3.fromRGB(255, 90, 120), Color3.fromRGB(255, 210, 60), Color3.fromRGB(160, 110, 255), Color3.fromRGB(255, 255, 255) }
 		for i = 0, 23 do
 			local a = math.rad((i // 4) * 60 + (if i % 2 == 0 then 9 else -9))
-			local ff = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, 28 + (i % 4) * 8.5)
+			local ff = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, 34 + (i % 4) * 12)
 			box(hub, ff, Vector3.new(0.8, 0.8, 0.8), Vector3.new(0, 0.4, 0), flowerCols[i % 4 + 1])
 			box(hub, ff, Vector3.new(0.3, 0.5, 0.3), Vector3.new(0.9, 0.25, 0.4), Color3.fromRGB(70, 170, 70))
 		end
 		for i = 0, 15 do
 			local a = (i + 0.5) / 16 * math.pi * 2
-			local lf = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, -66)
+			local lf = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, -79)
 			box(hub, lf, Vector3.new(0.5, 5, 0.5), Vector3.new(0, 2.5, 0), Color3.fromRGB(40, 44, 60))
 			local lamp = box(hub, lf, Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 5.5, 0), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
 			local pl = Instance.new("PointLight")
@@ -705,6 +796,25 @@ local function paintBoard(board: BasePart, title: string, sub: string, subColor:
 	end
 	line(title, 22, 84, Color3.fromRGB(255, 255, 255))
 	line(sub, 120, 64, subColor)
+	-- a glowing neon rim says "this one is clickable"
+	local S = board.Size
+	local rimColor = Color3.fromRGB(255, 225, 60)
+	local function bar(size: Vector3, offset: Vector3)
+		local p = Instance.new("Part")
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.Material = Enum.Material.Neon
+		p.Color = rimColor
+		p.Size = size
+		p.CFrame = board.CFrame * CFrame.new(offset)
+		p.Parent = board
+	end
+	local t, z = 0.35, -(S.Z / 2 + 0.05)
+	bar(Vector3.new(S.X, t, 0.2), Vector3.new(0, S.Y / 2 - t / 2, z))
+	bar(Vector3.new(S.X, t, 0.2), Vector3.new(0, -S.Y / 2 + t / 2, z))
+	bar(Vector3.new(t, S.Y, 0.2), Vector3.new(S.X / 2 - t / 2, 0, z))
+	bar(Vector3.new(t, S.Y, 0.2), Vector3.new(-S.X / 2 + t / 2, 0, z))
 end
 
 -- Boarding stairs: from the water (port side) or the arena gangplank (starboard side) up the hull
@@ -823,7 +933,10 @@ local function buildShip(world: Folder, index: number): Ship
 		ramp.CFrame = cf * CFrame.new(0, deck + rise / 2, qz0 - run / 2)
 		ramp.Parent = model
 	end
-	local barrier = box(model, cf, Vector3.new(14, 12, 1), Vector3.new(0, deck + 6, qz0 - 14.5), Color3.fromRGB(255, 255, 255), Enum.Material.ForceField, { Transparency = 0.5, Name = "Floor2Barrier" })
+	-- A clean glass panel (not ForceField: its shimmer flickered). It sits in FRONT of the rail posts
+	-- (they are at z qz0 - 14) and its feet are a hair above the deck, so nothing pokes through it or
+	-- shares a plane with it; it is 12 wide, filling the gap between the stair side walls.
+	local barrier = box(model, cf, Vector3.new(12, 11.9, 0.6), Vector3.new(0, deck + 0.05 + 11.9 / 2, qz0 - 15.2), Color3.fromRGB(150, 215, 255), Enum.Material.Glass, { Transparency = 0.5, Name = "Floor2Barrier" })
 	label(barrier, "FLOOR LOCKED", UDim2.fromOffset(190, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80))
 	-- Permanent, invisible, tall walls so the gate can't be hopped round (they never open, for anyone;
 	-- the owner walks up the middle of the stairs between them): one along each side of the stairs,
@@ -862,7 +975,23 @@ local function buildShip(world: Folder, index: number): Ship
 	for _, sx in { -1, 1 } do
 		box(model, cf, Vector3.new(0.6, 3, p3len), Vector3.new(sx * 31, f3 + 1.9, p3z0 + p3len / 2), WOOD_DARK)
 	end
-	box(model, cf, Vector3.new(62, 3, 0.6), Vector3.new(0, f3 + 1.9, sternZ - 0.3), WOOD_DARK)
+	-- the stern rail has a gap in the middle onto the Abyss Rod's balcony
+	local BAL_HALF = 14
+	local balZ1 = sternZ + 17 -- back edge of the balcony
+	for _, sx in { -1, 1 } do
+		box(model, cf, Vector3.new(31 - BAL_HALF, 3, 0.6), Vector3.new(sx * (31 + BAL_HALF) / 2, f3 + 1.9, sternZ - 0.3), WOOD_DARK)
+	end
+	-- the Abyss Rod balcony: hangs off the stern at Floor 3 height, held up by braces on the hull
+	box(model, cf, Vector3.new(BAL_HALF * 2, 1, balZ1 - sternZ), Vector3.new(0, f3 - 0.5, (sternZ + balZ1) / 2), WOOD, nil, { Name = "AbyssBalcony" })
+	box(model, cf, Vector3.new(BAL_HALF * 2 - 2, 0.4, balZ1 - sternZ - 1), Vector3.new(0, f3 + 0.2, (sternZ + balZ1) / 2 - 0.5), WOOD_LIGHT)
+	for _, sx in { -1, 1 } do
+		box(model, cf, Vector3.new(0.6, 3, balZ1 - sternZ), Vector3.new(sx * BAL_HALF, f3 + 1.9, (sternZ + balZ1) / 2), WOOD_DARK)
+		-- a diagonal brace from the hull up under the balcony's back corner
+		local a = Vector3.new(sx * (BAL_HALF - 2), deck - 4, sternZ - 0.5)
+		local b = Vector3.new(sx * (BAL_HALF - 2), f3 - 1, balZ1 - 2)
+		box(model, cf * CFrame.lookAt((a + b) / 2, b), Vector3.new(1.4, 1.4, (b - a).Magnitude), Vector3.zero, WOOD_DARK)
+	end
+	box(model, cf, Vector3.new(BAL_HALF * 2, 3, 0.6), Vector3.new(0, f3 + 1.9, balZ1 - 0.3), WOOD_DARK)
 	-- stairs (ten visible steps and a smooth invisible ramp to walk on, like the quarterdeck's)
 	for i = 0, 9 do
 		local h = rise3 / 10 * (i + 1)
@@ -877,7 +1006,9 @@ local function buildShip(world: Folder, index: number): Ship
 		ramp3.CFrame = cf * CFrame.new(28.5, up + rise3 / 2, p3z0 - 7)
 		ramp3.Parent = model
 	end
-	local barrier3 = box(model, cf, Vector3.new(6, 12, 1), Vector3.new(28.5, up + 6, p3z0 - 14.5), Color3.fromRGB(255, 255, 255), Enum.Material.ForceField, { Transparency = 0.5, Name = "Floor3Barrier" })
+	-- the same clean glass gate (see Floor2Barrier): in front of the rail posts (z p3z0 - 14), 5 wide
+	-- between the stair side walls (x 26..31), feet a hair above the quarterdeck
+	local barrier3 = box(model, cf, Vector3.new(5, 11.9, 0.6), Vector3.new(28.5, up + 0.05 + 11.9 / 2, p3z0 - 15.2), Color3.fromRGB(150, 215, 255), Enum.Material.Glass, { Transparency = 0.5, Name = "Floor3Barrier" })
 	label(barrier3, "FLOOR 3 LOCKED", UDim2.fromOffset(210, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80))
 	-- the same permanent invisible side walls for the Floor 3 stairs (x 26..31 on the quarterdeck;
 	-- the outer one fills the gap up to the quarterdeck rail). They start at the gate and run up to
@@ -919,21 +1050,22 @@ local function buildShip(world: Folder, index: number): Ship
 
 	-- fishing station at the port rail: a rod on a stand that casts out to sea for eggs.
 	-- The client animates the Rod model's parts (see BattleView "haul").
-	local wp = Config.WINCH_POS
-	local winchFrame = cf * CFrame.new(wp.X, deck + 0.4, wp.Z)
+	-- built twice: the Egg Rod (port) and the Deep Rod (starboard, Config.DEEP_ROD)
+	local function rodStation(wp: Vector3, yaw: number, rodName: string, hitName: string, promptName: string, objectText: string, signText: string, ringColor: Color3, rodColor: Color3, floorY: number?)
+	local winchFrame = cf * CFrame.new(wp.X, (floorY or deck) + 0.4, wp.Z)
 	local S = Config.ROD_SCALE
-	local rodFrame = winchFrame * CFrame.new(0, 4.2 * S, 0) * CFrame.Angles(0, math.rad(90), 0) -- rod points -Z = out over the port rail
+	local rodFrame = winchFrame * CFrame.new(0, 4.2 * S, 0) * CFrame.Angles(0, math.rad(yaw), 0) -- rod points -Z = out over the rail
 	-- a round fishing platform with a glowing gold ring so the station stands out on deck
 	local plat = box(model, winchFrame, Vector3.new(1.2, 12, 12), Vector3.new(0, 0.6, 0), WOOD_DARK)
 	plat.Shape = Enum.PartType.Cylinder
 	plat.CFrame = winchFrame * CFrame.new(0, 0.6, 0) * CFrame.Angles(0, 0, math.rad(90))
 	for k = 0, 15 do
 		local a = k / 16 * math.pi * 2
-		box(model, winchFrame * CFrame.Angles(0, a, 0), Vector3.new(2.2, 0.25, 0.5), Vector3.new(0, 1.3, 6.2), Color3.fromRGB(255, 210, 70), Enum.Material.Neon, { CanCollide = false })
+		box(model, winchFrame * CFrame.Angles(0, a, 0), Vector3.new(2.2, 0.25, 0.5), Vector3.new(0, 1.3, 6.2), ringColor, Enum.Material.Neon, { CanCollide = false })
 	end
 	box(model, winchFrame, Vector3.new(1.4 * S, 4.2 * S - 1.2, 1.4 * S), Vector3.new(0, 1.2 + (4.2 * S - 1.2) / 2, 0), WOOD)
 	local rod = Instance.new("Model")
-	rod.Name = "Rod"
+	rod.Name = rodName
 	rod.Parent = model
 	rod:SetAttribute("RodCf", rodFrame)
 	-- rest pose = frame 0 of the Blender rod animation (shared/RodAnim)
@@ -948,20 +1080,45 @@ local function buildShip(world: Folder, index: number): Ship
 	rodPart("RodHandle", Vector3.new(0.9, 0.9, 5), Color3.fromRGB(240, 60, 60))
 	rodPart("RodS1", Vector3.new(0.55, 0.55, 7.6), Color3.fromRGB(250, 235, 190))
 	rodPart("RodS2", Vector3.new(0.5, 0.5, 7.5), Color3.fromRGB(250, 235, 190))
-	rodPart("RodS3", Vector3.new(0.35, 0.35, 7.6), Color3.fromRGB(255, 120, 90))
-	local reel = rodPart("RodReel", Vector3.new(1.6, 1.6, 1.6), Color3.fromRGB(255, 205, 50))
+	rodPart("RodS3", Vector3.new(0.35, 0.35, 7.6), rodColor)
+	local reel = rodPart("RodReel", Vector3.new(1.6, 1.6, 1.6), ringColor)
 	reel.Shape = Enum.PartType.Ball
-	local winch = box(model, winchFrame, Vector3.new(10, 8, 10), Vector3.new(0, 4, 0), Color3.new(1, 1, 1), nil, { Transparency = 1, CanCollide = false, Name = "Winch" })
-	local wpp = prompt(winch, "Fish", "Egg Rod", 0.35, 14)
-	wpp.Name = "WinchPrompt"
-	local sign = label(winch, "FISH FOR EGGS!", UDim2.fromOffset(360, 70), Vector3.new(0, 13, 0), Color3.fromRGB(255, 220, 80))
+	local winch = box(model, winchFrame, Vector3.new(10, 8, 10), Vector3.new(0, 4, 0), Color3.new(1, 1, 1), nil, { Transparency = 1, CanCollide = false, Name = hitName })
+	local wpp = prompt(winch, "Fish", objectText, 0.35, 14)
+	wpp.Name = promptName
+	local sign = label(winch, signText, UDim2.fromOffset(360, 70), Vector3.new(0, 13, 0), ringColor)
 	sign.MaxDistance = 260
+	return winch, sign
+	end
+	local winch = rodStation(Config.WINCH_POS, 90, "Rod", "Winch", "WinchPrompt", "Egg Rod", "FISH FOR EGGS!", Color3.fromRGB(255, 210, 70), Color3.fromRGB(255, 120, 90))
+	-- the Deep Rod: points out over the starboard rail. Its sign is rewritten by the owner's
+	-- client (DeepRodView) with the unlock / cooldown countdown.
+	local deepWinch, dsign = rodStation(Config.DEEP_ROD.pos, -90, "DeepRod", "DeepWinch", "DeepRodPrompt", "Deep Rod", "DEEP ROD", Color3.fromRGB(150, 110, 255), Color3.fromRGB(120, 230, 255))
+	dsign.Name = "DeepSign"
+	-- the Abyss Rod: on the Floor 3 balcony, pointing straight out astern. Its sign is rewritten by
+	-- the owner's client (ShipView) with Floor 3 / unlock / cooldown.
+	local abyssWinch, asign = rodStation(Config.ABYSS_ROD.pos, 180, "AbyssRod", "AbyssWinch", "AbyssRodPrompt", "Abyss Rod", "ABYSS ROD", Color3.fromRGB(255, 60, 150), Color3.fromRGB(255, 120, 220), f3)
+	asign.Name = "AbyssSign"
 
 	-- egg pedestals
 	local pedestals = {}
 	for i, pp in Config.PEDESTAL_POS do
 		local frame = cf * CFrame.new(pp.X, deck + 0.4, pp.Z)
 		local ped = box(model, frame, Vector3.new(3.4, 1.6, 3.4), Vector3.new(0, 0.8, 0), Color3.fromRGB(80, 170, 230))
+		box(model, frame, Vector3.new(4, 0.5, 4), Vector3.new(0, 0.25, 0), Color3.fromRGB(240, 240, 250))
+		ped.Name = "Pedestal" .. i
+		ped:SetAttribute("PedestalIndex", i)
+		local bpp = prompt(ped, "Buy", "Egg", 0, 8)
+		bpp.Name = "BuyPrompt"
+		bpp:SetAttribute("Live", false)
+		pedestals[i] = ped
+	end
+	-- the Abyss Rod's own pedestal, on its balcony (index #PEDESTAL_POS + 1)
+	do
+		local i = #Config.PEDESTAL_POS + 1
+		local ap = Config.ABYSS_ROD.pedestal
+		local frame = cf * CFrame.new(ap.X, f3 + 0.4, ap.Z)
+		local ped = box(model, frame, Vector3.new(3.4, 1.6, 3.4), Vector3.new(0, 0.8, 0), Color3.fromRGB(200, 60, 150))
 		box(model, frame, Vector3.new(4, 0.5, 4), Vector3.new(0, 0.25, 0), Color3.fromRGB(240, 240, 250))
 		ped.Name = "Pedestal" .. i
 		ped:SetAttribute("PedestalIndex", i)
@@ -978,10 +1135,8 @@ local function buildShip(world: Folder, index: number): Ship
 		local p = Vector3.new(x, deck + 0.4, z)
 		return cf * CFrame.lookAt(p, p + face)
 	end
-	boards.Luck = boardPart(model, boardFrame(-30, -12, Vector3.xAxis), Vector3.zero, "Luck")
-	boards.Pedestals = boardPart(model, boardFrame(-30, -2, Vector3.xAxis), Vector3.zero, "Pedestals")
-	-- the Shipwright: spend coins on ship upgrades (looks + small bonuses), port side behind the Team board
-	boards.Ship = boardPart(model, boardFrame(-30, 28, Vector3.xAxis), Vector3.zero, "Ship")
+	-- Egg Luck, Fast Reel, the Shipwright and the Ship Workshop moved to the Dockyard in town:
+	-- only the Floor board is still on the deck, because it sits at the stairs
 	boards.Floor = boardPart(model, boardFrame(-16, qz0 - 1.2, -Vector3.zAxis), Vector3.zero, "Floor")
 	-- Gift Chest (playtime gifts + daily chest) on the starboard side, mid-deck
 	do
@@ -998,24 +1153,18 @@ local function buildShip(world: Folder, index: number): Ship
 	-- Team Board on the port side, mid-deck
 	do
 		local tb = boardPart(model, boardFrame(-30, 12, Vector3.xAxis), Vector3.zero, "Team")
-		tb.Color = Color3.fromRGB(170, 120, 255)
-		paintBoard(tb, "TEAM", "Pick who fights", Color3.fromRGB(255, 230, 120))
-		local tp = prompt(tb, "Open", "Team Board", 0, 10)
+		-- a proper wooden sign on two posts (not a glowing purple slab), so it reads as a sign
+		tb.Color = Color3.fromRGB(150, 100, 60)
+		tb.Material = Enum.Material.Wood
+		paintBoard(tb, "MANAGE YOUR TEAM", "Pick who fights", Color3.fromRGB(255, 240, 90))
+		local tp = prompt(tb, "Open", "Your Team", 0, 10)
 		tp.Name = "TeamPrompt"
-	end
-	-- Ship Workshop: fittings (small battle boosts) and paint, a board on the port side
-	do
-		local wb = boardPart(model, boardFrame(-30, 44, Vector3.xAxis), Vector3.zero, "Workshop")
-		wb.Color = Color3.fromRGB(110, 190, 235)
-		paintBoard(wb, "SHIP WORKSHOP", "Fittings + paint", Color3.fromRGB(255, 230, 120))
-		local wp2 = prompt(wb, "Open", "Ship Workshop", 0, 10)
-		wp2.Name = "WorkshopPrompt"
 	end
 	-- Robux sign on the starboard side of the winch
 	do
 		local sf = boardFrame(29, -12, -Vector3.xAxis)
 		local sb = boardPart(model, sf, Vector3.zero, "FuseLuck")
-		sb.Color = Color3.fromRGB(120, 220, 120)
+		sb.Color = Color3.fromRGB(40, 210, 80)
 		paintBoard(sb, "x2 Fuse Luck", "R$" .. Config.PRODUCTS.FuseLuck.price .. "  ·  15 min", Color3.fromRGB(255, 230, 80))
 		local rp = prompt(sb, "Buy", "Fuse Luck", 0, 10)
 		rp.Name = "RobuxPrompt"
@@ -1095,6 +1244,8 @@ local function buildShip(world: Folder, index: number): Ship
 		model = model,
 		nests = nests,
 		winch = winch,
+		deepWinch = deepWinch,
+		abyssWinch = abyssWinch,
 		pedestals = pedestals,
 		boards = boards,
 		arenaCf = arenaCf,
@@ -1115,34 +1266,68 @@ end
 local TRENCH_HALF = 26
 
 -- where the rod's line drops, in ship space (the client uses the same numbers)
-function WorldBuilder.trenchCenter(shipCf: CFrame): CFrame
-	local wp = Config.WINCH_POS
-	return shipCf * CFrame.new(wp.X - 44, Config.SEA_LEVEL, wp.Z)
+-- kind: nil = Egg Rod, "deep" (or true) = Deep Rod, "abyss" = Abyss Rod (Config.rodInfo)
+function WorldBuilder.trenchCenter(shipCf: CFrame, kind: any): CFrame
+	local p = Config.rodInfo(kind).center
+	return shipCf * CFrame.new(p.X, Config.SEA_LEVEL, p.Z)
 end
 
-function WorldBuilder.buildTrench(ship: Ship)
+-- The terrain of one trench, one pass at a time. Neighbouring ships' trenches overlap, so
+-- WorldBuilder.build runs "walls" for every trench, then "floor" for every trench, then
+-- "shaft" for every trench: water is always carved last and nothing fills it back in.
+function WorldBuilder.trenchTerrain(ship: Ship, deep: any, pass: string)
+	local info = Config.rodInfo(deep)
+	local half = info.half
+	local ZONES = info.zones
+	local H = info.H
 	local terrain = workspace.Terrain
-	local center = WorldBuilder.trenchCenter(ship.cf)
-	local H = Config.FISH_ZONE_HEIGHT
-	local depth = #Config.FISH_ZONES * H + 12
+	local center = WorldBuilder.trenchCenter(ship.cf, deep)
+	local depth = #ZONES * H + 12
+	local mid = center * CFrame.new(0, -depth / 2 - 6, 0)
+	if pass == "walls" then
+		-- four rock walls round an open water shaft (never one solid block, so the shaft stays water)
+		local wallH = depth - 22
+		for s = 0, 3 do
+			local wf = mid * CFrame.new(0, -11, 0) * CFrame.Angles(0, s * math.pi / 2, 0) * CFrame.new(0, 0, -half - 10)
+			terrain:FillBlock(wf, Vector3.new(half * 2 + 40, wallH, 20), Enum.Material.Slate)
+		end
+	elseif pass == "floor" then
+		terrain:FillBlock(center * CFrame.new(0, -depth - 8, 0), Vector3.new(half * 2 + 40, 8, half * 2 + 40), Enum.Material.Sand)
+	elseif pass == "shaft" then
+		-- the shaft in slabs (big single fills can come out patchy)
+		local n = math.ceil((depth + 8) / 60)
+		local slab = (depth + 8) / n
+		for k = 0, n - 1 do
+			local f = center * CFrame.new(0, 2 - slab * (k + 0.5), 0)
+			local size = Vector3.new(half * 2, slab, half * 2)
+			-- water does NOT replace solid terrain (it only fills empty space round it), so clear
+			-- the rock to air first, then flood it
+			terrain:FillBlock(f, size, Enum.Material.Air)
+			terrain:FillBlock(f, size, Enum.Material.Water)
+		end
+	end
+end
+
+-- deep = the Deep Rod's shaft (Config.DEEP_ZONES, narrower, DEEP_ZONE_HEIGHT per zone)
+function WorldBuilder.buildTrench(ship: Ship, deep: any)
+	local info = Config.rodInfo(deep)
+	local TRENCH_HALF = info.half
+	local ZONES = info.zones
+	local terrain = workspace.Terrain
+	local center = WorldBuilder.trenchCenter(ship.cf, deep)
+	local H = info.H
+	local depth = #ZONES * H + 12
 	local mid = center * CFrame.new(0, -depth / 2 - 6, 0)
 	-- four rock walls round an open water shaft (never one solid block, so the shaft stays water)
-	local wallH = depth - 22
-	for s = 0, 3 do
-		local wf = mid * CFrame.new(0, -11, 0) * CFrame.Angles(0, s * math.pi / 2, 0) * CFrame.new(0, 0, -TRENCH_HALF - 10)
-		terrain:FillBlock(wf, Vector3.new(TRENCH_HALF * 2 + 40, wallH, 20), Enum.Material.Slate)
-	end
-	-- the shaft in 4 slabs (big single fills can come out patchy)
-	for k = 0, 3 do
-		local slab = (depth + 8) / 4
-		terrain:FillBlock(center * CFrame.new(0, 2 - slab * (k + 0.5), 0), Vector3.new(TRENCH_HALF * 2, slab, TRENCH_HALF * 2), Enum.Material.Water)
-	end
-	terrain:FillBlock(center * CFrame.new(0, -depth - 8, 0), Vector3.new(TRENCH_HALF * 2 + 40, 8, TRENCH_HALF * 2 + 40), Enum.Material.Sand)
+	-- the rock and water are filled by WorldBuilder.trenchTerrain (in passes over every ship, so a
+	-- neighbour's walls can never fill this shaft back in)
+	local _ = terrain
+	local _ = mid
 
 	local folder = Instance.new("Model")
-	folder.Name = "Trench"
+	folder.Name = if info.kind == "abyss" then "AbyssTrench" elseif info.kind == "deep" then "DeepTrench" else "Trench"
 	folder.Parent = ship.model
-	local rng = Random.new(ship.index * 97)
+	local rng = Random.new(ship.index * 97 + (if info.kind == "abyss" then 11 elseif info.kind == "deep" then 5 else 0))
 	local function wallSpot(y: number): (CFrame, number)
 		-- a point on one of the four walls, facing into the shaft
 		local side = rng:NextInteger(0, 3)
@@ -1163,11 +1348,12 @@ function WorldBuilder.buildTrench(ship: Ship)
 		return p
 	end
 
-	for k, zone in Config.FISH_ZONES do
+	for k, zone in ZONES do
 		local top = Config.SEA_LEVEL - (k - 1) * H
 		local function y(): number
 			return top - rng:NextNumber(4, H - 4)
 		end
+		local look = zone.look or zone.id
 		-- a glowing zone ring at the top of each zone (the hook flies through these)
 		if k > 1 then
 			for s = 0, 3 do
@@ -1186,7 +1372,7 @@ function WorldBuilder.buildTrench(ship: Ship)
 				glow.Transparency = 0.2
 			end
 		end
-		if zone.id == "Shallows" then
+		if look == "Shallows" then
 			for _ = 1, 10 do
 				local f = wallSpot(y())
 				box(folder, f, Vector3.new(rng:NextNumber(4, 9), rng:NextNumber(2, 4), 4), Vector3.zero, Color3.fromRGB(240, 215, 150), Enum.Material.Sand)
@@ -1197,7 +1383,7 @@ function WorldBuilder.buildTrench(ship: Ship)
 				local ray = box(folder, center * CFrame.new(rng:NextNumber(-18, 18), top - 18, rng:NextNumber(-18, 18)) * CFrame.Angles(0, 0, math.rad(12)), Vector3.new(2.5, 36, 0.4), Vector3.zero, Color3.fromRGB(255, 250, 200), Enum.Material.Neon, { CanCollide = false, Transparency = 0.8 })
 				ray.Name = "SunRay" .. r
 			end
-		elseif zone.id == "Kelp" then
+		elseif look == "Kelp" then
 			for _ = 1, 16 do
 				local f = wallSpot(top - H + 1)
 				local h = rng:NextInteger(5, 9)
@@ -1212,7 +1398,7 @@ function WorldBuilder.buildTrench(ship: Ship)
 				local f = wallSpot(y())
 				box(folder, f, Vector3.new(6, 4, 5), Vector3.zero, Color3.fromRGB(90, 110, 80), Enum.Material.Slate)
 			end
-		elseif zone.id == "Reef" then
+		elseif look == "Reef" then
 			local cols = { Color3.fromRGB(255, 110, 150), Color3.fromRGB(255, 160, 60), Color3.fromRGB(180, 100, 255), Color3.fromRGB(60, 220, 200) }
 			for i = 1, 22 do
 				local f = wallSpot(y())
@@ -1231,7 +1417,7 @@ function WorldBuilder.buildTrench(ship: Ship)
 					light(a, Color3.fromRGB(120, 255, 230), 10)
 				end
 			end
-		elseif zone.id == "Wreck" then
+		elseif look == "Wreck" then
 			local WOODW = Color3.fromRGB(90, 70, 55)
 			do
 				local f = center * CFrame.new(-8, top - H + 8, 6) * CFrame.Angles(math.rad(20), math.rad(30), math.rad(-25))
@@ -1253,7 +1439,28 @@ function WorldBuilder.buildTrench(ship: Ship)
 				local f = wallSpot(y())
 				box(folder, f * CFrame.new(0, 0, 2) * CFrame.Angles(0, 0, rng:NextNumber(-1, 1)), Vector3.new(8, 0.8, 1.2), Vector3.zero, WOODW, Enum.Material.WoodPlanks)
 			end
-		elseif zone.id == "Abyss" then
+		elseif look == "Ice" then
+			-- frozen walls: pale ice blocks and glowing crystal spikes
+			for i = 1, 14 do
+				local f = wallSpot(y())
+				box(folder, f * CFrame.new(0, 0, 1.5), Vector3.new(rng:NextNumber(4, 8), rng:NextNumber(3, 6), 3), Vector3.zero, Color3.fromRGB(210, 235, 250), Enum.Material.Ice)
+				if i % 2 == 0 then
+					local c = box(folder, f * CFrame.new(0, 3, 2.5) * CFrame.Angles(math.rad(-30), 0, math.rad(rng:NextNumber(-20, 20))), Vector3.new(1.4, 5, 1.4), Vector3.zero, zone.color, Enum.Material.Neon, { CanCollide = false })
+					light(c, zone.color, 12)
+				end
+			end
+		elseif look == "Vents" then
+			-- volcanic vents: black rock chimneys with glowing lava tops
+			for i = 1, 10 do
+				local f = wallSpot(top - H + 1)
+				local h = rng:NextNumber(5, 14)
+				box(folder, f * CFrame.new(0, h / 2, 2), Vector3.new(3.5, h, 3.5), Vector3.zero, Color3.fromRGB(35, 30, 30), Enum.Material.Basalt)
+				local lava = box(folder, f * CFrame.new(0, h + 0.4, 2), Vector3.new(2.6, 0.8, 2.6), Vector3.zero, zone.color, Enum.Material.Neon, { CanCollide = false })
+				if i % 2 == 0 then
+					light(lava, zone.color, 14)
+				end
+			end
+		elseif look == "Abyss" then
 			for i = 1, 14 do
 				local f = wallSpot(top - H + 1)
 				local h = rng:NextNumber(8, 22)
@@ -1695,6 +1902,17 @@ function WorldBuilder.build()
 	for i = 1, Config.SHIP_COUNT do
 		WorldBuilder.ships[i] = buildShip(world, i)
 		WorldBuilder.buildTrench(WorldBuilder.ships[i])
+		WorldBuilder.buildTrench(WorldBuilder.ships[i], "deep")
+		WorldBuilder.buildTrench(WorldBuilder.ships[i], "abyss")
+		task.wait()
+	end
+	-- trench terrain in passes over EVERY ship (see trenchTerrain): walls, then floors, then water
+	for _, pass in { "walls", "floor", "shaft" } do
+		for i = 1, Config.SHIP_COUNT do
+			WorldBuilder.trenchTerrain(WorldBuilder.ships[i], false, pass)
+			WorldBuilder.trenchTerrain(WorldBuilder.ships[i], "deep", pass)
+			WorldBuilder.trenchTerrain(WorldBuilder.ships[i], "abyss", pass)
+		end
 		task.wait()
 	end
 end

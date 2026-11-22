@@ -11,6 +11,7 @@ local Format = require(Shared.Format)
 
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
+local Platform = require(script.Parent.Platform)
 
 local MissionView = {}
 
@@ -33,19 +34,49 @@ end
 
 function MissionView.init(screen: ScreenGui)
 	local hud = screen:WaitForChild("Hud") :: GuiObject
-	local H = Config.MISSIONS.count * (ROW_H + GAP) + 30
-	local holder = UI.new("Frame", { Name = "Missions", BackgroundTransparency = 1, AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 0.5, -34), Size = UDim2.fromOffset(268, H), Visible = false, Parent = hud })
-	UI.plank({ Text = "MISSIONS", Color = C.Plank, MaxText = 18, TextColor = C.Brass, Size = UDim2.fromOffset(150, 24), Position = UDim2.fromOffset(0, 0), Parent = holder })
+	local holder = UI.new("Frame", { Name = "Missions", BackgroundTransparency = 1, Visible = false, Parent = hud })
+	-- The header is a button: the board is a drop-down (closed on phones and consoles, open on
+	-- PC). While it is closed the little arrow bobs to say "tap me".
+	local header = UI.plank({ Text = "MISSIONS", Color = C.Plank, MaxText = 18, TextColor = C.Brass, Size = UDim2.fromOffset(160, 28), Position = UDim2.fromOffset(0, 0), Parent = holder })
+	local arrow = UI.label({ Text = "▼", MaxText = 16, Stroke = 0, TextColor3 = C.Gold, Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -26, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), ZIndex = 5, Parent = header })
+	local toggleBtn = UI.new("TextButton", { BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1, 1), ZIndex = 6, Parent = header })
 
 	local rows: { [number]: { frame: Frame, fill: Frame, count: TextLabel, title: TextLabel, reward: TextLabel, id: number, shown: number } } = {}
+	local expanded = Platform.mode() == "key"
+
+	-- Phones (touch mode): a compact board tucked under the currencies in the top-left, short
+	-- enough to stay clear of the thumbstick (bottom-left). PC / console: the roomy board on
+	-- the left edge with the reward line.
+	local compact = false
+	local lastOff = 0
+	local rowH, gap = ROW_H, GAP
+	local function layout()
+		compact = Platform.mode() == "touch"
+		-- opened on a phone there is room for bigger rows (the closed board is just the header)
+		rowH, gap = if compact then 46 else ROW_H, if compact then 5 else GAP
+		local H = if expanded then Config.MISSIONS.count * (rowH + gap) + 34 else 30
+		-- narrow so it doesn't run across the screen, with real gaps between the rows
+		holder.Size = UDim2.fromOffset(if compact then 230 else 268, H)
+		arrow.Text = if expanded then "▲" else "▼"
+		if compact then
+			holder.AnchorPoint = Vector2.new(0, 0)
+			lastOff = Platform.topInset()
+			holder.Position = UDim2.fromOffset(14, lastOff + 58) -- under the coins / pearls row
+		else
+			holder.AnchorPoint = Vector2.new(0, 1)
+			holder.Position = UDim2.new(0, 14, 0.5, -34)
+		end
+	end
+	layout()
 
 	local function build(i: number, m: any)
-		local f = UI.panel({ Size = UDim2.new(1, 0, 0, ROW_H), Position = UDim2.fromOffset(0, 30 + (i - 1) * (ROW_H + GAP)), Radius = 14, Parent = holder })
-		local title = UI.label({ Text = label(m), Stroke = 0, TextColor3 = C.Ink, MaxText = 18, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -62, 0, 22), Position = UDim2.fromOffset(10, 4), Parent = f })
-		local count = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Deep, MaxText = 18, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.fromOffset(52, 22), Position = UDim2.new(1, -58, 0, 4), Parent = f })
-		local bar = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(205, 182, 138), BorderSizePixel = 0, Size = UDim2.new(1, -20, 0, 12), Position = UDim2.fromOffset(10, 32), Parent = f }, { UI.corner(6), UI.stroke(2) })
+		local f = UI.panel({ Size = UDim2.new(1, 0, 0, rowH), Position = UDim2.fromOffset(0, 34 + (i - 1) * (rowH + gap)), Radius = 14, Parent = holder })
+		local title = UI.label({ Text = label(m), Stroke = 0, TextColor3 = C.Ink, MaxText = if compact then 22 else 17, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -60, 0, if compact then 26 else 22), Position = UDim2.fromOffset(10, if compact then 3 else 3), Parent = f })
+		local count = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Deep, MaxText = if compact then 22 else 17, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.fromOffset(52, if compact then 26 else 22), Position = UDim2.new(1, -58, 0, 3), Parent = f })
+		-- the bar sits well below the words so the two never touch
+		local bar = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(205, 182, 138), BorderSizePixel = 0, Size = UDim2.new(1, -20, 0, if compact then 10 else 12), Position = UDim2.fromOffset(10, if compact then 33 else 34), Parent = f }, { UI.corner(6), UI.stroke(2) })
 		local fill = UI.new("Frame", { BackgroundColor3 = C.Kelp, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), Parent = bar }, { UI.corner(6) })
-		local reward = UI.label({ Text = "", Stroke = 1.5, TextColor3 = C.Gold, MaxText = 15, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 48), Parent = f })
+		local reward = UI.label({ Text = "", Stroke = 1.5, TextColor3 = C.Gold, MaxText = 15, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 50), Visible = not compact, Parent = f })
 		UI.pop(f, 0.85)
 		rows[i] = { frame = f, fill = fill, count = count, title = title, reward = reward, id = m.id, shown = -1 }
 	end
@@ -55,8 +86,26 @@ function MissionView.init(screen: ScreenGui)
 		if not snap then
 			return
 		end
+		-- the device layout changed (phone <-> PC / console): rebuild the rows at the new size
+		-- and reset the drop-down to that device's default (open on PC, closed elsewhere)
+		if compact ~= (Platform.mode() == "touch") then
+			for i, r in rows do
+				r.frame:Destroy()
+				rows[i] = nil
+			end
+			expanded = Platform.mode() == "key"
+			layout()
+		end
 		local list = snap.missions or {}
 		holder.Visible = snap.tutorial >= Config.TUTORIAL_DONE and #list > 0
+		-- closed: just the header (rows are only built while open)
+		if not expanded then
+			for i, r in rows do
+				r.frame:Destroy()
+				rows[i] = nil
+			end
+			return
+		end
 		for i = 1, Config.MISSIONS.count do
 			local m = list[i]
 			local row = rows[i]
@@ -86,7 +135,43 @@ function MissionView.init(screen: ScreenGui)
 		end
 	end
 	State.Changed:Connect(refresh)
+	toggleBtn.Activated:Connect(function()
+		expanded = not expanded
+		for i, r in rows do
+			r.frame:Destroy()
+			rows[i] = nil
+		end
+		layout()
+		refresh()
+	end)
+	-- while the board is closed the arrow bobs: "tap me"
+	task.spawn(function()
+		local up = true
+		while holder.Parent do
+			if not expanded and holder.Visible then
+				UI.tween(arrow, 0.5, { Position = UDim2.new(1, -26, 0.5, if up then 4 else -3) }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+				up = not up
+			else
+				arrow.Position = UDim2.new(1, -26, 0.5, 0)
+			end
+			task.wait(0.55)
+		end
+	end)
+	layout()
 	refresh()
+	-- also notice a layout change when no data changed (a controller or phone preview kicks in)
+	task.spawn(function()
+		while holder.Parent do
+			task.wait(0.5)
+			if compact ~= (Platform.mode() == "touch") or (compact and math.abs(Platform.topInset() - lastOff) > 1) then
+				if compact == (Platform.mode() == "touch") then
+					layout() -- only the strip under Roblox's buttons changed: move the board
+				else
+					refresh()
+				end
+			end
+		end
+	end)
 end
 
 return MissionView

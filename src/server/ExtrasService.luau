@@ -114,7 +114,7 @@ function ExtrasService.giveRandomEgg(player: Player, sp: string?, lvlExtra: numb
 		species = hybrids[rng:NextInteger(1, #hybrids)]
 	end
 	local egg = { sp = species :: string, lvl = 1 + eggLevelBonus(data) + lvlExtra, stars = stars }
-	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp)) * FarmService.hatchMult(player))
+	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player))
 	return FarmService.giveEgg(player, egg, secs)
 end
 
@@ -258,7 +258,7 @@ function ExtrasService.eggShopBuy(player: Player, id: any): (boolean, string?)
 	local el = els[rng:NextInteger(1, #els)]
 	local sp = Config.TIER_OF[el][item.tier]
 	local egg = { sp = sp, lvl = 1 + eggLevelBonus(data), stars = Stats.stars(sp), v = item.variant }
-	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp)) * FarmService.hatchMult(player))
+	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player))
 	if not FarmService.giveEgg(player, egg, secs) then
 		return false, "Free a nest first!"
 	end

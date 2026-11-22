@@ -72,8 +72,10 @@ function Npc.build(parent: Instance, cf: CFrame, spec: Spec, seed: number?): Mod
 	part(m, "Belt", v(2.3, 0.35, 1.3), at(0, 2.35, 0), NAVY, "Body")
 	part(m, "LArm", v(0.9, 2.3, 0.9), at(-1.6, 3.5, 0), spec.shirt, "LArm")
 	part(m, "RArm", v(0.9, 2.3, 0.9), at(1.6, 3.5, 0), spec.shirt, "RArm")
-	part(m, "LHand", v(0.9, 0.7, 0.9), at(-1.6, 2.15, 0), skin, "LArm")
-	part(m, "RHand", v(0.9, 0.7, 0.9), at(1.6, 2.15, 0), skin, "RArm")
+	-- the hand sits UNDER the arm (arm bottom = 3.5 - 1.15 = 2.35) and is a hair narrower: it used
+	-- to overlap the arm by 0.15 with identical width, so the wrist z-fought and flickered
+	part(m, "LHand", v(0.86, 0.7, 0.86), at(-1.6, 2.0, 0), skin, "LArm")
+	part(m, "RHand", v(0.86, 0.7, 0.86), at(1.6, 2.0, 0), skin, "RArm")
 	local head = part(m, "Head", v(1.9, 1.9, 1.9), at(0, 5.5, 0), skin, "Head")
 	local face = Instance.new("Decal")
 	face.Name = "face"

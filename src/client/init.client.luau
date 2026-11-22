@@ -87,6 +87,7 @@ Hud.on("Fuse", FuseView.hint)
 Hud.on("Shop", Menus.shop)
 Hud.on("Index", Menus.index)
 Hud.on("Team", Menus.team)
+Hud.on("Sell", Menus.sell)
 Hud.on("Event", Menus.event)
 Hud.on("Gifts", Menus.gifts)
 Hud.on("Powers", Menus.powers)
@@ -99,7 +100,7 @@ end)
 
 -- world prompts that open menus or Robux prompts (the server never needs to see these)
 local ProximityPromptService = game:GetService("ProximityPromptService")
-local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", WorkshopPrompt = "Workshop" }
+local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", DockyardPrompt = "Dockyard" }
 -- a prompt on screen owns the X button (its default gamepad key), so X-to-fight waits
 local shownPrompts = 0
 ProximityPromptService.PromptShown:Connect(function()
@@ -132,8 +133,8 @@ ProximityPromptService.PromptTriggered:Connect(function(pp: ProximityPrompt, who
 		Menus.team()
 	elseif pp.Name == "EggShopPrompt" then
 		Menus.eggShop()
-	elseif pp.Name == "WorkshopPrompt" then
-		Menus.workshop()
+	elseif pp.Name == "DockyardPrompt" then
+		Menus.dockyard()
 	elseif pp.Name == "GuidePrompt" then
 		Menus.guide()
 	elseif pp.Name == "BundlePrompt" then
@@ -154,6 +155,8 @@ Gamepad.init()
 -- the pad's button pictures sit on the two HUD buttons that have one (only while a pad is used)
 PadStickers.attach(Hud.fightButton(), Enum.KeyCode.ButtonX, { keep = true, size = 36 })
 PadStickers.attach(Hud.fuseButton(), Enum.KeyCode.ButtonY, { keep = true, size = 36 })
+PadStickers.attach(Hud.sellButton(), Enum.KeyCode.ButtonR1, { keep = true, size = 36 })
+PadStickers.attach(Hud.teamButton(), Enum.KeyCode.ButtonR2, { keep = true, size = 36 })
 Gamepad.bind(Enum.KeyCode.ButtonX, function()
 	if shownPrompts > 0 or Menus.isOpen() then
 		return
@@ -165,6 +168,18 @@ Gamepad.bind(Enum.KeyCode.ButtonX, function()
 	end
 end)
 Gamepad.bind(Enum.KeyCode.ButtonY, FuseView.hint)
+-- RT opens Pick Team (same as the button beside FIGHT)
+Gamepad.bind(Enum.KeyCode.ButtonR2, function()
+	if Hud.teamButton().Visible and not Menus.isOpen() then
+		Hud.press("Team")
+	end
+end)
+-- RB opens Sell (same as the coin button, which only shows once the tutorial is done)
+Gamepad.bind(Enum.KeyCode.ButtonR1, function()
+	if Hud.sellButton().Visible and not Menus.isOpen() then
+		Hud.press("Sell")
+	end
+end)
 Gamepad.bind(Enum.KeyCode.ButtonL1, function()
 	Remotes.event("Track"):FireServer("vendor", "Shop")
 	Menus.shop()
@@ -186,15 +201,27 @@ local snap = State.waitForData()
 Hud.refresh()
 Sound.music("Music")
 
--- first visit: wait for the character on the ship, then roll the intro
-if not snap.introSeen then
+-- first visit: wait for the character on the ship, then roll the intro. Also plays again the
+-- moment introSeen goes back to false (admin "Reset to new" / "Play intro"), without a rejoin.
+local introQueued = false
+local function maybeIntro()
+	local s = State.snapshot
+	if introQueued or not s or s.introSeen then
+		return
+	end
+	introQueued = true
 	task.spawn(function()
 		local char = player.Character or player.CharacterAdded:Wait()
 		char:WaitForChild("HumanoidRootPart", 10)
 		task.wait(1.2)
 		Cinema.intro()
+		-- allow another replay once the server has marked this one seen
+		task.wait(2)
+		introQueued = false
 	end)
 end
+maybeIntro()
+State.Changed:Connect(maybeIntro)
 
 -- VIP Captains get a gold [VIP] tag in chat
 pcall(function()

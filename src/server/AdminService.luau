@@ -108,6 +108,28 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 		data.floor = 2
 	elseif cmd == "Floor3" then
 		data.floor = 3
+		FarmService.syncAbyssRod(player)
+	elseif cmd == "Intro" then
+		-- the client plays the intro as soon as it sees introSeen go false
+		data.introSeen = false
+		refresh(player)
+		return true, "Playing the intro"
+	elseif cmd == "DeepRod" then
+		-- Deep Rod ready now: count the 20 minutes as played and clear the 10 minute cooldown
+		data.playSeconds = math.max(data.playSeconds or 0, Config.DEEP_ROD.unlockMinutes * 60)
+		data.deepRodAt = 0
+		FarmService.syncDeepRod(player)
+		refresh(player)
+		return true, "Deep Rod unlocked and ready"
+	elseif cmd == "AbyssRod" then
+		-- Abyss Rod ready now: Floor 3, the 2 hours counted as played, no cooldown
+		data.floor = math.max(data.floor or 1, 3)
+		data.playSeconds = math.max(data.playSeconds or 0, Config.ABYSS_ROD.unlockMinutes * 60)
+		data.abyssRodAt = 0
+		FarmService.syncAbyssRod(player)
+		FarmService.syncDeepRod(player)
+		refresh(player)
+		return true, "Abyss Rod unlocked and ready"
 	else
 		return false, "Unknown admin command"
 	end
