@@ -124,6 +124,35 @@ end
 
 local lastStep = 0
 
+-- True while the guide should show nothing: a fight is running, you are not on your own ship, or the
+-- camera is facing the arena (out to starboard) from the deck.
+local function isQuiet(): boolean
+	if Hud.inBattle then
+		return true
+	end
+	local ship = myShip()
+	local shipCf = if ship then ship:GetAttribute("ShipCf") :: CFrame? else nil
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not shipCf or not root then
+		return false
+	end
+	-- off the ship (the arena side, the water, the harbour): only the ship gets prompts
+	local rel = shipCf:PointToObjectSpace(root.Position)
+	if math.abs(rel.X) > Config.SHIP_WIDTH / 2 + 8 or math.abs(rel.Z) > Config.SHIP_LENGTH / 2 + 8 then
+		return true
+	end
+	-- on the deck but looking out at the arena
+	local cam = workspace.CurrentCamera
+	local arena = shipCf:PointToWorldSpace(Vector3.new(Config.ARENA_OFFSET, 0, 0))
+	local toArena = Vector3.new(arena.X - cam.CFrame.Position.X, 0, arena.Z - cam.CFrame.Position.Z)
+	local look = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+	if toArena.Magnitude > 1 and look.Magnitude > 0.01 and toArena.Magnitude < 150 and look.Unit:Dot(toArena.Unit) > 0.6 then
+		return true
+	end
+	return false
+end
+
 -- An on-demand helper, set by a view while it is open (the Fuse tray): the same red trail, bobbing
 -- arrow and banner as the tutorial, but driven by what the view says is the next thing to do.
 --   text()  the banner line
@@ -155,22 +184,29 @@ function Guide.init(screen: ScreenGui)
 		local t = os.clock()
 		local step = if snap then snap.tutorial else 0
 		local info = Config.TUTORIAL[step]
-		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing
+		-- Stay completely quiet (no banner, trail, arrows or tags) while you are watching a fight, away
+		-- from your ship, or looking out toward the arena from the deck: the prompts only belong to
+		-- the ship, and they used to sit right over the battle and its depth bar.
+		local quiet = isQuiet()
+		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
 		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open
 		local helper = Guide.helper
-		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing
-		-- the "lose the first fight" step waits for the battle to finish
+		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
 		-- the Fuse step shows beside the Fuse button instead of in the top banner
 		local tagText: string? = nil
-		if helping and helper then
+		if quiet then
+			Hud.banner(nil)
+		elseif helping and helper then
 			Hud.banner(helper.text())
 		elseif not info or State.cinematic then
 			Hud.banner(nil)
 		elseif active and info.target == "fuse" then
 			Hud.banner(nil)
 			tagText = (string.gsub(info.text, "{PRESS}", Platform.press()))
-		elseif active or Hud.inBattle then
+		elseif active then
 			Hud.banner((string.gsub(info.text, "{PRESS}", Platform.press())))
+		else
+			Hud.banner(nil)
 		end
 		if step ~= lastStep then
 			lastStep = step

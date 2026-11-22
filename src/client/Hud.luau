@@ -232,60 +232,99 @@ local function spellDef(id: string): any
 	return nil
 end
 
--- Casting a spell: a colour flash, spinning rays, shock rings, sparkles and the spell icon
--- blasting up big, then flying to the buff row at the top right. Drawn on the screen itself
+-- Casting a spell, in the ship's own style (planks, brass, rope, parchment, wax): the sea dims, a
+-- parchment scroll with wooden rollers unrolls, the spell sits in a brass porthole, its name hangs
+-- on a plank sign, a wax seal in the spell's rarity colour stamps down and bubbles drift up. Then
+-- the scroll rolls up and flies to the buff row at the top right. Drawn on the screen itself
 -- (above every menu), so it plays right over the Spellbook.
 function Hud.spellCast(id: string)
 	local sp = spellDef(id)
 	if not sp or not screenRoot then
 		return
 	end
+	local Sound = require(script.Parent.Sound) :: any
 	local r = Config.RARITY[sp.rarity]
 	local col: Color3 = r.color
-	local holder = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 900, Parent = screenRoot })
-	local flash = UI.new("Frame", { BackgroundColor3 = col, BackgroundTransparency = 0.4, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(3, 3), ZIndex = 900, Parent = holder })
-	UI.tween(flash, 0.7, { BackgroundTransparency = 1 })
-	-- spinning rays
-	local rays = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(640, 640), Position = UDim2.fromScale(0.5, 0.45), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 901, Parent = holder })
-	for i = 0, 9 do
-		UI.new("Frame", { BackgroundColor3 = col:Lerp(Color3.new(1, 1, 1), 0.3), BackgroundTransparency = 0.45, BorderSizePixel = 0, Size = UDim2.fromOffset(40, 640), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Rotation = i * 18, ZIndex = 901, Parent = rays }, { UI.corner(20) })
+	local Z = 900
+	local holder = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = Z, Parent = screenRoot })
+	-- the sea dims behind the scroll (a plain dark blue, no flash)
+	local dim = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(8, 22, 44), BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = Z, Parent = holder })
+	UI.tween(dim, 0.25, { BackgroundTransparency = 0.55 })
+
+	local W, H = 380, 310
+	local scroll = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(W + 30, H + 40), Position = UDim2.fromScale(0.5, 0.45), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 1, Parent = holder })
+	local sc = UI.new("UIScale", { Scale = 0.85, Parent = scroll })
+	UI.tween(sc, 0.3, { Scale = 1 }, Enum.EasingStyle.Back)
+	-- the parchment grows downward from the top roller, clipped so its contents are revealed as it unrolls
+	local paper = UI.new("Frame", { BackgroundColor3 = C.Panel, BorderSizePixel = 0, ClipsDescendants = true, Size = UDim2.fromOffset(W, 0), Position = UDim2.new(0.5, 0, 0, 20), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 1, Parent = scroll }, { UI.stroke(3) })
+	local function roller(y: number): Frame
+		local bar = UI.new("Frame", { BackgroundColor3 = C.PlankDark, Size = UDim2.fromOffset(W + 30, 24), Position = UDim2.new(0.5, 0, 0, y), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 4, Parent = scroll }, { UI.corner(10), UI.stroke(3) })
+		for _, sx in { 0, 1 } do
+			-- brass caps on both ends
+			UI.new("Frame", { BackgroundColor3 = C.Brass, Size = UDim2.fromOffset(18, 30), Position = UDim2.new(sx, if sx == 0 then 4 else -4, 0.5, 0), AnchorPoint = Vector2.new(sx, 0.5), ZIndex = Z + 5, Parent = bar }, { UI.corner(8), UI.stroke(2.5) })
+		end
+		return bar
 	end
-	local raysScale = UI.new("UIScale", { Scale = 0.2, Parent = rays })
-	UI.tween(raysScale, 0.5, { Scale = 1 }, Enum.EasingStyle.Back)
-	local spin = RunService.RenderStepped:Connect(function(dt)
-		rays.Rotation += dt * 60
-	end)
-	-- shock rings
-	for k = 0, 2 do
-		task.delay(k * 0.14, function()
-			local ring = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(60, 60), Position = UDim2.fromScale(0.5, 0.45), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 902, Parent = holder }, { UI.corner(999), UI.stroke(8, col) })
-			UI.tween(ring, 0.7, { Size = UDim2.fromOffset(760, 760) }, Enum.EasingStyle.Quad)
-			local st = ring:FindFirstChildOfClass("UIStroke")
-			if st then
-				UI.tween(st, 0.7, { Transparency = 1 })
+	roller(20) -- top (stays put)
+	local bottom = roller(20) -- bottom (travels down as the scroll unrolls)
+	UI.tween(paper, 0.45, { Size = UDim2.fromOffset(W, H) }, Enum.EasingStyle.Quad)
+	UI.tween(bottom, 0.45, { Position = UDim2.new(0.5, 0, 0, 20 + H) }, Enum.EasingStyle.Quad)
+	Sound.play("Click", 0.6, 0.9)
+
+	-- the spell in a brass porthole (like the menus' close button ring)
+	local ring = UI.new("Frame", { BackgroundColor3 = C.Brass, Size = UDim2.fromOffset(120, 120), Position = UDim2.new(0.5, 0, 0, 16), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper }, { UI.corner(120), UI.stroke(4) })
+	local glass = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(32, 96, 150), Size = UDim2.fromOffset(98, 98), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 2, Parent = ring }, { UI.corner(98), UI.stroke(3) })
+	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I[sp.icon], Size = UDim2.fromOffset(84, 84), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 3, Parent = glass })
+	-- the name hangs on a plank sign
+	UI.plank({ Text = sp.name, Color = C.Plank, MaxText = 28, TextColor = C.Brass, Size = UDim2.fromOffset(300, 44), Position = UDim2.new(0.5, 0, 0, 148), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
+	UI.label({ Text = sp.desc, Stroke = 0, TextColor3 = C.Ink, MaxText = 24, Size = UDim2.fromOffset(W - 40, 30), Position = UDim2.new(0.5, 0, 0, 204), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
+	UI.label({ Text = "for " .. sp.minutes .. " min", Stroke = 0, TextColor3 = C.Deep, MaxText = 20, Size = UDim2.fromOffset(W - 40, 24), Position = UDim2.new(0.5, 0, 0, 238), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
+	-- the wax seal: rarity colour, its stars pressed in, stamped on after the scroll is open
+	local seal = UI.new("Frame", { BackgroundColor3 = col:Lerp(Color3.new(0, 0, 0), 0.15), Size = UDim2.fromOffset(62, 62), Position = UDim2.new(1, -52, 1, -46), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 3, Visible = false, Parent = paper }, { UI.corner(62), UI.stroke(3) })
+	UI.label({ Text = string.rep("★", sp.rarity), TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.65), Stroke = 1.5, MaxText = 20, Size = UDim2.fromScale(0.8, 0.5), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 4, Parent = seal })
+	local sealScale = UI.new("UIScale", { Scale = 2.2, Parent = seal })
+	task.delay(0.5, function()
+		if not seal.Parent then
+			return
+		end
+		seal.Visible = true
+		UI.tween(sealScale, 0.16, { Scale = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.delay(0.16, function()
+			if sc.Parent then
+				sc.Scale = 1.04 -- a small thump as it lands
+				UI.tween(sc, 0.2, { Scale = 1 }, Enum.EasingStyle.Back)
 			end
+			Sound.play("Upgrade", 0.8)
+		end)
+	end)
+	-- bubbles drift up the scroll (round, see-through, white rim)
+	for k = 1, 14 do
+		task.delay(0.3 + k * 0.06, function()
+			if not holder.Parent then
+				return
+			end
+			local d = math.random(10, 26)
+			local x = math.random(-W / 2 + 20, W / 2 - 20)
+			local b = UI.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.75, Size = UDim2.fromOffset(d, d), Position = UDim2.new(0.5, x, 0.45, H / 2 - 10), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 6, Parent = holder }, { UI.corner(d), UI.stroke(2, Color3.new(1, 1, 1)) })
+			UI.tween(b, 1.3, { Position = UDim2.new(0.5, x + math.random(-30, 30), 0.45, -H / 2 - 20), BackgroundTransparency = 1 }, Enum.EasingStyle.Sine)
+			local st = b:FindFirstChildOfClass("UIStroke")
+			if st then
+				UI.tween(st, 1.3, { Transparency = 1 })
+			end
+			task.delay(1.4, function()
+				b:Destroy()
+			end)
 		end)
 	end
-	-- sparkles fly out
-	for _ = 1, 18 do
-		local a = math.random() * math.pi * 2
-		local dist = math.random(180, 360)
-		local s = UI.label({ Text = "★", TextColor3 = if math.random() < 0.5 then C.Gold else col:Lerp(Color3.new(1, 1, 1), 0.5), MaxText = math.random(18, 34), Stroke = 1.5, Size = UDim2.fromOffset(36, 36), Position = UDim2.fromScale(0.5, 0.45), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 903, Parent = holder })
-		UI.tween(s, 0.9, { Position = UDim2.new(0.5, math.cos(a) * dist, 0.45, math.sin(a) * dist), TextTransparency = 1 }, Enum.EasingStyle.Quad)
-	end
-	-- the spell icon and its name
-	local icon = UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I[sp.icon], Size = UDim2.fromOffset(190, 190), Position = UDim2.fromScale(0.5, 0.45), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 904, Parent = holder })
-	UI.pop(icon, 0.1, 1)
-	local name = UI.label({ Text = string.upper(sp.name) .. "!", TextColor3 = col, MaxText = 52, Stroke = 4, Size = UDim2.fromOffset(700, 64), Position = UDim2.fromScale(0.5, 0.7), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 904, Parent = holder })
-	UI.pop(name, 0.3)
-	local desc = UI.label({ Text = sp.desc, TextColor3 = C.White, MaxText = 26, Size = UDim2.fromOffset(600, 34), Position = UDim2.fromScale(0.5, 0.78), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 904, Parent = holder })
-	task.delay(1.3, function()
-		spin:Disconnect()
-		UI.tween(rays, 0.3, { Size = UDim2.fromOffset(0, 0) })
-		UI.tween(name, 0.3, { TextTransparency = 1 })
-		UI.tween(desc, 0.3, { TextTransparency = 1 })
-		UI.tween(icon, 0.5, { Position = UDim2.new(1, -60, 0, 40), Size = UDim2.fromOffset(46, 46) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		task.wait(0.55)
+	-- hold, roll up, then it flies to the buff row (top right)
+	task.delay(1.7, function()
+		UI.tween(dim, 0.3, { BackgroundTransparency = 1 })
+		UI.tween(paper, 0.3, { Size = UDim2.fromOffset(W, 0) }, Enum.EasingStyle.Quad)
+		UI.tween(bottom, 0.3, { Position = UDim2.new(0.5, 0, 0, 20) }, Enum.EasingStyle.Quad)
+		task.wait(0.32)
+		UI.tween(sc, 0.4, { Scale = 0.12 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		UI.tween(scroll, 0.4, { Position = UDim2.new(1, -50, 0, 36) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.wait(0.42)
 		holder:Destroy()
 	end)
 end
@@ -772,7 +811,9 @@ function Hud.init(screen: ScreenGui)
 				for _, sp in Config.SPELLS do
 					local left = (snap.spellUntil[sp.id] or 0) - State.now()
 					if left > 0 then
-						local chip = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(20, 30, 60), BackgroundTransparency = 0.2, Size = UDim2.fromOffset(52, 56) }, { UI.corner(10), UI.stroke(2.5, Config.RARITY[sp.rarity].color) })
+						-- a little wooden tag with a brass edge and a bar in the spell's rarity colour
+						local chip = UI.new("Frame", { BackgroundColor3 = C.Plank, Size = UDim2.fromOffset(52, 56) }, { UI.corner(10), UI.stroke(3, C.Ink) })
+						UI.new("Frame", { BackgroundColor3 = Config.RARITY[sp.rarity].color, BorderSizePixel = 0, Size = UDim2.new(1, -16, 0, 4), Position = UDim2.new(0.5, 0, 0, 3), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 3, Parent = chip }, { UI.corner(2) })
 						UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I[sp.icon], Size = UDim2.fromOffset(34, 34), Position = UDim2.new(0.5, 0, 0, 2), AnchorPoint = Vector2.new(0.5, 0), Parent = chip })
 						UI.label({ Text = Format.time(left), MaxText = 14, Size = UDim2.new(1, -4, 0, 16), Position = UDim2.fromOffset(2, 37), Parent = chip })
 						chip.Parent = spellRow
