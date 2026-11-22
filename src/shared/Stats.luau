@@ -224,9 +224,28 @@ function Stats.skipPearls(secondsLeft: number): number
 end
 
 -- Price of the n-th extra nest (owned = how many nests you have now)
+-- THE price rule: a coin sink costs about `minutes` of battle income at the stage a player is
+-- expected to be at when they reach it. Income grows with the stage (Config.COINS_STAGE_MULT),
+-- so every price keeps pace with it instead of becoming pocket change (a fixed 30K price is
+-- 6 minutes of income at stage 3 but 0.01 minutes at stage 12). Rounded to 2 significant digits.
+function Stats.stagePrice(stage: number, minutes: number): number
+	local depth = (stage - 1) * Config.STAGE_LENGTH + Config.MINIBOSS_AT
+	local perKill = (Config.COINS_BASE + Config.COINS_PER_DEPTH * depth) * Config.COINS_STAGE_MULT ^ (stage - 1)
+	local n = perKill * 14 * minutes -- 14 kills a minute, as Stats.coinsPerMinute assumes
+	local unit = 10 ^ (math.floor(math.log10(math.max(n, 10))) - 1)
+	return math.max(Config.NEST_BASE_PRICE, math.floor(n / unit + 0.5) * unit)
+end
+
+-- nest N costs about Config.NEST_MINUTES of income at stage N+1
 function Stats.nestPrice(owned: number): number
-	local extra = owned - Config.START_NESTS
-	return math.floor(Config.NEST_BASE_PRICE * Config.NEST_PRICE_GROWTH ^ extra / 50) * 50
+	local extra = math.max(0, owned - Config.START_NESTS)
+	return Stats.stagePrice(1 + extra, Config.NEST_MINUTES)
+end
+
+-- Ship Workshop fittings: level L is priced for stage 1 + L * stageStep
+function Stats.fittingPrice(id: string, level: number): number
+	local def = Config.FITTINGS[id]
+	return Stats.stagePrice(1 + level * def.stageStep, def.minutes)
 end
 
 function Stats.upgradePrice(id: string, level: number): number?
@@ -239,6 +258,9 @@ function Stats.upgradePrice(id: string, level: number): number?
 	end
 	if level >= u.max then
 		return nil
+	end
+	if u.minutes then
+		return Stats.stagePrice(1 + level * (u.stageStep or 2), u.minutes)
 	end
 	return math.floor(u.base * u.growth ^ level / 100) * 100
 end

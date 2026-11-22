@@ -274,7 +274,7 @@ function Menus.shop()
 		StarterPack = "Lv3 Kelpdrake + coins", PearlDragonPack = "Legendary dragon", FuseLuck = "x2 fuse luck 15m",
 		InsaneLuck = "x4 fuse luck 15m", SkipTimer = "Finish all timers", CoinsSmall = "A chest of coins", CoinsBig = "A ship of coins",
 		VIP = "+25% coins forever", DoubleCoins = "x2 coins forever", FastFuse = "x2 hatch speed", FastBattle = "x2 battle speed",
-		ExtraPedestal = "+1 egg every haul", Luck30 = "x2 luck for 30m", DoubleLuck = "x2 luck forever", PowerSpins = "5 Power wheel spins", ElementBundle = "1 egg of each element",
+		ExtraPedestal = "rod reels 8% faster", Luck30 = "x2 luck for 30m", DoubleLuck = "x2 luck forever", PowerSpins = "5 Power wheel spins", ElementBundle = "1 egg of each element",
 			LimitedRoll = "Roll the Abyss Crate", Revive = "Use after a defeat",
 		}
 	local ICON = { StarterPack = "Team", PearlDragonPack = "Pearl", FuseLuck = "LuckEgg", InsaneLuck = "Crate", SkipTimer = "Speed", CoinsSmall = "Coin", CoinsBig = "Shop", VIP = "Event", DoubleCoins = "Coin", FastFuse = "Heart", FastBattle = "Speed", ExtraPedestal = "Pedestal", Luck30 = "LuckEgg", DoubleLuck = "LuckEgg" }
@@ -806,12 +806,12 @@ end
 ---------------------------------------------------------------------------
 function Menus.gifts()
 	local snap = State.snapshot
-	local _, body = window("Free Gifts", Vector2.new(760, 500), C.Kelp)
-	local grid = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 280), Parent = body })
-	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 130), CellPadding = UDim2.fromOffset(10, 10), Parent = grid })
+	local _, body = window("Free Gifts", Vector2.new(760, 590), C.Kelp)
+	local grid = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 340), Parent = body })
+	UI.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 160), CellPadding = UDim2.fromOffset(10, 10), Parent = grid })
 	local labels = {}
 	for i, g in Config.GIFTS do
-		local c = UI.panel({ Size = UDim2.fromOffset(170, 130), Color = Color3.fromRGB(255, 244, 216), Parent = grid })
+		local c = UI.panel({ Size = UDim2.fromOffset(170, 160), Color = Color3.fromRGB(255, 244, 216), Parent = grid })
 		local icon = if g.coins then Config.ICONS.Coin elseif g.pearls then Config.ICONS.Pearl elseif g.spins then Config.ICONS.Power else Config.ICONS.LuckEgg
 		local what = if g.coins then Format.abbrev(g.coins) .. " Coins" elseif g.pearls then g.pearls .. " Pearls" elseif g.spins then "Power Spin" else "Mystery Egg"
 		if g.spell then
@@ -821,7 +821,7 @@ function Menus.gifts()
 		UI.label({ Text = what, Size = UDim2.new(1, -10, 0, 22), Position = UDim2.fromOffset(5, 56), Parent = c })
 		-- bonus line: festival shells ride along on some gifts
 		if g.shells then
-			UI.label({ Text = "+ " .. g.shells .. " Shells", TextColor3 = Color3.fromRGB(255, 160, 60), MaxText = 16, Size = UDim2.new(1, -10, 0, 18), Position = UDim2.fromOffset(5, 78), Parent = c })
+			UI.label({ Text = "+ " .. g.shells .. " Shells", TextColor3 = Color3.fromRGB(255, 160, 60), MaxText = 16, Size = UDim2.new(1, -10, 0, 18), Position = UDim2.fromOffset(5, 82), Parent = c })
 		end
 		local btn = UI.button({ Text = "", Color = C.Kelp, Size = UDim2.new(1, -20, 0, 30), Position = UDim2.new(0, 10, 1, -36), Parent = c }, function()
 			local ok, msg = State.action("Gift", i)
@@ -829,17 +829,14 @@ function Menus.gifts()
 		end)
 		labels[i] = btn
 	end
-	-- retention row: join the group for a free egg, invite friends for the friends coin boost
-	local crew = UI.button({ Text = "Join the Crew: FREE EGG", Color = C.Sea, Size = UDim2.new(0.5, -16, 0, 52), Position = UDim2.fromOffset(10, 290), Parent = body }, function()
+	-- social row: joining the group is just a button (no reward for joining); friends who play in
+	-- your server each add +10% battle coins, up to +30% (Config.FRIEND_BOOST / FRIEND_BOOST_MAX)
+	UI.button({ Text = "Join the Crew", Color = C.Sea, Size = UDim2.new(0.5, -16, 0, 50), Position = UDim2.fromOffset(10, 352), Parent = body }, function()
 		pcall(function()
 			game:GetService("GroupService"):PromptJoinAsync(Config.GROUP_ID)
 		end)
-		local ok, msg = State.action("Group")
-		if msg then
-			Hud.toast(msg, if ok then C.Kelp else C.Coral)
-		end
 	end)
-	UI.button({ Text = "Invite Friends: +10% coins each", Color = Color3.fromRGB(255, 140, 60), Size = UDim2.new(0.5, -16, 0, 52), Position = UDim2.new(0.5, 6, 0, 290), Parent = body }, function()
+	UI.button({ Text = "Invite Friends: +10% coins each (max 30%)", Color = Color3.fromRGB(255, 140, 60), Size = UDim2.new(0.5, -16, 0, 50), Position = UDim2.new(0.5, 6, 0, 352), Parent = body }, function()
 		local SocialService = game:GetService("SocialService")
 		local ok, can = pcall(function()
 			return SocialService:CanSendGameInviteAsync(player)
@@ -852,9 +849,6 @@ function Menus.gifts()
 			Hud.toast("Invites aren't available right now", C.Coral)
 		end
 	end)
-	if snap.groupEgg then
-		UI.setText(crew, "Crew reward claimed!")
-	end
 	local daily = UI.button({ Text = "Daily Chest", Color = C.Gold, Size = UDim2.new(1, -20, 0, 52), Position = UDim2.new(0, 10, 1, -56), Parent = body }, function()
 		local ok, msg = State.action("Daily")
 		Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
@@ -1084,12 +1078,12 @@ function Menus.workshop()
 			if lvl >= def.max then
 				UI.label({ Text = "MAX", TextColor3 = C.Gold, MaxText = 24, Size = UDim2.new(1, -10, 0, 30), Position = UDim2.new(0, 5, 1, -36), Parent = card })
 			else
-				local price = math.floor(def.base * def.growth ^ lvl / 50) * 50
+				local price = Stats.fittingPrice(id, lvl)
 				UI.button({ Text = Format.abbrev(price) .. " Coins", Color = if snap.coins >= price then C.Kelp else C.Muted, Size = UDim2.new(1, -16, 0, 38), Position = UDim2.new(0, 8, 1, -46), Parent = card }, function()
 					local ok, msg = State.action("Workshop", { kind = "fit", id = id })
 					Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
 					if ok then
-						Sound.play("Buy", 0.7)
+						Sound.play("Upgrade", 0.8)
 						task.defer(redraw)
 					end
 				end)

@@ -775,7 +775,9 @@ local function buildShip(world: Folder, index: number): Ship
 		box(model, cf, Vector3.new(s.w - 1.5, 0.4, 5), Vector3.new(0, deck + 0.2, s.z), WOOD_LIGHT)
 	end
 	-- stripe and portholes
-	box(model, cf, Vector3.new(W + 0.4, 1.4, sternZ + BOW), Vector3.new(0, deck - 3, (sternZ - BOW) / 2), Color3.fromRGB(245, 205, 70), nil, { Name = "HullStripe" })
+	-- the stripe sticks out 0.15 past both hull ends so its end faces are never coplanar with the
+	-- hull's (that was the yellow flicker)
+	box(model, cf, Vector3.new(W + 0.4, 1.4, sternZ + BOW + 0.3), Vector3.new(0, deck - 3, (sternZ - BOW) / 2), Color3.fromRGB(245, 205, 70), nil, { Name = "HullStripe" })
 	for z = -48, 76, 8 do
 		for _, sx in { -1, 1 } do
 			box(model, cf, Vector3.new(0.4, 1.8, 1.8), Vector3.new(sx * (W / 2 + 0.1), deck - 6, z), Color3.fromRGB(40, 44, 70))
@@ -1387,17 +1389,18 @@ function WorldBuilder.applyFittings(ship: Ship, fit: { [string]: number }?)
 	local deck = Config.DECK_Y
 	local PLATE = Color3.fromRGB(104, 116, 138)
 	local RIVET = Color3.fromRGB(255, 205, 90)
+	-- plate rows above the waterline (the hull shows y 0..9), dodging the yellow stripe at y 6
+	local ROWS = { { 1.0, 1.4 }, { 2.7, 1.4 }, { 4.4, 1.4 }, { 7.4, 1.4 }, { 8.4, 0.7 } }
 	for r = 1, plate do
-		local y = -4.6 + (r - 1) * 2.7
+		local y, ph = ROWS[r][1], ROWS[r][2]
 		for _, sx in { -1, 1 } do
 			for z = -52, 80, 6.6 do
 				-- stay off the boarding stairs
 				local blocked = z + 3 > BOARD_Z0 - 3.1 and z + 3 < BOARD_Z2 + 3.1
 				if not blocked then
-					local p = box(m, cf, Vector3.new(0.5, 2.3, 6.1), Vector3.new(sx * (W / 2 + 0.3), y, z + 3), PLATE, Enum.Material.Metal, { CanCollide = false })
-					box(m, cf, Vector3.new(0.3, 0.45, 0.45), Vector3.new(sx * (W / 2 + 0.62), y + 0.7, z + 1), RIVET, Enum.Material.Metal, { CanCollide = false })
-					box(m, cf, Vector3.new(0.3, 0.45, 0.45), Vector3.new(sx * (W / 2 + 0.62), y + 0.7, z + 5), RIVET, Enum.Material.Metal, { CanCollide = false })
-					local _ = p
+					box(m, cf, Vector3.new(0.5, ph, 6.1), Vector3.new(sx * (W / 2 + 0.3), y, z + 3), PLATE, Enum.Material.Metal, { CanCollide = false })
+					box(m, cf, Vector3.new(0.3, 0.4, 0.4), Vector3.new(sx * (W / 2 + 0.62), y, z + 1), RIVET, Enum.Material.Metal, { CanCollide = false })
+					box(m, cf, Vector3.new(0.3, 0.4, 0.4), Vector3.new(sx * (W / 2 + 0.62), y, z + 5), RIVET, Enum.Material.Metal, { CanCollide = false })
 				end
 			end
 		end

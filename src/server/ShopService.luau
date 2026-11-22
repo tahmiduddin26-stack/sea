@@ -90,8 +90,8 @@ function ShopService.syncBoards(player: Player)
 		local title, value, price = ensureBoardGui(ship.boards.Pedestals)
 		local lvl = data.upgrades.Pedestals
 		local p = Stats.upgradePrice("Pedestals", lvl)
-		title.Text = "Egg Pedestals"
-		value.Text = lvl .. (if p then "  >  " .. (lvl + 1) else "")
+		title.Text = "Fast Reel"
+		value.Text = "-" .. (lvl - 1) * 8 .. "%" .. (if p then "  >  -" .. lvl * 8 .. "%" else "")
 		price.Text = if p then Format.abbrev(p) .. " Coins" else "MAX"
 	end
 	-- Floor 2
@@ -328,7 +328,7 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 			if lvl >= def.max then
 				return false, "Already maxed!"
 			end
-			local price = math.floor(def.base * def.growth ^ lvl / 50) * 50
+			local price = Stats.fittingPrice(arg.id, lvl)
 			if data.coins < price then
 				return false, "Not enough coins! Battle to earn more"
 			end

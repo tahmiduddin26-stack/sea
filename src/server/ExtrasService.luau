@@ -445,30 +445,10 @@ end
 ---------------------------------------------------------------------------
 -- Retention: group reward, favourite prompt, friends coin boost
 ---------------------------------------------------------------------------
--- Joined the group? A free egg + spins, once. Checked on join and from the Gift Chest.
-function ExtrasService.claimGroup(player: Player): (boolean, string?)
-	local data = DataService.get(player)
-	if Config.GROUP_ID == 0 or not data then
-		return false, nil
-	end
-	if data.groupEgg then
-		return false, "You already got the crew reward!"
-	end
-	local ok, inGroup = pcall(function()
-		return player:IsInGroup(Config.GROUP_ID)
-	end)
-	if not ok or not inGroup then
-		return false, "Join the group to get a free egg!"
-	end
-	local r = Config.GROUP_REWARD
-	if not ExtrasService.giveRandomEgg(player, nil, r.levels, r.stars) then
-		return false, "Free a nest first!"
-	end
-	data.groupEgg = true
-	data.spins += r.spins
-	DataService.changed(player)
-	Analytics.event(player, "GroupReward", 1)
-	return true, "Welcome to the crew! A free egg and " .. r.spins .. " Power spins"
+-- Joining the group gives NO reward (Roblox doesn't allow incentivising it); the Gift Chest
+-- has a plain "Join the Crew" button. Kept as a no-op so old clients calling it are harmless.
+function ExtrasService.claimGroup(_player: Player): (boolean, string?)
+	return false, nil
 end
 
 -- The client asked to favourite (once); remember so we never ask again
@@ -519,17 +499,6 @@ function ExtrasService.init()
 		task.defer(refreshFriends)
 	end)
 	task.spawn(refreshFriends)
-	DataService.Loaded:Connect(function(player)
-		task.delay(8, function()
-			local data = DataService.get(player)
-			if player.Parent and data and not data.groupEgg then
-				local ok, msg = ExtrasService.claimGroup(player)
-				if ok and msg then
-					toast(player, msg, Color3.fromRGB(255, 205, 60))
-				end
-			end
-		end)
-	end)
 	-- hub stands (built by WorldBuilder) open menus on the client; the Abyss Crate rolls here
 	local hub = workspace:WaitForChild("World"):WaitForChild("Harbour")
 	for _, d in hub:GetDescendants() do

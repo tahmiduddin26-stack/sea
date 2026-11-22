@@ -501,7 +501,9 @@ local function haul(player: Player)
 		end
 		zone = pickWeighted(ids, ws)
 	end
-	local time = Config.FISH_BASE + zone * Config.FISH_PER_ZONE
+	-- Fast Reel: every pedestal level (upgrade, pass or spell) makes the whole cast 8% quicker
+	local reel = 1 - 0.08 * (FarmService.pedestalCount(player) - 1)
+	local time = (Config.FISH_BASE + zone * Config.FISH_PER_ZONE) * math.max(0.6, reel)
 	-- the rod casts and dives: the pedestals empty now and the catch lands on them when the
 	-- line comes up (every client plays the same dive from "haul")
 	s.fishing = true

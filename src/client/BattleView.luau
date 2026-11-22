@@ -1072,6 +1072,9 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	task.spawn(function()
 		local grabbed, flew, splashed, landedFx = false, false, false, false
 		local popped = false
+		if mine then
+			Sound.play("Cast", 0.8, 1)
+		end
 		while rod.Parent do
 			local t = os.clock() - t0
 			if t >= total then
@@ -1126,7 +1129,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					end
 					if mine then
 						Hud.toast(string.upper(z.name), z.color)
-						Sound.play("Click", 0.6, 0.8 + inZone * 0.12)
+						Sound.play("ZoneChime", 0.7, 0.85 + inZone * 0.1)
 					end
 				end
 				-- the camera orbits the hook so the scenery slides by at different distances
@@ -1163,7 +1166,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					burst(nestEggAt, Color3.fromRGB(190, 190, 205), 26, 9, false)
 					burst(nestEggAt, zdef.color, 18, 10, true)
 					if mine then
-						Sound.play("Hit", 0.7, 0.7)
+						Sound.play("EggPop", 0.8, 1)
 					end
 				end
 				camState.cf = CFrame.lookAt(hookPos + Vector3.new(math.cos(t * 0.6) * 7, 1.5, math.sin(t * 0.6) * 7), nestEggAt + Vector3.new(0, 1, 0))

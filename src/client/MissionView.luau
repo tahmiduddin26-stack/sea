@@ -24,7 +24,7 @@ local LABEL = {
 	boss = "Beat a boss",
 	sell = "Sell %d monsters",
 }
-local ROW_H, GAP = 54, 8
+local ROW_H, GAP = 70, 8
 
 local function label(m: any): string
 	local f = LABEL[m.kind] or m.kind
@@ -43,9 +43,9 @@ function MissionView.init(screen: ScreenGui)
 		local f = UI.panel({ Size = UDim2.new(1, 0, 0, ROW_H), Position = UDim2.fromOffset(0, 30 + (i - 1) * (ROW_H + GAP)), Radius = 14, Parent = holder })
 		local title = UI.label({ Text = label(m), Stroke = 0, TextColor3 = C.Ink, MaxText = 18, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -62, 0, 22), Position = UDim2.fromOffset(10, 4), Parent = f })
 		local count = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Deep, MaxText = 18, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.fromOffset(52, 22), Position = UDim2.new(1, -58, 0, 4), Parent = f })
-		local bar = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(205, 182, 138), BorderSizePixel = 0, Size = UDim2.new(0.5, 0, 0, 12), Position = UDim2.fromOffset(10, 32), Parent = f }, { UI.corner(6), UI.stroke(2) })
+		local bar = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(205, 182, 138), BorderSizePixel = 0, Size = UDim2.new(1, -20, 0, 12), Position = UDim2.fromOffset(10, 32), Parent = f }, { UI.corner(6), UI.stroke(2) })
 		local fill = UI.new("Frame", { BackgroundColor3 = C.Kelp, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), Parent = bar }, { UI.corner(6) })
-		local reward = UI.label({ Text = "", Stroke = 1.5, TextColor3 = C.Gold, MaxText = 15, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(0.46, 0, 0, 18), Position = UDim2.new(0.54, -8, 0, 29), Parent = f })
+		local reward = UI.label({ Text = "", Stroke = 1.5, TextColor3 = C.Gold, MaxText = 15, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(1, -20, 0, 18), Position = UDim2.fromOffset(10, 48), Parent = f })
 		UI.pop(f, 0.85)
 		rows[i] = { frame = f, fill = fill, count = count, title = title, reward = reward, id = m.id, shown = -1 }
 	end

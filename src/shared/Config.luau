@@ -53,8 +53,8 @@ Config.NEST_SLOTS = {
 Config.QUARTERDECK_Z = 54 -- the raised stern deck (Floor 2) starts here
 Config.MAST_POS = Vector3.new(0, 0, 36)
 Config.START_NESTS = 3
-Config.NEST_BASE_PRICE = 1500
-Config.NEST_PRICE_GROWTH = 1.7
+Config.NEST_BASE_PRICE = 1500 -- the cheapest a nest can ever be
+Config.NEST_MINUTES = 5 -- a nest costs about this many minutes of battle coins at its stage (see Stats.nestPrice)
 
 Config.WINCH_POS = Vector3.new(-24, 0, -40) -- the fishing rod, casting over the port rail
 -- The rod dives through stacked zones in a trench off the port side; the server rolls where
@@ -109,8 +109,10 @@ Config.SKIP_PEARLS_PER_MINUTE = 5 -- pearls to finish a timer early (min 1)
 
 -- Upgrade boards on the ship
 Config.UPGRADES = {
-	Luck = { name = "Egg Luck", max = 10, base = 6000, growth = 2.1, desc = "Better eggs from the winch" },
-	Pedestals = { name = "Egg Pedestals", max = 3, prices = { 0, 5000, 75000 }, desc = "Haul more eggs at once" },
+	-- prices follow Stats.stagePrice: `minutes` of battle income at stage 1 + level * stageStep
+	Luck = { name = "Egg Luck", max = 10, minutes = 10, stageStep = 2, desc = "Better eggs from the rod" },
+	-- one egg per cast now, so this board speeds the rod up instead (each level 8% faster)
+	Pedestals = { name = "Fast Reel", max = 3, minutes = 10, stageStep = 2, desc = "The rod reels in eggs faster" },
 }
 -- The Shipwright (board on your deck): 12 tiers, each one adds something to the ship's looks and
 -- a small permanent bonus. Tier N unlocks once you have cleared stage 2N - 2 and costs about
@@ -123,10 +125,11 @@ Config.SHIP_TIERS = {
 -- Ship Workshop (a board on your deck): permanent fittings that help in battle a LITTLE (5% a
 -- level, so they never replace spells or monsters), and paint to make the ship yours.
 Config.FITTINGS = {
-	Cannons = { name = "Cannons", desc = "+5% damage per level", max = 5, base = 4000, growth = 2.6, icon = "Swords", dmg = 0.05 },
-	Hull = { name = "Hull Plating", desc = "+5% health per level", max = 5, base = 4000, growth = 2.6, icon = "Team", hp = 0.05 },
-	CrowsNest = { name = "Crow's Nest", desc = "+2s boss timer per level", max = 5, base = 6000, growth = 2.4, icon = "Boss", bossTime = 2 },
-	Figurehead = { name = "Lucky Figurehead", desc = "+5% egg luck per level", max = 5, base = 6000, growth = 2.4, icon = "LuckEgg", luck = 0.05 },
+	-- priced by Stats.fittingPrice: `minutes` of income at stage 1 + level * stageStep
+	Cannons = { name = "Cannons", desc = "+5% damage per level", max = 5, minutes = 8, stageStep = 3, icon = "Swords", dmg = 0.05 },
+	Hull = { name = "Hull Plating", desc = "+5% health per level", max = 5, minutes = 8, stageStep = 3, icon = "Team", hp = 0.05 },
+	CrowsNest = { name = "Crow's Nest", desc = "+2s boss timer per level", max = 5, minutes = 10, stageStep = 3, icon = "Boss", bossTime = 2 },
+	Figurehead = { name = "Lucky Figurehead", desc = "+5% egg luck per level", max = 5, minutes = 10, stageStep = 3, icon = "LuckEgg", luck = 0.05 },
 }
 Config.FITTING_ORDER = { "Cannons", "Hull", "CrowsNest", "Figurehead" }
 Config.PAINTS = {
@@ -149,7 +152,7 @@ Config.PAINTS = {
 }
 -- Some fished eggs cost coins: a "Treasure Egg" costs coins but is a level higher
 Config.EGG_PRICE_CHANCE = 0.3
-Config.FLOOR2 = { fuses = 20, coins = 30000 } -- unlock the quarterdeck + Lighthouse boost
+Config.FLOOR2 = { fuses = 20, coins = 130000 } -- the quarterdeck + Lighthouse boost: 12 minutes of income at stage 4
 -- Floor 3 (the poop deck, 4 more nests): needs stage 10 cleared, 150 fuses and ~10 minutes of battle coins
 Config.FLOOR3 = { fuses = 150, depth = 150, minutes = 10 }
 Config.FLOOR3_Y = 29 -- top of the poop deck (the quarterdeck is UPPER_DECK_Y = 19)
@@ -158,7 +161,7 @@ Config.LIGHTHOUSE_COIN_BONUS = 0.15
 
 -- Offline battling: your team keeps earning while you're away
 Config.OFFLINE_MAX_HOURS = 8
-Config.OFFLINE_RATE = 0.35 -- fraction of a live run's coin rate
+Config.OFFLINE_RATE = 0.10 -- fraction of a live run's coin rate (8 h away = about 48 min of play); playing always beats waiting
 
 ---------------------------------------------------------------------------
 -- Elements: Tide > Abyss > Coral > Storm > Tide (+50% damage, "SUPER!")
@@ -429,7 +432,7 @@ Config.GAMEPASSES = {
 	DoubleCoins = { id = 2093447301, price = 219, name = "x2 Coins", desc = "Double coins from every battle." },
 	FastFuse = { id = 2094359336, price = 299, name = "x2 Fuse Speed", desc = "Eggs hatch and monsters fuse twice as fast." },
 	FastBattle = { id = 2096773204, price = 59, name = "x2 Battle Speed", desc = "Unlocks the x2 battle speed toggle." },
-	ExtraPedestal = { id = 2092505182, price = 149, name = "+1 Egg Pedestal", desc = "Haul one more egg every pull." },
+	ExtraPedestal = { id = 2092505182, price = 149, name = "Fast Reel", desc = "The fishing rod reels in eggs 8% faster." },
 	DoubleLuck = { id = 2093183555, price = 100, name = "x2 Luck", desc = "Double egg luck and fuse luck forever." },
 }
 Config.PRODUCTS = {
@@ -486,7 +489,8 @@ Config.CODES = {
 ---------------------------------------------------------------------------
 Config.TEAM_START = 3
 Config.TEAM_MAX = 8
-Config.TEAM_SLOT_PRICES = { 8000, 40000, 200000, 1000000, 5000000 } -- 4th, 5th, ... slot
+-- 4th..8th slot: 12 minutes of income at stages 2, 6, 10, 14, 18 (Stats.stagePrice)
+Config.TEAM_SLOT_PRICES = { 26000, 650000, 14000000, 260000000, 4600000000 }
 
 ---------------------------------------------------------------------------
 -- Powers: spin a random passive onto one monster (unlocks at a depth)
@@ -542,7 +546,7 @@ Config.SPELLS = {
 	{ id = "QuickHatch", name = "Quick Hatch", desc = "Hatch 2x faster", rarity = 1, minutes = 5, icon = "Speed", effects = { hatch = 2 } },
 	{ id = "SharpFins", name = "Sharp Fins", desc = "+25% damage", rarity = 1, minutes = 5, icon = "Swords", effects = { dmg = 1.25 } },
 	-- Rare
-	{ id = "DoubleHaul", name = "Double Haul", desc = "+1 egg per haul", rarity = 2, minutes = 8, icon = "Pedestal", effects = { pedestals = 1 } },
+	{ id = "DoubleHaul", name = "Double Haul", desc = "Rod reels 8% faster", rarity = 2, minutes = 8, icon = "Pedestal", effects = { pedestals = 1 } },
 	{ id = "ToughScales", name = "Tough Scales", desc = "+40% health", rarity = 2, minutes = 6, icon = "Team", effects = { hp = 1.4 } },
 	{ id = "FuseCharm", name = "Fuse Charm", desc = "x2 fuse luck", rarity = 2, minutes = 6, icon = "Heart", effects = { fuseLuck = 2 } },
 	{ id = "PearlRain", name = "Pearl Rain", desc = "x3 pearl drops", rarity = 2, minutes = 6, icon = "Pearl", effects = { pearls = 3 } },
@@ -551,7 +555,7 @@ Config.SPELLS = {
 	{ id = "TidalFury", name = "Tidal Fury", desc = "+60% damage", rarity = 3, minutes = 6, icon = "Power", effects = { dmg = 1.6 } },
 	{ id = "TreasureTide", name = "Treasure Tide", desc = "x3 battle coins", rarity = 3, minutes = 6, icon = "Coin", effects = { coins = 3 } },
 	-- Legendary
-	{ id = "KrakenBlessing", name = "Kraken Blessing", desc = "x3 egg luck, +1 egg", rarity = 4, minutes = 10, icon = "Crate", effects = { eggLuck = 3, pedestals = 1 } },
+	{ id = "KrakenBlessing", name = "Kraken Blessing", desc = "x3 egg luck, rod 8% faster", rarity = 4, minutes = 10, icon = "Crate", effects = { eggLuck = 3, pedestals = 1 } },
 	{ id = "MoonFuse", name = "Moon Fuse", desc = "x3 fuse luck", rarity = 4, minutes = 10, icon = "Event", effects = { fuseLuck = 3 } },
 	-- Mythic
 	{ id = "AbyssAwakening", name = "Abyss Awakening", desc = "x2 damage and health", rarity = 5, minutes = 8, icon = "Boss", effects = { dmg = 2, hp = 2 } },
@@ -569,7 +573,7 @@ Config.SPELLS = {
 	{ id = "PearlDiver", name = "Pearl Diver", desc = "x2 pearl drops", rarity = 2, minutes = 8, icon = "Pearl", effects = { pearls = 2 } },
 	-- more Epic
 	{ id = "RainbowRipple", name = "Rainbow Ripple", desc = "x8 Golden & Rainbow eggs", rarity = 3, minutes = 5, icon = "Shop", effects = { mutation = 8 } },
-	{ id = "WhirlpoolHaul", name = "Whirlpool Haul", desc = "+2 eggs per catch", rarity = 3, minutes = 6, icon = "Pedestal", effects = { pedestals = 2 } },
+	{ id = "WhirlpoolHaul", name = "Whirlpool Haul", desc = "Rod reels 16% faster", rarity = 3, minutes = 6, icon = "Pedestal", effects = { pedestals = 2 } },
 	{ id = "CoralArmor", name = "Coral Armor", desc = "x2 health", rarity = 3, minutes = 6, icon = "Team", effects = { hp = 2 } },
 	{ id = "StormSurge", name = "Storm Surge", desc = "x1.8 damage, x1.5 coins", rarity = 3, minutes = 6, icon = "Power", effects = { dmg = 1.8, coins = 1.5 } },
 	{ id = "PearlStorm", name = "Pearl Storm", desc = "x5 pearl drops", rarity = 3, minutes = 6, icon = "Pearl", effects = { pearls = 5 } },
@@ -578,7 +582,7 @@ Config.SPELLS = {
 	{ id = "DeepCurrent", name = "Deep Current", desc = "Hatch 4x faster, x2 fuse luck", rarity = 4, minutes = 8, icon = "Event", effects = { hatch = 4, fuseLuck = 2 } },
 	{ id = "LeviathanRage", name = "Leviathan Rage", desc = "x2.5 damage", rarity = 4, minutes = 8, icon = "Boss", effects = { dmg = 2.5 } },
 	-- more Mythic
-	{ id = "AbyssCrown", name = "Abyss Crown", desc = "x4 egg luck, +2 eggs, x4 fuse luck", rarity = 5, minutes = 6, icon = "Crate", effects = { eggLuck = 4, pedestals = 2, fuseLuck = 4 } },
+	{ id = "AbyssCrown", name = "Abyss Crown", desc = "x4 egg luck, rod 16% faster, x4 fuse luck", rarity = 5, minutes = 6, icon = "Crate", effects = { eggLuck = 4, pedestals = 2, fuseLuck = 4 } },
 	{ id = "KingTide", name = "King Tide", desc = "x3 damage, health and coins", rarity = 5, minutes = 6, icon = "Boss", effects = { dmg = 3, hp = 3, coins = 3 } },
 }
 -- Spell art (rendered in Blender: assets/icons/build_spell_icons.py). One picture per effect;
@@ -644,8 +648,7 @@ Config.GIFTS = {
 	{ min = 30, pearls = 75, spell = "final" },
 }
 Config.DAILY_PEARLS = { 10, 15, 20, 30, 40, 60, 100 } -- by streak day
-Config.GROUP_ID = 865496476 -- the owning group: joining it gives the "Join the crew" free egg
-Config.GROUP_REWARD = { stars = 2, levels = 1, spins = 2 } -- a 2-star egg a level above your stage + 2 spins
+Config.GROUP_ID = 865496476 -- the owning group (the Gift Chest has a plain "Join the Crew" button, no reward)
 Config.FRIEND_BOOST = 0.1 -- +10% battle coins for each friend in your server
 Config.FRIEND_BOOST_MAX = 3
 -- Badges (0 = not created yet). Create them in Creator Hub > Badges and paste the ids here.
@@ -712,6 +715,13 @@ Config.ICONS = {
 Config.SOUNDS = {
 	Click = 100143720596892,
 	Winch = 93276104774318,
+	-- fishing and Ship Workshop (assets/audio, ElevenLabs): the cannon boom, the chime as the hook
+	-- passes a zone, the egg popping out of its nest, the rod cast, the workshop upgrade
+	Cannon = 71295962741418,
+	ZoneChime = 110832657525357,
+	EggPop = 87204529640023,
+	Cast = 105307309435251,
+	Upgrade = 92072519260327,
 	Buy = 118571612779669,
 	Place = 96720949066015,
 	Hatch = 92445619035350,
