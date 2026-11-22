@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Remotes = require(Shared.Remotes)
+local Stats = require(Shared.Stats)
 
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
@@ -124,6 +125,24 @@ end
 
 local lastStep = 0
 
+-- Do you own enough monsters of one level to fuse (Stats.fuseNeeded: 2 for Lv1-2, then the level)?
+local function canFuseNow(snap: any): boolean
+	if not snap or not snap.monsters then
+		return false
+	end
+	local byLevel: { [number]: number } = {}
+	for _, m in snap.monsters do
+		local l = m.lvl :: number
+		byLevel[l] = (byLevel[l] or 0) + 1
+	end
+	for l, n in byLevel do
+		if l < Config.MAX_LEVEL and n >= Stats.fuseNeeded(l) then
+			return true
+		end
+	end
+	return false
+end
+
 -- True while the guide should show nothing: a fight is running, you are not on your own ship, or the
 -- camera is facing the arena (out to starboard) from the deck.
 local function isQuiet(): boolean
@@ -188,7 +207,9 @@ function Guide.init(screen: ScreenGui)
 		-- from your ship, or looking out toward the arena from the deck: the prompts only belong to
 		-- the ship, and they used to sit right over the battle and its depth bar.
 		local quiet = isQuiet()
-		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
+		-- the Fuse prompt (tag + arrow) only makes sense when something CAN be fused right now
+		local noFuse = info ~= nil and info.target == "fuse" and not canFuseNow(snap)
+		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet and not noFuse
 		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open
 		local helper = Guide.helper
 		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet

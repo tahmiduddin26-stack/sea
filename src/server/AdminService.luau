@@ -72,6 +72,14 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 	elseif cmd == "BestDepth" then
 		data.bestDepth = n
 		BattleService.retreat(player)
+	elseif cmd == "GoToDepth" then
+		-- testing: the next FIGHT starts at depth n (best depth is raised to match, so it is allowed)
+		local depth = math.clamp(n, 1, Config.FINAL_DEPTH)
+		BattleService.retreat(player)
+		data.bestDepth = math.max(data.bestDepth, depth - 1)
+		data.resumeDepth = depth
+		refresh(player)
+		return true, "Press FIGHT: you start at depth " .. depth
 	elseif cmd == "Lv1Team" then
 		-- three Lv1 1-star monsters in your nests, tutorial done (so FIGHT and the HUD are on)
 		data.tutorial = Config.TUTORIAL_DONE

@@ -31,6 +31,7 @@ local ROWS: { { label: string, cmd: string, n: number?, color: Color3? } } = {
 	{ label = "Finish all timers", cmd = "FinishTimers" },
 	{ label = "Unlock Floor 2", cmd = "Floor2" },
 	{ label = "Unlock Floor 3", cmd = "Floor3" },
+	{ label = "Fight from depth 10", cmd = "GoToDepth", n = 10 },
 	{ label = "Deep Rod ready now", cmd = "DeepRod" },
 	{ label = "Abyss Rod ready now", cmd = "AbyssRod" },
 	{ label = "Play new-player intro", cmd = "Intro" },

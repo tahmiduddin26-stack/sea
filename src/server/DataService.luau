@@ -303,6 +303,21 @@ local function load(player: Player)
 		return
 	end
 	profiles[player] = reconcile(data or DataService.defaultData())
+	-- A player who already started the game before this update (a returning save that got past the very
+	-- first step, or owns a monster) skips the tutorial: it is only for brand-new players.
+	do
+		local d = profiles[player]
+		if data ~= nil and d.tutorial < Config.TUTORIAL_DONE then
+			local monsters = 0
+			for _ in d.monsters do
+				monsters += 1
+			end
+			if d.tutorial > 1 or monsters > 0 or (d.totalFuses or 0) > 0 then
+				d.tutorial = Config.TUTORIAL_DONE
+				d.introSeen = true
+			end
+		end
+	end
 	session[player] = {
 		isNew = data == nil,
 		joinTime = os.time(),

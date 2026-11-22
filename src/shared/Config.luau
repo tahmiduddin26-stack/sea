@@ -52,6 +52,7 @@ Config.NEST_SLOTS = {
 }
 Config.QUARTERDECK_Z = 54 -- the raised stern deck (Floor 2) starts here
 Config.MAST_POS = Vector3.new(0, 0, 36)
+Config.WALK_SPEED = 24 -- how fast a player runs: 1.5x Roblox's default of 16
 Config.START_NESTS = 3
 Config.NEST_REVEAL_MONSTERS = 3 -- the buyable nests appear once you own this many monsters
 -- Coin inflation, for looks only: EVERY coin amount (what you earn AND what things cost) is this
@@ -185,7 +186,8 @@ Config.ROLL_COOLDOWN = 3 -- extra guard; a cast also blocks the next until it la
 -- (TIMER_MAX_SECONDS): a Lv18 Mythic (5 star) is exactly 6 h, a Lv12 Mythic 2.7 h, a Lv12
 -- Common 20 min, a Lv5 Common 3 min. A fuse of two Lv N monsters takes FUSE_FACTOR x a Lv N hatch.
 Config.HATCH_CURVE = { a = 8.33, p = 2.0, min = 6 }
-Config.FUSE_FACTOR = 0.9
+Config.FUSE_FACTOR = 0.9 -- (unused: fusing is instant now)
+Config.FUSE_SECONDS = 2 -- how long a fuse takes: only the swoop and heart burst, no waiting
 -- Timers also grow with RARITY: x this for a 1..5 star egg / fuse (a Mythic takes 8x a Common of
 -- the same level). Timers are wall-clock (os.time), so they keep running while you are offline.
 Config.TIMER_STAR_MULT = { 1, 1.6, 2.6, 4.5, 8 }
@@ -211,7 +213,11 @@ Config.LEVEL_CAP_BASE = 3
 Config.FUSE_NEEDED_MAX = 4
 -- Lose a fight (a monster faints) and it has to rest this long before it can fight again.
 -- Paying for a Revive right after the defeat skips the rest.
-Config.REST_SECONDS = 30
+Config.REST_SECONDS = 30 -- (old flat rest, unused: see Stats.restSeconds)
+-- A fainted monster sleeps for REST_MIN_SECONDS (Lv1) up to REST_MAX_SECONDS (Lv MAX_LEVEL): the higher its
+-- level, the longer it sleeps. The rest of your team keeps fighting while it sleeps.
+Config.REST_MIN_SECONDS = 20
+Config.REST_MAX_SECONDS = 180
 -- Selling a hatched monster pays this fraction of what an egg like it costs (so buying an egg
 -- and selling the baby always loses coins). Golden / Rainbow sell for more, like their eggs.
 Config.SELL_RATIO = 0.5
@@ -424,6 +430,7 @@ Config.BASE_ATTACK_INTERVAL = 1.1 -- seconds between attacks at rate 1
 Config.LEVEL_STAT_GROWTH = 1.6 -- every stat x this per level
 Config.STAR_MULT = { 1, 1.25, 1.6, 2.1, 3.0 }
 Config.MAX_LEVEL = 32
+Config.SIZE_MAX_BONUS = 0.25 -- a monster at MAX_LEVEL looks this much bigger than at Lv1 (grows evenly with each level)
 Config.ABILITY_HITS = 4 -- normal hits to fill the energy bar
 Config.ABILITY_MULT = 3.5 -- ability hit = this x attack
 
@@ -480,6 +487,10 @@ Config.MINIBOSS_HP_MULT = 4
 Config.MINIBOSS_ATK_MULT = 1.6
 Config.BOSS_HP_MULT = 10
 Config.BOSS_ATK_MULT = 1.4
+-- Outclassed: past this many seconds for your team to kill an ordinary enemy, that enemy's damage grows in
+-- proportion (up to HOPELESS_MAX_MULT x), so a hopeless dive ends fast. A fair fight (3-10 s) is unaffected.
+Config.HOPELESS_TTK = 12
+Config.HOPELESS_MAX_MULT = 10
 Config.BOSS_TIME = 60 -- seconds to beat a boss (stages 1-10)
 Config.BOSS_TIME_PER_STAGE = 2 -- + this many seconds per stage past 10 (stage 20: 80 s), so the late climb stays fair
 Config.NEXT_WAVE_DELAY = 1.0
@@ -562,7 +573,7 @@ Config.SIGNS_UNLOCK_STEP = 10 -- the ship's upgrade signs can be bought from thi
 Config.GAMEPASSES = {
 	VIP = { id = 2093567317, price = 175, name = "VIP Captain", desc = "+25% coins, gold name tag and a gold nest." },
 	DoubleCoins = { id = 2093447301, price = 110, name = "x2 Coins", desc = "Double coins from every battle." },
-	FastFuse = { id = 2094359336, price = 150, name = "x2 Fuse Speed", desc = "Eggs hatch and monsters fuse twice as fast." },
+	FastFuse = { id = 2094359336, price = 150, name = "x2 Hatch Speed", desc = "Eggs hatch twice as fast." },
 	FastBattle = { id = 2096773204, price = 30, name = "x2 Battle Speed", desc = "Unlocks the x2 battle speed toggle." },
 	ExtraPedestal = { id = 2092505182, price = 75, name = "Fast Reel", desc = "The fishing rod reels in eggs 8% faster." },
 	DoubleLuck = { id = 2093183555, price = 50, name = "x2 Luck", desc = "Double egg luck and fuse luck forever." },

@@ -42,6 +42,13 @@ function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string
 	}
 end
 
+-- How big a monster of this level looks, as a multiplier on its species size: it grows a little with every
+-- level (so every fuse makes it slightly bigger) up to Config.SIZE_MAX_BONUS (+25%) at MAX_LEVEL.
+function Stats.sizeMult(lvl: number): number
+	local t = math.clamp((lvl - 1) / math.max(1, Config.MAX_LEVEL - 1), 0, 1)
+	return 1 + Config.SIZE_MAX_BONUS * t
+end
+
 -- One number for "how strong is this team" (shown as Team Power)
 function Stats.power(sp: string, lvl: number, stars: number?, variant: string?, sixth: boolean?): number
 	local s = Stats.monster(sp, lvl, stars, variant, sixth)
@@ -201,6 +208,12 @@ function Stats.shipTierPrice(tier: number): number
 	return math.floor(perKill * 10 * Config.SHIPWRIGHT.minutes / 50) * 50
 end
 
+-- How long a monster of this level sleeps after fainting: 20 s at Lv1 up to 3 min at the top level
+function Stats.restSeconds(lvl: number): number
+	local t = math.clamp((lvl - 1) / math.max(1, Config.MAX_LEVEL - 1), 0, 1)
+	return math.floor(Config.REST_MIN_SECONDS + (Config.REST_MAX_SECONDS - Config.REST_MIN_SECONDS) * t + 0.5)
+end
+
 -- Coins from a Robux coin pack (Config.COIN_PACK_MINUTES of battle income at your best depth,
 -- with a floor). The shop card shows this same number, so it is what the purchase pays.
 function Stats.coinPack(name: string, bestDepth: number): number
@@ -241,8 +254,9 @@ end
 
 -- A fuse's rarity is the rarer parent's stars (so the client can show the time up front)
 -- (lvl = the parents' level; the fuse makes lvl + 1)
-function Stats.fuseSeconds(lvl: number, stars: number?, floor: number?): number
-	return math.max(4, math.floor(Stats.hatchSeconds(lvl, stars, floor) * Config.FUSE_FACTOR))
+function Stats.fuseSeconds(_lvl: number, _stars: number?, _floor: number?): number
+	-- fusing is instant: just long enough for the swoop and hearts to play (Config.FUSE_SECONDS)
+	return Config.FUSE_SECONDS
 end
 
 -- Highest level a monster can be fused up to: 3 + the stages you have cleared (bosses beaten)

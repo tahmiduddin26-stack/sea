@@ -53,9 +53,13 @@ ShipView.flights = {} :: { [BasePart]: { t0: number, dur: number, to: Vector3 } 
 -- a tag that shrinks with distance is unreadable on a phone, and a tag that stays big from far
 -- away floats about the whole ship. Nothing is shown until you walk up to the monster.
 local TAG_DISTANCE = 24
-local function tag(parent: Instance, size: UDim2, offset: Vector3): BillboardGui
-	return UI.new("BillboardGui", { Size = size, StudsOffsetWorldSpace = offset, LightInfluence = 0, MaxDistance = TAG_DISTANCE, AlwaysOnTop = false, Parent = parent })
+local function tag(parent: Instance, size: UDim2, offset: Vector3, maxDistance: number?): BillboardGui
+	return UI.new("BillboardGui", { Size = size, StudsOffsetWorldSpace = offset, LightInfluence = 0, MaxDistance = maxDistance or TAG_DISTANCE, AlwaysOnTop = false, Parent = parent })
 end
+
+-- an egg's countdown / "Ready!" must stay readable from anywhere on the deck (a nest is 18 studs from
+-- the next, so the 24 stud name-tag rule made timers vanish as soon as you walked a few steps away)
+local EGG_TAG_DISTANCE = 90
 
 local function variantPrefix(v: string?): string
 	if v == "Golden" then
@@ -104,6 +108,20 @@ local function nameTag(slot: Slot, sp: string, lvl: number, stars: number, heigh
 	end
 	local _ = col
 	slot.gui = gui
+	-- a monster that fainted sleeps until its rest is over: while it does, the name tag is hidden and
+	-- only this "Zzz 0:23" timer shows (a separate tag, readable from far away like the egg timers)
+	if slot.anchor:GetAttribute("RestUntil") then
+		local sleepGui = tag(slot.anchor, UDim2.fromOffset(190, 120), Vector3.new(0, height * 0.75 + 2.4, 0), EGG_TAG_DISTANCE)
+		sleepGui.Enabled = false
+		;(slot :: any).sleepGui = sleepGui
+		;(slot :: any).rest = UI.label({ Text = "", TextColor3 = Color3.fromRGB(190, 215, 255), MaxText = 34, Size = UDim2.new(1, 0, 0, 40), Position = UDim2.new(0, 0, 1, -40), Parent = sleepGui })
+		-- three "Z"s that drift up and fade, one after another, so the sleeper is clearly dozing
+		local zs: { TextLabel } = {}
+		for i = 1, 3 do
+			zs[i] = UI.label({ Text = "Z", TextColor3 = Color3.fromRGB(215, 230, 255), MaxText = 40, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(110, 60), Parent = sleepGui })
+		end
+		;(slot :: any).sleepZ = zs
+	end
 end
 
 local function clearSlot(slot: Slot)
@@ -120,6 +138,12 @@ local function clearSlot(slot: Slot)
 		slot.gui = nil
 	end
 	slot.timer = nil
+	;(slot :: any).rest = nil
+	local sg = (slot :: any).sleepGui :: BillboardGui?
+	if sg then
+		sg:Destroy()
+		;(slot :: any).sleepGui = nil
+	end
 end
 
 local function nestSig(pad: BasePart): string
@@ -131,6 +155,7 @@ local function nestSig(pad: BasePart): string
 		tostring(pad:GetAttribute("Price")),
 		tostring(pad:GetAttribute("Variant")),
 		tostring(pad:GetAttribute("Perk")),
+		tostring(pad:GetAttribute("RestUntil")),
 	}, "|")
 end
 
@@ -143,7 +168,7 @@ local function buildNest(slot: Slot)
 	local stars = (pad:GetAttribute("Stars") or 1) :: number
 	slot.kind = tostring(state)
 	if state == "mon" and sp then
-		local rig = MonsterModels.build(sp, NEST_SCALE)
+		local rig = MonsterModels.build(sp, NEST_SCALE * Stats.sizeMult(lvl)) -- bigger with every level
 		if rig then
 			rig.model.Parent = folder
 			slot.rig = rig
@@ -159,7 +184,7 @@ local function buildNest(slot: Slot)
 		egg.Parent = folder
 		slot.egg = egg
 		slot.base = pad.CFrame * CFrame.new(0, pad.Size.Y / 2 + 0.85 * EGG_SCALE, 0)
-		local gui = tag(pad, UDim2.fromOffset(150, 70), Vector3.new(0, 4.2, 0))
+		local gui = tag(pad, UDim2.fromOffset(150, 70), Vector3.new(0, 4.2, 0), EGG_TAG_DISTANCE)
 		local def = Config.MONSTERS[sp]
 		local title = if state == "fuse" then "Fusing..." else (eggType(sp) .. " Egg")
 		local _ = def
@@ -289,13 +314,13 @@ end
 -- on your own ship the gate is hidden so it never looks like a wall to you
 local gates: { [number]: BasePart } = {}
 local function filterGates()
-	local myShip = player:GetAttribute("Ship")
-	for idx, gate in gates do
-		local mine = idx == myShip
-		gate.LocalTransparencyModifier = if mine then 1 else 0
+	-- visitors may walk aboard any ship (the gates no longer block anyone), so the gate is never drawn
+	-- and its "CREW ONLY" label stays off
+	for _, gate in gates do
+		gate.LocalTransparencyModifier = 1
 		local gl = gate:FindFirstChild("GateLabel") :: BillboardGui?
 		if gl then
-			gl.Enabled = not mine
+			gl.Enabled = false
 		end
 	end
 end
@@ -357,8 +382,10 @@ local function filterPrompts()
 					elseif mine and pp.Name == "WinchPrompt" then
 						show = true -- you can always fish, even holding an egg
 					elseif mine and (pp.Name == "DeepRodPrompt" or pp.Name == "AbyssRodPrompt") then
-						-- after the tutorial; while locked / cooling down a press says how long is left
-						show = snap ~= nil and snap.tutorial >= Config.TUTORIAL_DONE
+						-- ALWAYS shown on your own ship: a player who had not finished the tutorial used to
+						-- see no button at all. The server answers a too-early press with the reason
+						-- ("Finish the tutorial first!", or how long until it unlocks / is ready again)
+						show = true
 					elseif mine and pp.Name == "UpgradePrompt" then
 						show = snap ~= nil and snap.tutorial >= Config.SIGNS_UNLOCK_STEP
 					end
@@ -538,7 +565,15 @@ function ShipView.init()
 					elseif mark == "ok" then
 						cf = slot.base * CFrame.new(0, math.abs(math.sin(t * 5)) * 0.6, 0)
 					end
-					MonsterModels.pose(slot.rig, cf, t + slot.phase, mark == "picked" or fly ~= nil, true)
+					-- a fainted monster sleeps: lying on its side, breathing slowly, until its rest is over
+					local asleep = fly == nil and ((anchor:GetAttribute("RestUntil") or 0) :: number) - now > 0
+					local poseT = t + slot.phase
+					if asleep then
+						local h = MonsterModels.height(slot.rig)
+						cf = slot.base * CFrame.new(0, h * 0.3 + math.sin(t * 1.6 + slot.phase) * 0.05 * h, 0) * CFrame.Angles(0, 0, math.rad(80))
+						poseT = t * 0.12 + slot.phase -- the tail and fins barely move
+					end
+					MonsterModels.pose(slot.rig, cf, poseT, (mark == "picked" or fly ~= nil) and not asleep, true)
 				end
 				-- highlight: gold = picked, green = a valid partner, faded = can't fuse with it
 				local mark = ShipView.marks[anchor]
@@ -564,8 +599,27 @@ function ShipView.init()
 					MonsterModels.fade(slot.rig, if dimNow then 0.72 else 0)
 				end
 			end
+			-- sleeping (fainted in a fight): no name tag, just the Zzz timer
+			local sleepLeft = math.ceil(((anchor:GetAttribute("RestUntil") or 0) :: number) - now)
+			local sleeping = sleepLeft > 0
 			if slot.gui then
-				slot.gui.Enabled = not hide
+				slot.gui.Enabled = not hide and not sleeping
+			end
+			local sleepGui = (slot :: any).sleepGui :: BillboardGui?
+			local restLbl = (slot :: any).rest :: TextLabel?
+			if sleepGui and restLbl then
+				sleepGui.Enabled = not hide and sleeping
+				restLbl.Text = "Zzz  " .. Format.time(math.max(0, sleepLeft))
+				-- the Z's float up and to the right, growing then fading out
+				local zs = (slot :: any).sleepZ :: { TextLabel }?
+				if zs and sleeping then
+					for i, z in zs do
+						local p = (t * 0.45 + (i - 1) / #zs) % 1
+						z.Position = UDim2.fromOffset(104 + p * 40 + i * 6, 62 - p * 62)
+						z.Size = UDim2.fromOffset(20 + p * 22, 20 + p * 22)
+						z.TextTransparency = math.clamp((p - 0.55) / 0.45, 0, 1)
+					end
+				end
 			end
 			if slot.egg then
 				slot.egg.Parent = if near and not hide then folder else nil

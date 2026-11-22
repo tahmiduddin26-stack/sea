@@ -163,6 +163,7 @@ function FarmService.syncNest(player: Player, i: number)
 	pad:SetAttribute("InBattle", nil)
 	pad:SetAttribute("Variant", nil)
 	pad:SetAttribute("Perk", nil)
+	pad:SetAttribute("RestUntil", nil)
 	prompt:SetAttribute("Live", true)
 	prompt.HoldDuration = 0
 	pad:SetAttribute("Price", nil)
@@ -220,6 +221,8 @@ function FarmService.syncNest(player: Player, i: number)
 			pad:SetAttribute("Lvl", m.lvl)
 			pad:SetAttribute("Stars", Stats.shownStars(m.sp, m.x6))
 			pad:SetAttribute("Perk", m.perk) -- Deep Rod perk (shown on the name tag)
+			-- fainted in a fight: it rests until this os.time (the name tag counts it down)
+			pad:SetAttribute("RestUntil", if (m.restUntil or 0) > os.time() then m.restUntil else nil)
 		end
 		pad:SetAttribute("InBattle", if s and s.fighting and s.fighting[nest.uid] then true else nil)
 		-- fusing happens in the world: E on a monster picks it (handled on the client)
@@ -238,12 +241,14 @@ function FarmService.syncNest(player: Player, i: number)
 	local left = nest.readyAt - os.time()
 	if left <= 0 then
 		prompt.ActionText = "Open"
-		prompt.ObjectText = if nest.kind == "egg" then "Egg" else "Fused Egg"
-		prompt:SetAttribute("Live", nest.kind == "egg") -- fused eggs open by themselves
+		prompt.ObjectText = if nest.kind == "egg" then "Egg" else "Fused Monster"
+		prompt:SetAttribute("Live", true) -- fused eggs open by themselves, and a tap opens them too
 	else
 		prompt.ActionText = "Hatch Now"
 		prompt.ObjectText = "R$" .. Config.PRODUCTS.SkipTimer.price .. " · 5 min"
 		prompt.HoldDuration = 0.4
+		-- a fuse only lasts a couple of seconds: no Hatch Now offer, just let it finish
+		prompt:SetAttribute("Live", nest.kind ~= "fuse")
 	end
 end
 
@@ -349,7 +354,7 @@ end
 
 local function clearShip(ship: WorldBuilder.Ship)
 	for _, pad in ship.nests do
-		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "ReadyAt", "InBattle", "Price", "Variant" } do
+		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "ReadyAt", "InBattle", "Price", "Variant", "RestUntil" } do
 			pad:SetAttribute(a, nil)
 		end
 		(pad:FindFirstChild("NestPrompt") :: ProximityPrompt):SetAttribute("Live", false)
@@ -450,6 +455,10 @@ end
 
 -- The shortest an egg / fuse timer can be for this player right now (short for brand-new players)
 function FarmService.timerFloor(player: Player): number
+	-- the tutorial is always fast: a slow first session must never meet a minutes-long first fuse
+	if FarmService.inTutorial(player) then
+		return Config.HATCH_CURVE.min
+	end
 	return Stats.timerFloor(DataService.playSeconds(player))
 end
 
@@ -596,10 +605,7 @@ local function haul(player: Player, kind: any)
 		return
 	end
 	if deep then
-		if FarmService.inTutorial(player) then
-			toast(player, "Finish the tutorial first!", Color3.fromRGB(255, 200, 60))
-			return
-		end
+		-- (no tutorial check: the rods only wait for their own unlock time, see below)
 		local PINK = Color3.fromRGB(255, 90, 170)
 		if abyss then
 			local wait, why = FarmService.abyssRodWait(player)
@@ -1128,7 +1134,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 			table.remove(data.team, i)
 		end
 	end
-	local secs = math.max(2, math.floor(Stats.fuseSeconds(a.lvl, math.max(Stats.stars(a.sp), Stats.stars(b.sp)), FarmService.timerFloor(player)) * FarmService.hatchMult(player)))
+	local secs = Config.FUSE_SECONDS -- instant: only the swoop animation, no speed boost needed
 	data.nests[tostring(na)] = { kind = "fuse", child = child, readyAt = os.time() + secs, from = { a.sp, b.sp } }
 	data.nests[tostring(nb)] = nil
 	data.totalFuses += 1
@@ -1200,7 +1206,8 @@ function FarmService.team(player: Player, forBattle: boolean?): { { uid: string,
 			used[uid] = true
 		end
 	end
-	if #data.team == 0 then
+	-- no chosen fighter is awake (none picked, or they are all sleeping): send the strongest awake monsters
+	if #team == 0 then
 		table.sort(out, function(x, y)
 			return Stats.power(x.sp, x.lvl, x.stars, x.v, x.x6) > Stats.power(y.sp, y.lvl, y.stars, y.v, y.x6)
 		end)
@@ -1304,10 +1311,17 @@ function FarmService.init()
 					buyNest(player, i)
 				elseif state == "egg" or state == "fuse" then
 					local ready = (pad:GetAttribute("ReadyAt") or 0) <= os.time()
-					if ready then
+					if ready and state == "fuse" then
+						-- a ready fused egg opens by itself, but a tap opens it too (never stuck on "Ready!")
+						local data = DataService.get(player)
+						local nest = data and data.nests[tostring(i)]
+						if nest and nest.kind == "fuse" then
+							finishFuse(player, i)
+						end
+					elseif ready then
 						openEgg(player, i)
-					else
-						skipNest(player, i)
+					elseif state ~= "fuse" then
+						skipNest(player, i) -- (never offered for a fuse: it finishes by itself in a moment)
 					end
 				end
 			end)
@@ -1342,18 +1356,24 @@ function FarmService.init()
 				local data = DataService.get(player)
 				if data and FarmService.shipOf(player) then
 					for k, nest in data.nests do
-						if nest.kind ~= "mon" and nest.readyAt <= now and not nest.flagged then
-							if nest.kind == "fuse" then
-								finishFuse(player, tonumber(k) :: number)
-							else
-								nest.flagged = true
+						-- one bad nest must never stop this loop: it runs every timer for every player
+						local ok, err = pcall(function()
+							if nest.kind ~= "mon" and nest.readyAt <= now and not nest.flagged then
+								if nest.kind == "fuse" then
+									finishFuse(player, tonumber(k) :: number)
+								else
+									nest.flagged = true
+									FarmService.syncNest(player, tonumber(k) :: number)
+								end
+							elseif nest.kind ~= "mon" and nest.readyAt > now and FarmService.hatchNowActive(player) then
+								-- Hatch Now is running: every timer (old or new) finishes right away
+								nest.readyAt = now
 								FarmService.syncNest(player, tonumber(k) :: number)
+								DataService.changed(player)
 							end
-						elseif nest.kind ~= "mon" and nest.readyAt > now and FarmService.hatchNowActive(player) then
-							-- Hatch Now is running: every timer (old or new) finishes right away
-							nest.readyAt = now
-							FarmService.syncNest(player, tonumber(k) :: number)
-							DataService.changed(player)
+						end)
+						if not ok then
+							warn("[Farm] nest timer failed", player.Name, k, err)
 						end
 					end
 				end

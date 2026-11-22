@@ -14,6 +14,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
 local MonsterModels = require(Shared.MonsterModels)
+local Stats = require(Shared.Stats)
 local Remotes = require(Shared.Remotes)
 
 local UI = require(script.Parent.UI)
@@ -259,7 +260,7 @@ local function onStart(owner: number, payload: any)
 		local x = (col - (inRow + 1) / 2) * 10
 		local z = 8 + row * 9 + math.abs(col - (inRow + 1) / 2) * 1.5
 		local home = arena * CFrame.new(x, 0, z)
-		local u = newUnit(m.sp, MON_SCALE, home, m.maxHp)
+		local u = newUnit(m.sp, MON_SCALE * Stats.sizeMult(m.lvl or 1), home, m.maxHp) -- bigger with every level
 		if u then
 			MonsterModels.applyVariant(u.rig, m.v)
 			MonsterModels.applyPerk(u.rig, m.perk)

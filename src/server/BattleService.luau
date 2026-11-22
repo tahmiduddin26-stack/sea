@@ -332,6 +332,18 @@ local function step(run: Run, dt: number)
 			local f = run.team[i]
 			local mult = Stats.elementMult({ e.element }, f.elements[1])
 			local dmg = math.max(1, math.floor(e.atk * mult * rng:NextNumber(0.9, 1.1)))
+			-- Outclassed: when your team would need much longer than a fair fight to kill an ordinary
+			-- enemy, it hits harder, so a hopeless dive ends in seconds instead of dragging on for minutes.
+			-- Bosses are left alone (they are meant to be a long, timed fight).
+			if e.kind == "mob" then
+				local teamDps = 0
+				for _, fi in alive do
+					local t = run.team[fi]
+					teamDps += t.atk / t.interval
+				end
+				local ttk = e.hp / math.max(1, teamDps) -- seconds your team needs to kill this enemy
+				dmg = math.floor(dmg * math.clamp(ttk / Config.HOPELESS_TTK, 1, Config.HOPELESS_MAX_MULT))
+			end
 			-- Bubble: the first hit from each new enemy pops the bubble instead
 			if f.perk == "Bubble" and f.bubble then
 				f.bubble = false
@@ -385,14 +397,20 @@ local function finish(run: Run)
 	setInBattle(player, false)
 	-- every monster that fainted has to rest before it can fight again
 	local rested = false
+	local longestRest = 0
 	for _, f in run.team do
 		if f.hp <= 0 then
 			local m = data.monsters[f.uid]
 			if m then
-				m.restUntil = os.time() + Config.REST_SECONDS
+				local secs = Stats.restSeconds(m.lvl) -- higher level, longer sleep
+				m.restUntil = os.time() + secs
+				longestRest = math.max(longestRest, secs)
 				rested = true
 			end
 		end
+	end
+	if rested then
+		FarmService.syncAll(player) -- put the "Resting" countdown on those nests now
 	end
 	Analytics.diveEnd(player, run.depth, run.retreat)
 	if not run.retreat then
@@ -406,7 +424,7 @@ local function finish(run: Run)
 		canRevive = not run.retreat and not FarmService.inTutorial(player),
 		retreat = run.retreat,
 		timeUp = (run :: any).timeUp == true,
-		rest = if rested then Config.REST_SECONDS else nil,
+		rest = if rested then longestRest else nil,
 	})
 	FarmService.tutorial(player, 5)
 	DataService.changed(player)
@@ -551,6 +569,7 @@ function BattleService.revive(player: Player): boolean
 	for _, m in data.monsters do
 		m.restUntil = nil
 	end
+	FarmService.syncAll(player) -- clear the "Resting" tags
 	local ok = startRun(player, e.depth)
 	if ok then
 		toast(player, "Revived! Keep diving!", Color3.fromRGB(90, 220, 120))

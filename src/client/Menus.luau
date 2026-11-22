@@ -291,7 +291,7 @@ function Menus.fuse()
 				creatureView(card, o.sp, UDim2.new(1, 0, 0, 90), nil, not found)
 				UI.label({ Text = math.floor(o.chance * 1000 + 0.5) / 10 .. "%", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 94), TextColor3 = C.Gold, Parent = card })
 			end
-			hint.Text = "Lv." .. a.lvl .. " + Lv." .. b.lvl .. " = Lv." .. (a.lvl + 1) .. "   |   " .. Format.time(Stats.fuseSeconds(a.lvl, math.max(Stats.stars(a.sp), Stats.stars(b.sp)), Stats.timerFloor(snap.playSeconds)) * (if State.hasPass("FastFuse") then 0.5 else 1))
+			hint.Text = "Lv." .. a.lvl .. " + Lv." .. b.lvl .. " = Lv." .. (a.lvl + 1) .. "   |   " .. "instant!"
 		else
 			hint.Text = "Pick two monsters of the same level"
 		end
@@ -493,7 +493,8 @@ end
 ---------------------------------------------------------------------------
 function Menus.battleEnd(p: any)
 	local title = if p.retreat then "Retreated" elseif p.timeUp then "TIME'S UP!" else "Team Fainted!"
-	local f, body = window(title, Vector2.new(420, 340), C.Coral)
+	-- tall enough for up to 5 text lines (36 each) and the Revive + No Thanks buttons below them
+	local f, body = window(title, Vector2.new(440, 420), C.Coral)
 	if p.timeUp then
 		Hud.splash("TIME'S UP!", C.Coral)
 	end
@@ -505,12 +506,17 @@ function Menus.battleEnd(p: any)
 		"Enemies beaten: " .. p.kills,
 	}
 	if p.rest then
-		table.insert(lines, "Your monsters must rest for " .. p.rest .. "s")
+		table.insert(lines, "Fainted monsters sleep up to " .. Format.time(p.rest))
 	end
 	for i, t in lines do
 		UI.label({ Text = t, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, (i - 1) * 36), Parent = body })
 	end
-	if p.canRevive then
+	-- "No Thanks" only when there is a Revive to turn down; otherwise (a retreat, or the offer has run
+	-- out) it is just "OK"
+	-- Revive is only ever for a team that was DEFEATED: a retreat never offers it
+	local offerRevive = p.canRevive == true and not p.retreat
+	local closeBtn = UI.button({ Text = if offerRevive then "No Thanks" else "OK", Color = if offerRevive then C.Muted else C.Kelp, Size = UDim2.new(1, -20, 0, 50), Position = UDim2.new(0, 10, 1, -58), Parent = body }, Menus.close)
+	if offerRevive then
 		local btn = UI.button({ Text = "Revive & Continue  R$" .. Config.PRODUCTS.Revive.price, Color = C.Kelp, Size = UDim2.new(1, -20, 0, 54), Position = UDim2.new(0, 10, 1, -120), Parent = body }, function()
 			Menus.close()
 			buy("Product", "Revive") -- straight to the purchase: the Revive offer only lasts 15 seconds
@@ -523,10 +529,16 @@ function Menus.battleEnd(p: any)
 			end
 			if btn.Parent then
 				btn.Visible = false
+				UI.setText(closeBtn, "OK") -- the offer is gone, so there is nothing left to refuse
+				local g = closeBtn:FindFirstChildOfClass("UIGradient")
+				if g then
+					local fresh = UI.gradient(C.Kelp) -- same look as every green button
+					g.Color = fresh.Color
+					fresh:Destroy()
+				end
 			end
 		end)
 	end
-	UI.button({ Text = "No Thanks", Color = C.Muted, Size = UDim2.new(1, -20, 0, 50), Position = UDim2.new(0, 10, 1, -58), Parent = body }, Menus.close)
 	local _ = f
 end
 
@@ -690,6 +702,11 @@ function Menus.team(keepSell: boolean?)
 	local function redraw()
 		for uid, card in cards do
 			local on = table.find(chosen, uid) ~= nil
+			-- in Sell mode every card shows what it would sell for (in place of its Power line)
+			local sellTag = card:FindFirstChild("SellTag") :: GuiObject
+			local powerLbl = card:FindFirstChild("PowerLbl") :: GuiObject
+			sellTag.Visible = sellMode
+			powerLbl.Visible = not sellMode
 			if sellMode then
 				(card:FindFirstChild("Tick") :: GuiObject).Visible = false
 				card.BackgroundColor3 = if uid == armed then Color3.fromRGB(255, 160, 150) else CARD_COLOR
@@ -721,8 +738,11 @@ function Menus.team(keepSell: boolean?)
 				return
 			end
 			local idx = table.find(chosen, e.uid)
+			local sleepLeft = (e.m.restUntil or 0) - State.now()
 			if idx then
 				table.remove(chosen, idx)
+			elseif sleepLeft > 0 then
+				Hud.toast("Sleeping! Ready in " .. Format.time(sleepLeft), C.Coral)
 			elseif #chosen < snap.teamSlots then
 				table.insert(chosen, e.uid)
 			else
@@ -739,8 +759,15 @@ function Menus.team(keepSell: boolean?)
 		-- damage sticker: how hard this monster hits, per second
 		local dmg = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 10, Size = UDim2.new(1, -24, 0, 26), Position = UDim2.fromOffset(12, 118), Parent = card })
 		UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(e.m.sp, e.m.lvl, e.m.stars, e.m.v, e.m.x6) + 0.5)) .. "/s", MaxText = 19, Size = UDim2.new(1, -8, 0.85, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = dmg })
-		UI.label({ Text = "Power " .. Format.abbrev(e.p), TextColor3 = C.Gold, MaxText = 19, Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 146), Parent = card })
+		UI.label({ Name = "PowerLbl", Text = "Power " .. Format.abbrev(e.p), TextColor3 = C.Gold, MaxText = 19, Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 146), Parent = card })
+		-- what this monster sells for (the capped price the server pays), shown only in Sell mode
+		UI.label({ Name = "SellTag", Text = "Sells for " .. Format.abbrev(Stats.sellPrice(e.m.sp, e.m.lvl, e.m.v, snap.bestDepth)), TextColor3 = C.Gold, MaxText = 22, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 144), Visible = false, Parent = card })
 		UI.label({ Name = "Tick", Text = "IN", MaxText = 22, TextColor3 = C.Kelp, Size = UDim2.fromOffset(44, 28), Position = UDim2.fromOffset(6, 4), Parent = card })
+		-- a sleeping monster (fainted in a fight) shows how long until it can fight again
+		local sleepFor = (e.m.restUntil or 0) - State.now()
+		if sleepFor > 0 then
+			UI.label({ Name = "Zzz", Text = "Zzz " .. Format.time(sleepFor), MaxText = 20, TextColor3 = C.Coral, Size = UDim2.fromOffset(100, 24), Position = UDim2.new(1, -104, 0, 4), Parent = card })
+		end
 		cards[e.uid] = card
 	end
 	redraw()
@@ -1199,10 +1226,19 @@ end
 -- Ship Workshop (board on your deck): fittings that help a little in battle + paint
 ---------------------------------------------------------------------------
 function Menus.workshop()
-	local _, body = window("Ship Workshop", Vector2.new(880, 580), Color3.fromRGB(70, 150, 235))
+	local frame, body = window("Ship Workshop", Vector2.new(880, 580), Color3.fromRGB(70, 150, 235))
+	-- a way back to the Dockyard (this window replaced it): a brass-edged button on the frame's top left
+	UI.button({ Text = "◀ Back", Color = C.Sea, Size = UDim2.fromOffset(118, 44), Position = UDim2.fromOffset(22, 8), ZIndex = 8, Parent = frame }, function()
+		Sound.play("Click")
+		Menus.dockyard()
+	end)
 	local function redraw()
+		-- clear only the content: the body's own parchment gradient, corners, outline and padding are
+		-- children too, and wiping them turned the window plain white and pushed the content off the edge
 		for _, ch in body:GetChildren() do
-			ch:Destroy()
+			if ch:IsA("GuiObject") then
+				ch:Destroy()
+			end
 		end
 		local snap = State.snapshot
 		local fits = snap.fittings or {}
@@ -1266,8 +1302,11 @@ end
 function Menus.dockyard()
 	local frame, body = window("Dockyard", Vector2.new(880, 480), Color3.fromRGB(70, 150, 255))
 	local function redraw()
+		-- clear only the content (see Menus.workshop): keep the body's parchment, corners and padding
 		for _, ch in body:GetChildren() do
-			ch:Destroy()
+			if ch:IsA("GuiObject") then
+				ch:Destroy()
+			end
 		end
 		local snap = State.snapshot
 		if not snap then

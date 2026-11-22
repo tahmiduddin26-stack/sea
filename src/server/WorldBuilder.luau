@@ -1207,10 +1207,9 @@ local function buildShip(world: Folder, index: number): Ship
 	-- through (collision groups, see WorldBuilder.setCrew). Everyone else bounces off it, so
 	-- nobody can wander onto another captain's deck. The owner's client hides it.
 	do
-		local gate = box(model, cf, Vector3.new(24, 26, 1.5), Vector3.new(0, 13, -80.5), Color3.fromRGB(120, 210, 255), Enum.Material.ForceField, { Transparency = 0.55, CanQuery = false, Name = "ShipGate", CollisionGroup = "ShipGate" .. index })
-		local gl = label(gate, "CREW ONLY", UDim2.fromOffset(230, 44), Vector3.new(0, 5, 0), Color3.fromRGB(255, 220, 80))
-		gl.Name = "GateLabel"
-		gl.MaxDistance = 90
+		-- Visitors may walk aboard (see setupCollisionGroups), so the gate is built invisible, with no
+		-- "CREW ONLY" label. The part stays in its collision group so crew-only can be switched back on.
+		local gate = box(model, cf, Vector3.new(24, 26, 1.5), Vector3.new(0, 13, -80.5), Color3.fromRGB(120, 210, 255), Enum.Material.ForceField, { Transparency = 1, CanQuery = false, Name = "ShipGate", CollisionGroup = "ShipGate" .. index })
 		gate:SetAttribute("ShipIndex", index)
 	end
 
@@ -1813,9 +1812,16 @@ local function setupCollisionGroups()
 			PhysicsService:RegisterCollisionGroup("ShipGate" .. i)
 		end)
 	end
+	-- Visitors are welcome: the gates and ramp walls let EVERYONE through (the owner's crew, other
+	-- crews and players with no ship), so anyone can walk aboard and look at other captains'
+	-- monsters. Nothing on a ship can be used by a visitor anyway: its prompts only show for the
+	-- owner and the server checks ownership (FarmService.ownsShipOf). The groups stay registered so
+	-- crew-only areas can be switched back on by flipping these flags.
+	local CREW_ONLY = false
 	for i = 1, Config.SHIP_COUNT do
+		PhysicsService:CollisionGroupSetCollidable("ShipGate" .. i, "Default", CREW_ONLY)
 		for j = 1, Config.SHIP_COUNT do
-			PhysicsService:CollisionGroupSetCollidable("ShipGate" .. i, "Crew" .. j, i ~= j)
+			PhysicsService:CollisionGroupSetCollidable("ShipGate" .. i, "Crew" .. j, CREW_ONLY and i ~= j)
 		end
 	end
 end

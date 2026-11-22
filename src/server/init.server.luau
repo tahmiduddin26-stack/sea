@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage:WaitForChild("Shared").Remotes)
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 Remotes.init()
 
 local WorldBuilder = require(script.WorldBuilder)
@@ -50,6 +51,7 @@ local function setupPlayer(player: Player)
 			end
 		end)
 		local hum = char:WaitForChild("Humanoid") :: Humanoid
+		hum.WalkSpeed = Config.WALK_SPEED -- 1.5x the Roblox default (16), so the walk to the island is quicker
 		hum.Died:Connect(function()
 			task.wait(2)
 			spawnPlayer(player)
