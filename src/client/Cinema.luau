@@ -373,13 +373,21 @@ function Cinema.bossIntro(model: Model, name: string)
 	Sound.play("BossIntro", 0.8)
 	local t0 = os.clock()
 	say("BOSS: " .. name, nil, Color3.fromRGB(255, 90, 90))
+	-- frame the whole boss: the camera distance comes from its size (bosses are several times
+	-- bigger than normal enemies), with a little margin, and drifts slightly closer
+	local FOV = 55
+	local fit = 1 / math.tan(math.rad(FOV / 2))
 	while os.clock() - t0 < 2.4 do
 		local pivot = model.Parent and model:GetPivot()
 		if pivot then
-			local focus = pivot.Position + Vector3.new(0, 4, 0)
+			local _, size = model:GetBoundingBox()
+			local radius = math.max(size.Magnitude / 2, 4)
+			local dist = radius * fit * 1.15
 			local k = (os.clock() - t0) / 2.4
-			local from = pivot * CFrame.new(math.sin(k * 1.2) * 6, 6, -22 + k * 4)
-			setCamera(CFrame.lookAt(from.Position, focus), 55)
+			-- aim at the middle of the body; it is still rising out of the water at first
+			local focus = pivot.Position + Vector3.new(0, size.Y * 0.25, 0)
+			local from = pivot * CFrame.new(math.sin(k * 1.2) * radius * 0.3, radius * 0.35, -dist * (1 - k * 0.12))
+			setCamera(CFrame.lookAt(from.Position, focus), FOV)
 		end
 		task.wait()
 	end
