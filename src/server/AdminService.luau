@@ -1,6 +1,7 @@
 --!strict
--- Admin controls. Only the accounts in Config.ADMIN_IDS, and ONLY in Roblox Studio: in a
--- published server isAdmin is always false, so none of this can ever run for a real player.
+-- Admin controls. Members of the FLNK LTD group (Config.ADMIN_GROUP_ID) and the accounts in
+-- Config.ADMIN_IDS, and ONLY in Roblox Studio: in a published server isAdmin is always false,
+-- so none of this can ever run for a real player.
 -- The client's Admin panel (client/AdminPanel) sends { cmd = "...", n = number? } through the
 -- Action remote ("Admin" handler in ShopService).
 
@@ -14,8 +15,29 @@ local BattleService = require(script.Parent.BattleService)
 
 local AdminService = {}
 
+-- group membership is a web call, so it is looked up once per player and remembered
+local inGroup: { [Player]: boolean } = {}
+
+local function isGroupMember(player: Player): boolean
+	local known = inGroup[player]
+	if known ~= nil then
+		return known
+	end
+	local ok, member = pcall(function()
+		return player:IsInGroup(Config.ADMIN_GROUP_ID)
+	end)
+	if not ok then
+		return false -- don't remember a failed lookup: the next check tries again
+	end
+	inGroup[player] = member == true
+	return member == true
+end
+
 function AdminService.isAdmin(player: Player): boolean
-	return RunService:IsStudio() and table.find(Config.ADMIN_IDS, player.UserId) ~= nil
+	if not RunService:IsStudio() then
+		return false
+	end
+	return table.find(Config.ADMIN_IDS, player.UserId) ~= nil or isGroupMember(player)
 end
 
 local function refresh(player: Player)
@@ -150,6 +172,9 @@ function AdminService.init()
 		if AdminService.isAdmin(player) then
 			player:SetAttribute("Admin", true)
 		end
+	end)
+	game:GetService("Players").PlayerRemoving:Connect(function(player)
+		inGroup[player] = nil
 	end)
 end
 

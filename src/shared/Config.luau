@@ -7,8 +7,10 @@ local Config = {}
 Config.GAME_NAME = "Merge Sea Monsters"
 Config.DATASTORE_NAME = "TideTamers_v1"
 Config.AUTOSAVE_INTERVAL = 90
--- Studio-only admin controls (AdminService re-checks RunService:IsStudio()): TuckerFLNK
-Config.ADMIN_IDS = { 11140921447, 11110589684 } :: { number } -- 11110589684 = Sylar9719
+-- Studio-only admin controls (AdminService re-checks RunService:IsStudio()): every member of
+-- ADMIN_GROUP_ID (FLNK LTD, the group that owns the place), plus anyone listed in ADMIN_IDS
+Config.ADMIN_GROUP_ID = 865496476 -- FLNK LTD
+Config.ADMIN_IDS = { 11140921447, 11110589684 } :: { number } -- TuckerFLNK, 11110589684 = Sylar9719
 
 ---------------------------------------------------------------------------
 -- World layout (studs). Ships sit in a ring round the harbour island.

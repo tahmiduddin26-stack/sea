@@ -1,5 +1,5 @@
 --!strict
--- Studio-only admin panel for the accounts in Config.ADMIN_IDS (the server sets the "Admin"
+-- Studio-only admin panel for FLNK LTD group members and Config.ADMIN_IDS (the server sets the "Admin"
 -- attribute only in Studio, and re-checks every command). A small ADMIN tab at the left
 -- edge opens a list of buttons; each one sends a command to AdminService.
 
