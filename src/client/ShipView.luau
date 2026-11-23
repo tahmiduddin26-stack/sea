@@ -674,6 +674,16 @@ function ShipView.monsterNear(screenPos: Vector2, maxPx: number): BasePart?
 	return best
 end
 
+-- World Y of the top of the monster standing on this nest (nil if none): the guide's arrow
+-- floats above it, since monsters grow with every level and a big one would swallow the arrow.
+function ShipView.monsterTopY(anchor: BasePart): number?
+	local slot = slots[anchor]
+	if slot and slot.rig and slot.base then
+		return slot.base.Position.Y + MonsterModels.height(slot.rig)
+	end
+	return nil
+end
+
 -- World position of one of my nests / pedestals / the winch (tutorial arrows, camera)
 function ShipView.myShip(): Model?
 	local idx = player:GetAttribute("Ship")

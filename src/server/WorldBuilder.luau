@@ -938,23 +938,78 @@ local function buildLookout(parent: Instance, shipCf: CFrame, arenaCf: CFrame)
 	local function post(p: Vector3, h: number)
 		box(parent, cf, Vector3.new(0.5, h, 0.5), p + Vector3.new(0, h / 2, 0), WOOD_DARK)
 	end
+	-- a ladder up each side of the platform, out of the sea, so anyone who fell or swam off can
+	-- climb back up (the side rails and walls leave a gap at the top of it)
+	local LADDER_W = 2.4 -- between the ladder's two uprights (x)
+	local gap0, gap1 = px - LADDER_W / 2 - 0.3, px + LADDER_W / 2 + 0.3
 	for _, s in { -1, 1 } do
 		local z = zc + s * (pw / 2 - 0.2)
 		rail(Vector3.new(LOOK_X0, top + railH, z), Vector3.new(LOOK_RAMP0, top + railH, z))
 		rail(Vector3.new(LOOK_RAMP0, top + railH, z), Vector3.new(LOOK_RAMP1, high + railH, z))
 		post(Vector3.new(LOOK_RAMP0, top, z), railH)
 		local zp = zc + s * (platW / 2 - 0.2)
-		rail(Vector3.new(LOOK_RAMP1, high + railH, zp), Vector3.new(LOOK_X1, high + railH, zp))
+		rail(Vector3.new(LOOK_RAMP1, high + railH, zp), Vector3.new(gap0, high + railH, zp))
+		rail(Vector3.new(gap1, high + railH, zp), Vector3.new(LOOK_X1, high + railH, zp))
 		rail(Vector3.new(LOOK_RAMP1, high + railH, zp), Vector3.new(LOOK_RAMP1, high + railH, z))
 		post(Vector3.new(LOOK_RAMP1, high, zp), railH)
 		post(Vector3.new(LOOK_X1 - 0.2, high, zp), railH)
+
+		-- The ladder hangs off the platform's edge. The climbing is an invisible TrussPart (Roblox
+		-- climbs those on its own, even straight out of a swim); the wood you see sits inside it.
+		local edge = zc + s * (platW / 2)
+		local bottom = -6.6 -- well under the surface, so a swimmer bumps into it
+		local trussH = high - bottom -- 18: TrussPart sizes snap to multiples of 2
+		local truss = Instance.new("TrussPart")
+		truss.Name = "LookoutLadder"
+		truss.Anchored = true
+		truss.Transparency = 1
+		truss.CastShadow = false
+		truss.Style = Enum.Style.NoSupports
+		truss.Size = Vector3.new(2, trussH, 2)
+		truss.CFrame = cf * CFrame.new(px, bottom + trussH / 2, edge + s * 1)
+		truss.Parent = parent
+		local lz = edge + s * 1.5 -- the visible ladder, near the truss's outer face
+		-- two uprights from under the water to handrail height (they are the gap's rail posts too)
+		for _, sxl in { -1, 1 } do
+			local x = px + sxl * LADDER_W / 2
+			local y1 = high + railH
+			box(parent, cf, Vector3.new(0.4, y1 - bottom, 0.4), Vector3.new(x, (y1 + bottom) / 2, lz), WOOD_DARK, Enum.Material.Wood, { CanCollide = false })
+		end
+		-- rungs, from just under the surface up to the platform
+		for y = -0.8, high - 0.6, 1.3 do
+			box(parent, cf, Vector3.new(LADDER_W, 0.3, 0.3), Vector3.new(px, y, lz), WOOD_LIGHT, Enum.Material.Wood, { CanCollide = false })
+		end
+		-- A step at the ladder's foot, flush with the sea: Roblox can't start a climb from a swim, so
+		-- a swimmer climbs out onto this (like the port boarding stairs' foot) and climbs from there.
+		local stepZ = edge + s * 3.6
+		box(parent, cf, Vector3.new(4.4, 0.6, 3.2), Vector3.new(px, 0.1, stepZ), WOOD_LIGHT, Enum.Material.WoodPlanks)
+		for _, sxl in { -1, 1 } do
+			-- on the inner edge (by the ladder), out of a swimmer's way
+			box(parent, cf, Vector3.new(0.5, 6, 0.5), Vector3.new(px + sxl * 1.9, -3, stepZ - s * 1.2), WOOD_DARK, Enum.Material.Wood)
+		end
+		-- an invisible slope under the water up to the step, so a swimmer's feet always catch it
+		-- (a bare 1-stud lip only worked some of the time)
+		local slopeRun, slopeRise = 4, 3.4
+		local slope = Instance.new("WedgePart")
+		slope.Name = "LadderSlope"
+		slope.Anchored = true
+		slope.Transparency = 1
+		slope.CanQuery = false
+		slope.Size = Vector3.new(4.4, slopeRise, slopeRun)
+		-- a wedge is tallest at its +Z end: face that end toward the step (in toward the platform)
+		local slopeZ = stepZ + s * (1.6 + slopeRun / 2)
+		slope.CFrame = cf * CFrame.new(px, 0.4 - slopeRise / 2, slopeZ) * CFrame.Angles(0, if s > 0 then math.pi else 0, 0)
+		slope.Parent = parent
 	end
-	-- invisible walls keep everyone on the platform (the rails are only knee-high to a jump)
-	for _, w in {
-		{ Vector3.new(0.6, 8, platW), Vector3.new(LOOK_X1, high + 4, zc) },
-		{ Vector3.new(pl, 8, 0.6), Vector3.new(px, high + 4, zc - platW / 2) },
-		{ Vector3.new(pl, 8, 0.6), Vector3.new(px, high + 4, zc + platW / 2) },
-	} do
+	-- invisible walls keep everyone on the platform (the rails are only knee-high to a jump), with
+	-- a gap on each side over the ladder
+	local walls = { { Vector3.new(0.6, 8, platW), Vector3.new(LOOK_X1, high + 4, zc) } }
+	for _, s in { -1, 1 } do
+		local zw = zc + s * platW / 2
+		table.insert(walls, { Vector3.new(gap0 - LOOK_RAMP1, 8, 0.6), Vector3.new((LOOK_RAMP1 + gap0) / 2, high + 4, zw) })
+		table.insert(walls, { Vector3.new(LOOK_X1 - gap1, 8, 0.6), Vector3.new((gap1 + LOOK_X1) / 2, high + 4, zw) })
+	end
+	for _, w in walls do
 		box(parent, cf, w[1], w[2], Color3.new(1, 1, 1), nil, { Transparency = 1, CanQuery = false, Name = "LookoutWall" })
 	end
 	-- stilts down into the sea
@@ -1011,19 +1066,22 @@ local function buildShip(world: Folder, index: number): Ship
 			box(model, cf, Vector3.new(0.4, 1.8, 1.8), Vector3.new(sx * (W / 2 + 0.1), deck - 6, z), Color3.fromRGB(40, 44, 70))
 		end
 	end
-	-- deck planks
-	for z = -BOW, sternZ - 2, 4 do
+	-- deck planks, up to the quarterdeck: under it they were hidden, but their back ends stopped
+	-- 0.1 short of the stern face and flickered through it
+	-- (the last one may tuck a little under the quarterdeck's front so there's never a gap)
+	for z = -BOW, Config.QUARTERDECK_Z - 2, 4 do
 		box(model, cf, Vector3.new(W - 2, 0.4, 3.8), Vector3.new(0, deck + 0.2, z + 2), if (z // 4) % 2 == 0 then WOOD_LIGHT else Color3.fromRGB(186, 130, 80))
 	end
 	-- rails, with a gap on each side: port where the boarding stairs come up (BOARD_Z1..BOARD_Z2),
-	-- starboard where the arena lookout pier leaves (LAND_Z1..LAND_Z2)
+	-- starboard where the arena lookout pier leaves (LAND_Z1..LAND_Z2). They stop at the quarterdeck:
+	-- running on inside it, their outer faces lay exactly on its side walls and flickered there
+	-- (the quarterdeck's own walls close the main deck at the stern, so it needs no stern rail).
 	for _, sx in { -1, 1 } do
 		local g1, g2 = if sx < 0 then BOARD_Z1 else LAND_Z1, if sx < 0 then BOARD_Z2 else LAND_Z2
-		for _, seg in { { -BOW, g1 }, { g2, sternZ } } do
+		for _, seg in { { -BOW, g1 }, { g2, Config.QUARTERDECK_Z } } do
 			box(model, cf, Vector3.new(1, 3, seg[2] - seg[1]), Vector3.new(sx * (W / 2 - 0.5), deck + 1.9, (seg[1] + seg[2]) / 2), WOOD_DARK)
 		end
 	end
-	box(model, cf, Vector3.new(W, 3, 1), Vector3.new(0, deck + 1.9, sternZ - 0.5), WOOD_DARK)
 
 	-- quarterdeck (Floor 2): raised stern with stairs
 	local qz0 = Config.QUARTERDECK_Z

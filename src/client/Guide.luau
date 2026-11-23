@@ -18,6 +18,7 @@ local State = require(script.Parent.State)
 local Hud = require(script.Parent.Hud)
 local Sound = require(script.Parent.Sound)
 local Platform = require(script.Parent.Platform)
+local ShipView = require(script.Parent.ShipView)
 
 local Guide = {}
 
@@ -144,8 +145,10 @@ local function canFuseNow(snap: any): boolean
 end
 
 -- True while the guide should show nothing: a fight is running, you are not on your own ship, or the
--- camera is facing the arena (out to starboard) from the deck.
-local function isQuiet(): boolean
+-- camera is facing the arena (out to starboard) from the deck. `ignoreLook` skips that last check:
+-- the Fuse helper points at monsters on your own deck, and hiding it whenever the camera happened
+-- to swing toward the arena made the arrow vanish at some angles.
+local function isQuiet(ignoreLook: boolean?): boolean
 	if Hud.inBattle then
 		return true
 	end
@@ -160,6 +163,9 @@ local function isQuiet(): boolean
 	local rel = shipCf:PointToObjectSpace(root.Position)
 	if math.abs(rel.X) > Config.SHIP_WIDTH / 2 + 8 or math.abs(rel.Z) > Config.SHIP_LENGTH / 2 + 8 then
 		return true
+	end
+	if ignoreLook then
+		return false
 	end
 	-- on the deck but looking out at the arena
 	local cam = workspace.CurrentCamera
@@ -206,12 +212,13 @@ function Guide.init(screen: ScreenGui)
 		-- Stay completely quiet (no banner, trail, arrows or tags) while you are watching a fight, away
 		-- from your ship, or looking out toward the arena from the deck: the prompts only belong to
 		-- the ship, and they used to sit right over the battle and its depth bar.
-		local quiet = isQuiet()
+		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open; it
+		-- ignores where the camera looks (you opened the tray, so you want the way shown)
+		local helper = Guide.helper
+		local quiet = isQuiet(helper ~= nil)
 		-- the Fuse prompt (tag + arrow) only makes sense when something CAN be fused right now
 		local noFuse = info ~= nil and info.target == "fuse" and not canFuseNow(snap)
 		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet and not noFuse
-		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open
-		local helper = Guide.helper
 		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
 		-- the Fuse step shows beside the Fuse button instead of in the top banner
 		local tagText: string? = nil
@@ -240,6 +247,11 @@ function Guide.init(screen: ScreenGui)
 		if part and root then
 			folder.Parent = workspace
 			local top = part.Position.Y + part.Size.Y / 2
+			-- above the monster on the nest, however big it has grown
+			local monTop = ShipView.monsterTopY(part)
+			if monTop then
+				top = math.max(top, monTop - 2)
+			end
 			marker:PivotTo(CFrame.new(part.Position.X, top + 4 + math.abs(math.sin(t * 3)) * 1.2, part.Position.Z) * CFrame.Angles(0, t * 2, 0))
 			local floorY = root.Position.Y - 2.9
 			local from = Vector3.new(root.Position.X, floorY, root.Position.Z)
