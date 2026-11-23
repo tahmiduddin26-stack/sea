@@ -536,12 +536,19 @@ Config.STAGES = {
 }
 Config.FINAL_BOSS = "Maw"
 Config.ENEMIES = {
-	Crab = { name = "Crab", element = "Coral", scale = 1.1 },
-	Puffer = { name = "Puffer", element = "Tide", scale = 1.0 },
-	Gull = { name = "Sea Gull", element = "Storm", scale = 1.0 },
-	Urchin = { name = "Urchin", element = "Abyss", scale = 1.0 },
-	Squid = { name = "Squid", element = "Abyss", scale = 1.1 },
-	Skelefish = { name = "Skelefish", element = "Storm", scale = 1.1 },
+	-- `mini` = the dressed-up model and name used when this mob is a stage's mini boss
+	Crab = { name = "Crab", element = "Coral", scale = 1.1, mini = "CrabMini" },
+	Puffer = { name = "Puffer", element = "Tide", scale = 1.0, mini = "PufferMini" },
+	Gull = { name = "Sea Gull", element = "Storm", scale = 1.0, mini = "GullMini" },
+	Urchin = { name = "Urchin", element = "Abyss", scale = 1.0, mini = "UrchinMini" },
+	Squid = { name = "Squid", element = "Abyss", scale = 1.1, mini = "SquidMini" },
+	Skelefish = { name = "Skelefish", element = "Storm", scale = 1.1, mini = "SkelefishMini" },
+	CrabMini = { name = "Ironshell Crab", element = "Coral", scale = 1.1 },
+	PufferMini = { name = "King Puff", element = "Tide", scale = 1.0 },
+	UrchinMini = { name = "Urchin Overlord", element = "Abyss", scale = 1.0 },
+	GullMini = { name = "Storm Gull", element = "Storm", scale = 1.0 },
+	SquidMini = { name = "Ink Baron", element = "Abyss", scale = 1.1 },
+	SkelefishMini = { name = "Bone Reaper", element = "Storm", scale = 1.1 },
 	Clawbeard = { name = "Captain Clawbeard", element = "Coral", scale = 2.6, boss = true },
 	Hammerjaw = { name = "Hammerjaw", element = "Tide", scale = 2.6, boss = true },
 	GhostCaptain = { name = "Ghost Captain", element = "Abyss", scale = 2.6, boss = true },

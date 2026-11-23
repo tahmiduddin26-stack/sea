@@ -117,7 +117,9 @@ function Stats.enemy(depth: number, pick: number): EnemyStats
 		hp *= Config.BOSS_HP_MULT
 		atk *= Config.BOSS_ATK_MULT
 	elseif kind == "miniboss" then
-		id = info.miniboss
+		-- the stage's mini-boss mob, in its dressed-up mini-boss form when it has one
+		local base = Config.ENEMIES[info.miniboss]
+		id = if base and base.mini then base.mini else info.miniboss
 		hp *= Config.MINIBOSS_HP_MULT
 		atk *= Config.MINIBOSS_ATK_MULT
 		scale = 1.7

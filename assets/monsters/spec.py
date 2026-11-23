@@ -77,7 +77,7 @@ def eyes(c, bone, y, z, dx=0.32, s=0.34, pupil=INK, white=WHITE, angry=False, gl
         c.box(bone, (s, s * 1.1, 0.08), (side * dx, y, z - 0.02), white)
         c.box(bone, (s * 0.5, s * 0.6, 0.06), (side * dx + side * -0.04, y - 0.03, z - 0.07), pupil)
         if angry:
-            c.box(bone, (s * 1.1, 0.09, 0.08), (side * dx, y + s * 0.62, z - 0.05), INK, rot=(0, 0, side * -18))
+            c.box(bone, (s * 1.1, 0.09, 0.08), (side * dx, y + s * 0.62, z - 0.05), INK, rot=(0, 0, side * 18))
 
 
 def tail_chain(c, start, segs, axis="Y", amp=14, speed=1, parent="Body", prefix="Tail", lag=0.9):
@@ -510,7 +510,7 @@ for s in (-1, 1):
 # face: one angry eye, one eyepatch with its strap
 c.box("Body", (0.28, 0.31, 0.08), (-0.4, 0.45, -0.79), WHITE)
 c.box("Body", (0.14, 0.17, 0.06), (-0.36, 0.42, -0.84), INK)
-c.box("Body", (0.31, 0.09, 0.08), (-0.4, 0.63, -0.82), INK, rot=(0, 0, 18))
+c.box("Body", (0.31, 0.09, 0.08), (-0.4, 0.63, -0.82), INK, rot=(0, 0, -18))
 c.box("Body", (0.34, 0.3, 0.08), (0.4, 0.45, -0.8), INK)
 c.box("Body", (0.6, 0.06, 0.05), (0.68, 0.56, -0.79), INK, rot=(0, 0, 20))
 # moustache, curled up at the ends
@@ -600,7 +600,7 @@ for s in (-1, 1):
     c.box("Body", (0.35, 0.65, 0.65), (s * 1.35, 0.5, -1.2), H1)
     c.box("Body", (0.34, 0.32, 0.1), (s * 1.15, 0.55, -1.6), (255, 70, 50), mat="n")
     c.box("Body", (0.12, 0.12, 0.06), (s * 1.15, 0.55, -1.66), (255, 220, 90), mat="n")
-    c.box("Body", (0.48, 0.1, 0.12), (s * 1.12, 0.77, -1.6), INK, rot=(0, 0, s * -15))
+    c.box("Body", (0.48, 0.1, 0.12), (s * 1.12, 0.77, -1.6), INK, rot=(0, 0, s * 15))
     c.box("Body", (0.1, 0.08, 0.06), (s * 0.25, 0.62, -1.6), INK)            # nostrils
 # the mouth: a red gum line and a row of upper teeth under the hammer
 c.box("Body", (1.0, 0.1, 0.5), (0, 0.11, -1.3), HGUM)
@@ -764,7 +764,7 @@ for sx in (-1, 1):
     # cutscene), two small ones on the skull, all under angry brows
     c.box("Head", (0.75, 0.42, 0.14), (sx * 0.75, hy + 0.05, z - 3.64), EYE, mat="n")
     c.box("Head", (0.24, 0.24, 0.1), (sx * 0.72, hy + 0.05, z - 3.73), EYE2, mat="n")
-    c.box("Head", (0.85, 0.2, 0.3), (sx * 0.75, hy + 0.36, z - 3.62), INK, rot=(0, 0, sx * -20))
+    c.box("Head", (0.85, 0.2, 0.3), (sx * 0.75, hy + 0.36, z - 3.62), INK, rot=(0, 0, sx * 20))
     c.box("Head", (0.36, 0.26, 0.14), (sx * 1.3, hy + 0.5, z - 1.42), EYE, mat="n")
     # horns: three pairs sweeping back
     for k in range(3):
@@ -817,6 +817,198 @@ for i in range(6):
               mat="n" if j == 2 else "p")
         yy -= 0.5
         prevT = name
+
+
+# ===========================================================================
+# MINI BOSSES (kind "enemy"): a beefed-up, dressed-up version of each stage's mini-boss mob,
+# so depth 8 of a stage looks like a real fight and not just a bigger copy of the wave mobs.
+# Same footprint as the mob they replace (the game scales them up by 1.7).
+# ===========================================================================
+def angry_eye(c, bone, x, y, z, s=0.3, glow=None):
+    if glow:
+        c.box(bone, (s, s, 0.08), (x, y, z), glow, mat="n")
+    else:
+        c.box(bone, (s, s * 1.1, 0.08), (x, y, z), WHITE)
+        c.box(bone, (s * 0.5, s * 0.6, 0.06), (x - (0.04 if x > 0 else -0.04), y - 0.03, z - 0.05), INK)
+    side = 1 if x > 0 else -1
+    c.box(bone, (s * 1.15, 0.09, 0.08), (x, y + s * 0.62, z - 0.03), INK, rot=(0, 0, side * 18))
+
+
+def ring_spikes(c, bone, n, radius, y, length, color, tip=None, skip_front=False, offset=0.0):
+    """Horizontal spikes pointing straight out, with optional glowing tips."""
+    for i in range(n):
+        a = (i + offset) / n * math.tau
+        if skip_front and abs(math.sin(a) + 1) < 0.2:   # -Z (the face)
+            continue
+        x, z = math.cos(a), math.sin(a)
+        c.box(bone, (length, 0.16, 0.16), (x * (radius + length / 2), y, z * (radius + length / 2)), color,
+              rot=(0, -math.degrees(a), 0))
+        if tip:
+            c.box(bone, (0.14, 0.14, 0.14), (x * (radius + length + 0.05), y, z * (radius + length + 0.05)), tip, mat="n")
+
+
+# Ironshell Crab: an armoured crab with a riveted iron helmet, barnacles, eyes on stalks, a scar,
+# and one huge claw
+c = creature("CrabMini", "Ironshell Crab", "enemy")
+c.box("Body", (1.9, 0.9, 1.4), (0, 0.1, 0), R1)
+c.box("Body", (1.7, 0.25, 1.2), (0, 0.65, 0.05), IRONB, mat="m")
+for x in (-0.6, 0, 0.6):
+    c.box("Body", (0.1, 0.1, 0.1), (x, 0.7, -0.57), RIVET, mat="m")
+c.box("Body", (0.25, 0.45, 0.25), (0, 0.95, 0.15), RIVET, rot=(0, 45, 0), mat="m")
+for (x, z) in ((-0.6, 0.45), (0.5, 0.5), (0.72, 0.1)):
+    c.ball("Body", 0.22, (x, 0.82, z), (225, 215, 190))                    # barnacles
+c.box("Body", (0.06, 0.4, 0.05), (0.55, 0.2, -0.71), (255, 180, 170), rot=(0, 0, 25))   # scar
+c.box("Body", (0.6, 0.1, 0.06), (0, 0.12, -0.72), INK)
+for x in (-0.15, 0.15):
+    c.box("Body", (0.1, 0.12, 0.05), (x, 0.2, -0.75), WHITE)
+for s in (-1, 1):
+    c.box("Body", (0.1, 0.35, 0.1), (s * 0.35, 0.95, -0.45), R2)
+    c.box("Body", (0.3, 0.3, 0.3), (s * 0.35, 1.2, -0.45), WHITE)
+    c.box("Body", (0.16, 0.18, 0.08), (s * 0.33, 1.18, -0.63), INK)
+    c.box("Body", (0.34, 0.08, 0.08), (s * 0.35, 1.4, -0.6), INK, rot=(0, 0, s * 18))
+for s, tag, k in ((-1, "L", 0.8), (1, "R", 1.25)):
+    cx = s * (1.15 + 0.3 * k)
+    c.bone("Claw" + tag, (s * 0.9, 0.1, -0.4), anim="rot", axis="Y", amp=14 * s, speed=2,
+           swim=dict(anim="rot", axis="Y", amp=30 * s, speed=4, phase=0))
+    c.box("Claw" + tag, (0.4, 0.3, 0.3), (s * 1.1, 0.12, -0.5), R2)
+    c.box("Claw" + tag, (0.42, 0.42, 0.12), (s * 1.25, 0.15, -0.55), IRONB, mat="m")
+    c.box("Claw" + tag, (0.6 * k, 0.55 * k, 0.7 * k), (cx, 0.2, -0.85), R2)
+    c.box("Claw" + tag, (0.25 * k, 0.2 * k, 0.55 * k), (cx, 0.2 + 0.3 * k, -0.85 - 0.55 * k), R2)
+    c.bone("Pinch" + tag, (cx, 0.0, -0.85 - 0.3 * k), parent="Claw" + tag, anim="rot", axis="X", amp=10, speed=2,
+           swim=dict(anim="rot", axis="X", amp=28, speed=4, phase=0))
+    c.box("Pinch" + tag, (0.25 * k, 0.18 * k, 0.5 * k), (cx, -0.05, -0.85 - 0.55 * k), R1)
+for i, (x, z) in enumerate(((-0.85, -0.1), (0.85, -0.1), (-0.85, 0.3), (0.85, 0.3), (-0.8, 0.6), (0.8, 0.6))):
+    name = "Leg%d" % (i + 1)
+    s = 1 if x > 0 else -1
+    c.bone(name, (x, -0.3, z), anim="rot", axis="X", amp=22, speed=2, phase=0 if i % 2 == 0 else math.pi)
+    c.box(name, (0.22, 0.3, 0.22), (x * 1.12, -0.4, z), R2)
+    c.box(name, (0.17, 0.35, 0.17), (x * 1.22, -0.62, z), R1, rot=(0, 0, s * 12))
+
+# King Puff: a crowned pufferfish with two rings of glowing-tipped spikes and a royal cape
+c = creature("PufferMini", "King Puff", "enemy")
+c.bone("Puff", (0, 0, 0), anim="rot", axis="Y", amp=10, speed=1)
+c.box("Puff", (1.8, 1.7, 1.8), (0, 0.2, 0), PF)
+c.box("Puff", (1.5, 0.5, 1.5), (0, -0.55, 0), PF2)
+for (s, y, z) in ((-1, 0.4, 0.3), (1, 0.2, 0.4), (-1, 0.0, -0.3), (1, 0.5, -0.2)):
+    c.box("Puff", (0.06, 0.3, 0.3), (s * 0.92, y, z), (230, 160, 40))      # spots on the sides
+angry_eye(c, "Puff", -0.42, 0.45, -0.94, s=0.4)
+angry_eye(c, "Puff", 0.42, 0.45, -0.94, s=0.4)
+c.box("Puff", (0.5, 0.18, 0.1), (0, 0.0, -0.93), (255, 120, 120))       # pouty lips
+ring_spikes(c, "Puff", 8, 0.9, 0.75, 0.45, (200, 140, 40), tip=(255, 150, 60), skip_front=True, offset=0.5)
+ring_spikes(c, "Puff", 8, 0.9, -0.15, 0.45, (200, 140, 40), tip=(255, 150, 60))
+c.box("Puff", (1.0, 0.3, 1.0), (0, 1.2, 0), GOLD, mat="m")               # crown
+for (x, z) in ((-0.4, -0.4), (0.4, -0.4), (-0.4, 0.4), (0.4, 0.4)):
+    c.box("Puff", (0.18, 0.35, 0.18), (x, 1.5, z), GOLD, mat="m")
+c.box("Puff", (0.18, 0.18, 0.06), (0, 1.2, -0.52), (255, 60, 80), mat="n")
+for s in (-1, 1):
+    c.box("Puff", (0.14, 0.14, 0.06), (s * 0.3, 1.2, -0.52), (90, 200, 255), mat="n")
+c.bone("Cape", (0, 0.9, 0.92), parent="Puff", anim="rot", axis="X", amp=8, speed=1,
+       swim=dict(anim="rot", axis="X", amp=18, speed=3, phase=0))
+c.box("Cape", (1.4, 1.3, 0.1), (0, 0.25, 0.98), (200, 30, 60))
+c.box("Cape", (1.44, 0.14, 0.12), (0, 0.9, 0.98), GOLD)
+fin_pair(c, (0.35, 0.12, 0.35), 0.9, 0.0, 0.0, (255, 160, 40), amp=30, speed=4, parent="Puff")
+
+# Urchin Overlord: a spinning urchin with long spikes and a glowing ring of spikes around it,
+# one big glaring cyclops eye and a jagged grin
+c = creature("UrchinMini", "Urchin Overlord", "enemy")
+UG = (220, 120, 255)
+# the body only rocks (a spinning cube would sweep its corners through the face); the glowing
+# spike ring below the eye is what spins
+c.bone("Core", (0, 0, 0), anim="rot", axis="Y", amp=8, speed=1,
+       swim=dict(anim="rot", axis="Y", amp=14, speed=2, phase=0))
+c.bone("Ring", (0, 0, 0), anim="spin", axis="Y", amp=0, speed=1)
+c.box("Core", (1.5, 1.5, 1.5), (0, 0.3, 0), U1)
+c.box("Core", (1.56, 0.3, 1.56), (0, 0.3, 0), (50, 28, 80))               # armoured belt
+for (x, y, z, rx, rz) in ((0, 1.35, 0, 0, 0), (0.65, 1.0, 0.65, 35, -35), (-0.65, 1.0, -0.65, -35, 35),
+                          (0.65, 1.0, -0.65, -35, -35), (-0.65, 1.0, 0.65, 35, 35),
+                          (0.65, -0.4, 0.65, -35, 35), (-0.65, -0.4, -0.65, 35, -35)):
+    c.box("Core", (0.2, 0.9, 0.2), (x, y, z), (140, 90, 200), rot=(rx, 0, rz))
+ring_spikes(c, "Ring", 8, 0.8, -0.25, 0.75, (140, 90, 200), tip=UG)     # below the eye, so it never crosses it
+c.box("Body", (0.7, 0.7, 0.08), (0, 0.45, -0.9), WHITE)                 # the cyclops eye
+c.box("Body", (0.4, 0.4, 0.06), (0, 0.42, -0.95), (255, 60, 200), mat="n")
+c.box("Body", (0.18, 0.18, 0.05), (0, 0.42, -0.98), INK)
+for s in (-1, 1):
+    c.box("Body", (0.5, 0.12, 0.1), (s * 0.22, 0.88, -0.94), INK, rot=(0, 0, s * 18))
+c.box("Body", (0.6, 0.12, 0.06), (0, -0.05, -0.82), INK)
+for x in (-0.18, 0, 0.18):
+    c.box("Body", (0.1, 0.12, 0.05), (x, 0.03, -0.85), WHITE)
+
+# Ink Baron: a squid gentleman in a top hat, a gold monocle and a curled moustache, glowing
+# ink sacs, and eight long tentacles
+c = creature("SquidMini", "Ink Baron", "enemy")
+Q2 = (220, 80, 150)
+c.bones[0]["amp"] = 0.2
+c.box("Body", (1.3, 1.8, 1.3), (0, 1.0, 0), Q1)
+c.box("Body", (1.5, 0.5, 0.2), (0, 1.9, 0), Q1)
+for (x, y) in ((-0.66, 1.3), (0.66, 0.9), (-0.66, 0.7), (0.66, 1.5)):
+    c.box("Body", (0.06, 0.25, 0.25), (x, y, 0.1), Q2)                    # spots
+angry_eye(c, "Body", -0.3, 0.65, -0.69, s=0.32)
+angry_eye(c, "Body", 0.3, 0.65, -0.69, s=0.32)
+c.box("Body", (0.44, 0.46, 0.06), (0.3, 0.65, -0.67), GOLD, mat="m")       # monocle rim
+c.box("Body", (0.05, 0.5, 0.05), (0.48, 0.3, -0.68), GOLD)                # monocle chain
+for s in (-1, 1):
+    c.box("Body", (0.4, 0.1, 0.08), (s * 0.2, 0.3, -0.69), INK, rot=(0, 0, s * 15))
+    c.box("Body", (0.1, 0.14, 0.08), (s * 0.42, 0.37, -0.69), INK)
+    c.ball("Body", 0.3, (s * 0.35, 1.2, 0.66), (140, 70, 220), mat="n")   # ink sacs
+c.box("Body", (1.2, 0.12, 1.0), (0.05, 2.22, 0), INK, rot=(0, 0, 8))      # top hat
+c.box("Body", (0.8, 0.7, 0.7), (0.1, 2.62, 0), INK, rot=(0, 0, 8))
+c.box("Body", (0.82, 0.14, 0.72), (0.07, 2.36, 0), (200, 40, 80), rot=(0, 0, 8))
+tentacles(c, 8, 0.45, 0.1, Q2, length=4, seg=(0.2, 0.38, 0.2), amp=22, tip=(255, 160, 210))
+
+# Storm Gull: a storm-grey gull with a spiky crest, a hooked beak, talons and wings streaked
+# with glowing lightning
+c = creature("GullMini", "Storm Gull", "enemy")
+SG1, SG2, BOLT = (120, 128, 150), (70, 76, 98), (255, 230, 80)
+c.bones[0].update(anim="move", amp=0.35, speed=1)
+c.box("Body", (1.0, 0.9, 1.6), (0, 0.4, 0.1), SG1)
+c.box("Body", (0.8, 0.4, 1.3), (0, 0.05, 0.1), (200, 205, 215))          # pale belly
+c.box("Body", (0.9, 0.8, 0.8), (0, 0.85, -0.7), SG1)
+c.box("Body", (0.35, 0.25, 0.55), (0, 0.75, -1.33), (255, 190, 40))       # beak
+c.box("Body", (0.3, 0.2, 0.15), (0, 0.6, -1.55), (220, 150, 30), rot=(30, 0, 0))   # hooked tip
+angry_eye(c, "Body", -0.25, 1.0, -1.12, s=0.22)
+angry_eye(c, "Body", 0.25, 1.0, -1.12, s=0.22)
+for k in range(3):
+    c.box("Body", (0.12, 0.45 - k * 0.08, 0.15), (0, 1.35 - k * 0.05, -0.85 + k * 0.25), SG2, rot=(30, 0, 0))   # crest
+for z in (0.25, 0.65):
+    c.box("Body", (0.2, 0.1, 0.55), (0, 0.5, z + 0.55), SG2, rot=(-10, 0, 0))   # tail feathers
+for s in (-1, 1):
+    for k in range(3):
+        c.box("Body", (0.06, 0.25, 0.06), (s * 0.25 + (k - 1) * 0.08, -0.32, -0.1), (255, 190, 40))   # talons
+for s, tag in ((-1, "L"), (1, "R")):
+    c.bone("Wing" + tag, (s * 0.5, 0.6, 0.1), anim="rot", axis="Z", amp=35 * s, speed=3)
+    c.box("Wing" + tag, (1.5, 0.15, 0.85), (s * 1.25, 0.6, 0.1), SG1)
+    c.box("Wing" + tag, (1.2, 0.17, 0.25), (s * 1.4, 0.6, 0.45), SG2)       # dark flight feathers
+    c.box("Wing" + tag, (0.8, 0.18, 0.08), (s * 1.2, 0.6, -0.05), BOLT, rot=(0, s * 25, 0), mat="n")
+    c.box("Wing" + tag, (0.5, 0.18, 0.08), (s * 1.6, 0.6, 0.12), BOLT, rot=(0, s * -25, 0), mat="n")
+
+# Bone Reaper: a skeleton fish with a big cracked skull and snapping jaw, glowing eyes in deep
+# sockets, a ribcage around a glowing soul, spine spikes and a bony tail
+c = creature("SkelefishMini", "Bone Reaper", "enemy")
+SOUL, CRACK = (120, 255, 160), (150, 140, 120)
+c.box("Body", (1.2, 1.0, 1.1), (0, 0.45, -0.75), BONE)
+for s in (-1, 1):
+    c.box("Body", (0.36, 0.36, 0.06), (s * 0.27, 0.55, -1.31), INK)
+    c.box("Body", (0.2, 0.2, 0.06), (s * 0.27, 0.55, -1.34), SOUL, mat="n")
+c.box("Body", (0.14, 0.12, 0.05), (0, 0.3, -1.32), INK)
+c.box("Body", (0.05, 0.35, 0.05), (0.32, 0.82, -1.31), CRACK, rot=(0, 0, 20))
+c.box("Body", (0.05, 0.25, 0.05), (-0.4, 0.2, -1.31), CRACK, rot=(0, 0, -15))
+for k in range(5):
+    c.box("Body", (0.1, 0.16, 0.1), (-0.4 + k * 0.2, -0.0, -1.25), WHITE)
+c.bone("Jaw", (0, 0.0, -0.4), anim="rot", axis="X", amp=10, speed=1,
+       swim=dict(anim="rot", axis="X", amp=26, speed=3, phase=0))
+c.box("Jaw", (1.0, 0.25, 0.9), (0, -0.2, -0.8), BONE)
+for k in range(4):
+    c.box("Jaw", (0.1, 0.16, 0.1), (-0.3 + k * 0.2, -0.02, -1.18), WHITE)
+c.box("Body", (0.2, 0.2, 2.0), (0, 0.4, 0.5), BONE)                      # spine
+for k in range(5):
+    z = -0.05 + k * 0.25
+    c.box("Body", (1.0 - k * 0.1, 0.12, 0.1), (0, 0.4 - (0.45 - k * 0.04), z), BONE)   # rib bottoms
+    for s in (-1, 1):
+        c.box("Body", (0.1, 0.95 - k * 0.08, 0.1), (s * (0.5 - k * 0.05), 0.4 - 0.05, z), BONE, rot=(0, 0, s * 8))
+    c.box("Body", (0.1, 0.35, 0.1), (0, 0.65, z), BONE, rot=(30, 0, 0))   # spine spikes
+c.ball("Body", 0.5, (0, 0.3, 0.4), SOUL, mat="n")                         # the glowing soul
+fin_pair(c, (0.5, 0.08, 0.3), 0.55, 0.0, -0.4, BONE, amp=20, speed=2)
+tail_chain(c, (0, 0.4, 1.5), [((0.2, 0.8, 0.5), BONE, "p"), ((0.15, 1.2, 0.5), BONE, "p")], amp=24)
 
 
 # ===========================================================================
