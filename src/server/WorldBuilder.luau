@@ -952,6 +952,7 @@ local BOARD_Z0, BOARD_Z1, BOARD_Z2 = 4, 16.5, 23.5
 -- Starboard has no stairs, only the landing the arena lookout pier leaves from: it sits on the
 -- arena's centre line (Config.ARENA_OFFSET_Z), so the pier runs straight out at the hole.
 local LAND_Z1, LAND_Z2 = Config.ARENA_OFFSET_Z - 3.5, Config.ARENA_OFFSET_Z + 3.5
+local SHIP_BOW = 56 -- the straight hull (and the side rails) start this far forward of the middle
 
 local function buildBoardingRamp(model: Model, cf: CFrame, index: number, sx: number, y0: number, stairs: boolean?)
 	local W = Config.SHIP_WIDTH
@@ -1173,7 +1174,7 @@ local function buildShip(world: Folder, index: number): Ship
 	local hullBottom = -6
 	local hullH = deck - hullBottom
 	local sternZ = L / 2
-	local BOW = 56 -- the straight hull starts this far forward of the middle
+	local BOW = SHIP_BOW -- the straight hull starts this far forward of the middle
 	-- main hull (z from -BOW to stern) and a bow narrowing in steps
 	box(model, cf, Vector3.new(W, hullH, sternZ + BOW), Vector3.new(0, hullBottom + hullH / 2, (sternZ - BOW) / 2), WOOD)
 	local bowSteps = { { z = -58.5, w = W - 10 }, { z = -63.5, w = W - 24 }, { z = -68.5, w = W - 40 }, { z = -73.5, w = 14 } }
@@ -2020,10 +2021,15 @@ function WorldBuilder.applyShipTier(ship: Ship, tier: number)
 			end
 		end
 	end
-	-- 2 brass rail caps
+	-- 2 brass rail caps: one per wooden rail segment (buildShip's side rails run from the bow
+	-- corner to the quarterdeck, with gaps for the boarding stairs and the lookout pier). A single
+	-- 160-long cap used to run past the bow corner out over the water and bridge both gaps.
 	if tier >= 2 then
 		for _, sx in { -1, 1 } do
-			b(Vector3.new(1.4, 0.35, 160), Vector3.new(sx * (W / 2 - 0.5), deck + 3.55, 4), GOLD, Enum.Material.Metal)
+			local g1, g2 = if sx < 0 then BOARD_Z1 else LAND_Z1, if sx < 0 then BOARD_Z2 else LAND_Z2
+			for _, seg in { { -SHIP_BOW, g1 }, { g2, Config.QUARTERDECK_Z } } do
+				b(Vector3.new(1.4, 0.35, seg[2] - seg[1]), Vector3.new(sx * (W / 2 - 0.5), deck + 3.55, (seg[1] + seg[2]) / 2), GOLD, Enum.Material.Metal)
+			end
 		end
 		b(Vector3.new(W, 0.35, 1.4), Vector3.new(0, up + 3.55, 83.5), GOLD, Enum.Material.Metal)
 	end
