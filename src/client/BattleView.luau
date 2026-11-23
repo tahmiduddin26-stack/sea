@@ -253,12 +253,13 @@ local function onStart(owner: number, payload: any)
 	fights[owner] = f
 	local n = #payload.team
 	for i, m in payload.team do
-		-- rows of up to 4 on the ship side of the ring (+Z), facing the enemy (-Z)
+		-- rows of up to 4 on the ship side of the hole (+Z, in front of the lookout), facing the
+		-- enemy in the middle (-Z)
 		local row = (i - 1) // 4
 		local inRow = math.min(4, n - row * 4)
 		local col = (i - 1) % 4 + 1
 		local x = (col - (inRow + 1) / 2) * 10
-		local z = 8 + row * 9 + math.abs(col - (inRow + 1) / 2) * 1.5
+		local z = Config.ARENA_TEAM_Z + row * Config.ARENA_TEAM_ROW + math.abs(col - (inRow + 1) / 2) * 1.5
 		local home = arena * CFrame.new(x, 0, z)
 		local u = newUnit(m.sp, MON_SCALE * Stats.sizeMult(m.lvl or 1), home, m.maxHp) -- bigger with every level
 		if u then
@@ -346,7 +347,7 @@ local function onWave(owner: number, p: any)
 		return
 	end
 	destroyUnit(f.enemy)
-	local home = f.arena * CFrame.new(0, 0, -10) * CFrame.Angles(0, math.pi, 0)
+	local home = f.arena * CFrame.new(0, 0, -Config.ARENA_ENEMY_Z) * CFrame.Angles(0, math.pi, 0)
 	-- enemies read big on the water, like the reference's mobs next to your dragons
 	local u = newUnit(p.id, p.scale * 2.3, home, p.maxHp)
 	if not u then

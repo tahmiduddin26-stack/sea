@@ -24,8 +24,19 @@ Config.DECK_Y = 9 -- top of the main deck
 Config.UPPER_DECK_Y = 19 -- top of the quarterdeck (Floor 2)
 Config.SHIP_LENGTH = 168 -- big decks so nests, eggs and their name tags never crowd
 Config.SHIP_WIDTH = 68
-Config.ARENA_OFFSET = 80 -- ship centre -> arena centre, out to sea
-Config.ARENA_RADIUS = 24
+Config.ARENA_OFFSET = 110 -- ship centre -> arena centre, out to sea (starboard, ship-space X)
+Config.ARENA_OFFSET_Z = 40 -- ... and this far toward the stern, clear of the Deep Rod trench
+Config.ARENA_RADIUS = 60 -- 60 is the most that fits here (Deep Rod trench walls ~62 away)
+-- Where things float in a fight, in studs from the arena's centre towards the ship (+) or away
+-- (-). Your team lines up near the ship side of the hole (rows of 4, each row further back),
+-- in front of the lookout pier; enemies and bosses rise in the middle of the hole.
+Config.ARENA_TEAM_Z = 34
+Config.ARENA_TEAM_ROW = 4
+Config.ARENA_ENEMY_Z = 0
+-- The sea's look. Roblox only shows what is under its water when the water is nearly clear, so it
+-- is (the blue hole arena needs it: dark deep water, turquoise shallows). Was 0.45 / (30, 170, 220)
+-- / 0.6 with the old buoy ring: opaque cyan, nothing under it showed.
+Config.WATER = { transparency = 0.9, color = Color3.fromRGB(16, 120, 196), reflectance = 0.25 }
 -- Invisible wall ring (radius from the harbour centre) that keeps swimmers in the play area. The
 -- farthest thing in the world (a ship's stern plus its arena / trench off the side) is about 345 out.
 Config.SWIM_RADIUS = 410 -- wide enough for the Abyss Rod's cast and shaft astern of each ship

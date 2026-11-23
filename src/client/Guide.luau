@@ -163,7 +163,7 @@ local function isQuiet(): boolean
 	end
 	-- on the deck but looking out at the arena
 	local cam = workspace.CurrentCamera
-	local arena = shipCf:PointToWorldSpace(Vector3.new(Config.ARENA_OFFSET, 0, 0))
+	local arena = shipCf:PointToWorldSpace(Vector3.new(Config.ARENA_OFFSET, 0, Config.ARENA_OFFSET_Z))
 	local toArena = Vector3.new(arena.X - cam.CFrame.Position.X, 0, arena.Z - cam.CFrame.Position.Z)
 	local look = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
 	if toArena.Magnitude > 1 and look.Magnitude > 0.01 and toArena.Magnitude < 150 and look.Unit:Dot(toArena.Unit) > 0.6 then

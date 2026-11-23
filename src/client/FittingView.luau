@@ -206,12 +206,12 @@ local function fire(fx: ShipFx, it: Item, target: Vector3)
 	fx.lastFire = now
 end
 
--- where a cannon shoots: starboard guns at the enemy side of the arena, port guns out to sea
+-- where a cannon shoots: starboard guns at the enemy in the middle of the arena, port guns out to sea
 local function targetFor(fx: ShipFx, it: Item): Vector3
 	if it.side == 1 then
 		local arenaCf = fx.model:GetAttribute("ArenaCf") :: CFrame?
 		if arenaCf then
-			return (arenaCf * CFrame.new(0, 2, -Config.ARENA_RADIUS * 0.5)).Position
+			return (arenaCf * CFrame.new(0, 2, -Config.ARENA_ENEMY_Z)).Position
 		end
 	end
 	local p = (it.origin * CFrame.new(0, 0, -70)).Position

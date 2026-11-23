@@ -2,7 +2,7 @@
 -- Builds the whole map in code from Config numbers: the ocean (terrain water), the
 -- harbour island with its lighthouse and docks, and SHIP_COUNT pirate ships. Each ship has
 -- shell nests, an egg winch, egg pedestals, upgrade boards, a raised quarterdeck (Floor 2)
--- and a floating buoy-ring battle arena on the water off its starboard side.
+-- and a blue hole battle arena (ArenaBuilder) off its starboard side, with a lookout pier.
 -- Rojo never wipes any of this because it lives only at runtime.
 
 local Lighting = game:GetService("Lighting")
@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
 local Npc = require(ReplicatedStorage.Shared.Npc)
+local ArenaBuilder = require(script.Parent.ArenaBuilder)
 
 local WorldBuilder = {}
 
@@ -100,11 +101,11 @@ end
 ---------------------------------------------------------------------------
 local function buildOcean()
 	local terrain = workspace.Terrain
-	terrain.WaterColor = Color3.fromRGB(30, 170, 220)
-	terrain.WaterTransparency = 0.45
+	terrain.WaterColor = Config.WATER.color
+	terrain.WaterTransparency = Config.WATER.transparency
 	terrain.WaterWaveSize = 0.12
 	terrain.WaterWaveSpeed = 8
-	terrain.WaterReflectance = 0.6
+	terrain.WaterReflectance = Config.WATER.reflectance
 	local half = 640
 	local step = 256
 	local top = Config.SEA_LEVEL
@@ -817,16 +818,32 @@ local function paintBoard(board: BasePart, title: string, sub: string, subColor:
 	bar(Vector3.new(t, S.Y, 0.2), Vector3.new(-S.X / 2 + t / 2, 0, z))
 end
 
--- Boarding stairs: from the water (port side) or the arena gangplank (starboard side) up the hull
+-- Boarding stairs: from the water (port side) up the hull (starboard has only the landing, for
+-- the arena lookout pier)
 -- to a gap in the rail, so nobody who jumped or swam off has to go round to the bow. Low visible
 -- steps over a smooth invisible ramp (like the quarterdeck stairs). Crew only: invisible
 -- "ShipGate<i>" walls (same collision group as the bow gate) close the foot and the open side.
 -- Ship z values: ramp foot, ramp top / landing start, landing end (the rails stop at the same z).
 local BOARD_Z0, BOARD_Z1, BOARD_Z2 = 4, 16.5, 23.5
+-- Starboard has no stairs, only the landing the arena lookout pier leaves from: it sits on the
+-- arena's centre line (Config.ARENA_OFFSET_Z), so the pier runs straight out at the hole.
+local LAND_Z1, LAND_Z2 = Config.ARENA_OFFSET_Z - 3.5, Config.ARENA_OFFSET_Z + 3.5
 
-local function buildBoardingRamp(model: Model, cf: CFrame, index: number, sx: number, y0: number)
+local function buildBoardingRamp(model: Model, cf: CFrame, index: number, sx: number, y0: number, stairs: boolean?)
 	local W = Config.SHIP_WIDTH
 	local top = Config.DECK_Y + 0.4 -- the deck planks
+	if stairs == false then
+		-- only the landing (starboard: the arena lookout pier leaves from its outer edge), railed
+		-- along its bow and stern sides
+		box(model, cf, Vector3.new(8, 0.8, LAND_Z2 - LAND_Z1), Vector3.new(sx * (W / 2 + 3), top - 0.4, (LAND_Z1 + LAND_Z2) / 2), WOOD_LIGHT)
+		for _, z in { LAND_Z1 + 0.2, LAND_Z2 - 0.2 } do
+			box(model, cf, Vector3.new(7, 0.4, 0.4), Vector3.new(sx * (W / 2 + 3.5), top + 2.6, z), WOOD_DARK, nil, { CanCollide = false })
+			box(model, cf, Vector3.new(0.4, 2.8, 0.4), Vector3.new(sx * (W / 2 + 6.8), top + 1.4, z), WOOD_DARK, nil, { CanCollide = false })
+			-- (an invisible wall under each rail: the drop to the sea is right below)
+			box(model, cf, Vector3.new(7, 6, 0.4), Vector3.new(sx * (W / 2 + 3.5), top + 3, z), Color3.new(1, 1, 1), nil, { Transparency = 1, CanQuery = false, Name = "LandingWall" })
+		end
+		return
+	end
 	local rise = top - y0
 	local run = BOARD_Z1 - BOARD_Z0
 	local rw = 6.6
@@ -863,6 +880,107 @@ local function buildBoardingRamp(model: Model, cf: CFrame, index: number, sx: nu
 	gate(Vector3.new(0.6, 24, BOARD_Z2 - BOARD_Z0 + 0.6), Vector3.new(sx * (W / 2 + 0.4 + rw + 0.3), 10, (BOARD_Z0 + BOARD_Z2) / 2))
 end
 
+-- The arena lookout: a pier off the starboard boarding landing that climbs to a railed platform
+-- over the ship side of the reef, so the crew watch the fight from above, looking down into the
+-- blue hole. Ship space: the starboard landing spans z LAND_Z1..LAND_Z2 and ends at x = W / 2 + 7.
+-- pier, ramp, platform (ship x). A short pier: the platform sits at the reef's outer edge, 58
+-- studs short of the arena's centre (the hole's rim is at 44), with your team just in front of it.
+local LOOK_X0, LOOK_RAMP0, LOOK_RAMP1, LOOK_X1 = Config.SHIP_WIDTH / 2 + 7, 43, 46, Config.ARENA_OFFSET - 58
+local LOOK_RISE = 2 -- the platform stands this much above the deck
+
+local function buildLookout(parent: Instance, shipCf: CFrame, arenaCf: CFrame)
+	local top = Config.DECK_Y + 0.4
+	local high = top + LOOK_RISE
+	local zc = (LAND_Z1 + LAND_Z2) / 2
+	-- The landing sits on the arena's centre line, so the pier runs straight out along +X. (If the
+	-- arena ever moves off that line, the pier still aims at its centre: it turns about its start.)
+	local a = shipCf:PointToObjectSpace(arenaCf.Position)
+	local yaw = math.atan2(-(a.Z - zc), a.X - LOOK_X0)
+	local cf = shipCf * CFrame.new(LOOK_X0, 0, zc) * CFrame.Angles(0, yaw, 0) * CFrame.new(-LOOK_X0, 0, -zc)
+	local pw = LAND_Z2 - LAND_Z1 -- pier width (z)
+	local platW = 15 -- platform width (z)
+	local function plank(size: Vector3, pos: Vector3, i: number)
+		box(parent, cf, size, pos, if i % 2 == 0 then WOOD_LIGHT else Color3.fromRGB(186, 130, 80), Enum.Material.WoodPlanks)
+	end
+	-- the pier, level with the deck
+	local n = math.max(1, math.floor((LOOK_RAMP0 - LOOK_X0) / 2))
+	for i = 0, n - 1 do
+		local x0 = LOOK_X0 + (LOOK_RAMP0 - LOOK_X0) * i / n
+		local x1 = LOOK_X0 + (LOOK_RAMP0 - LOOK_X0) * (i + 1) / n
+		plank(Vector3.new(x1 - x0 - 0.1, 0.8, pw), Vector3.new((x0 + x1) / 2, top - 0.4, zc), i)
+	end
+	-- the ramp up: visible steps over an invisible wedge (smooth to walk)
+	local run = LOOK_RAMP1 - LOOK_RAMP0
+	local ramp = Instance.new("WedgePart")
+	ramp.Name = "LookoutRamp"
+	ramp.Anchored = true
+	ramp.Transparency = 1
+	ramp.Size = Vector3.new(pw, LOOK_RISE, run)
+	-- tallest at its +Z end, so its +Z must point out along +X (away from the ship)
+	ramp.CFrame = cf * CFrame.new((LOOK_RAMP0 + LOOK_RAMP1) / 2, top + LOOK_RISE / 2, zc) * CFrame.Angles(0, math.pi / 2, 0)
+	ramp.Parent = parent
+	for i = 0, 9 do
+		local h = LOOK_RISE / 10 * (i + 1)
+		box(parent, cf, Vector3.new(run / 10, h, pw), Vector3.new(LOOK_RAMP0 + (i + 0.5) * run / 10, top + h / 2 - 0.4, zc), if i % 2 == 0 then WOOD_LIGHT else Color3.fromRGB(186, 130, 80), Enum.Material.WoodPlanks, { CanCollide = false })
+	end
+	-- the platform
+	local px = (LOOK_RAMP1 + LOOK_X1) / 2
+	local pl = LOOK_X1 - LOOK_RAMP1
+	for i = 0, 3 do
+		plank(Vector3.new(pl / 4 - 0.1, 0.8, platW), Vector3.new(LOOK_RAMP1 + (i + 0.5) * pl / 4, high - 0.4, zc), i)
+	end
+	-- rails: along both sides of the pier, the ramp and the platform; the platform's front, facing
+	-- the hole, is left open (an invisible wall still keeps people on it)
+	local railH = 2.8
+	local function rail(a: Vector3, b: Vector3)
+		box(parent, cf * CFrame.lookAt((a + b) / 2, b), Vector3.new(0.4, 0.4, (b - a).Magnitude), Vector3.zero, WOOD_DARK, nil, { CanCollide = false })
+	end
+	local function post(p: Vector3, h: number)
+		box(parent, cf, Vector3.new(0.5, h, 0.5), p + Vector3.new(0, h / 2, 0), WOOD_DARK)
+	end
+	for _, s in { -1, 1 } do
+		local z = zc + s * (pw / 2 - 0.2)
+		rail(Vector3.new(LOOK_X0, top + railH, z), Vector3.new(LOOK_RAMP0, top + railH, z))
+		rail(Vector3.new(LOOK_RAMP0, top + railH, z), Vector3.new(LOOK_RAMP1, high + railH, z))
+		post(Vector3.new(LOOK_RAMP0, top, z), railH)
+		local zp = zc + s * (platW / 2 - 0.2)
+		rail(Vector3.new(LOOK_RAMP1, high + railH, zp), Vector3.new(LOOK_X1, high + railH, zp))
+		rail(Vector3.new(LOOK_RAMP1, high + railH, zp), Vector3.new(LOOK_RAMP1, high + railH, z))
+		post(Vector3.new(LOOK_RAMP1, high, zp), railH)
+		post(Vector3.new(LOOK_X1 - 0.2, high, zp), railH)
+	end
+	-- invisible walls keep everyone on the platform (the rails are only knee-high to a jump)
+	for _, w in {
+		{ Vector3.new(0.6, 8, platW), Vector3.new(LOOK_X1, high + 4, zc) },
+		{ Vector3.new(pl, 8, 0.6), Vector3.new(px, high + 4, zc - platW / 2) },
+		{ Vector3.new(pl, 8, 0.6), Vector3.new(px, high + 4, zc + platW / 2) },
+	} do
+		box(parent, cf, w[1], w[2], Color3.new(1, 1, 1), nil, { Transparency = 1, CanQuery = false, Name = "LookoutWall" })
+	end
+	-- stilts down into the sea
+	for _, p in {
+		Vector3.new(LOOK_RAMP0, 0, zc - pw / 2 + 0.4), Vector3.new(LOOK_RAMP0, 0, zc + pw / 2 - 0.4),
+		Vector3.new(LOOK_RAMP1, 0, zc - platW / 2 + 0.6), Vector3.new(LOOK_RAMP1, 0, zc + platW / 2 - 0.6),
+		Vector3.new(LOOK_X1 - 0.6, 0, zc - platW / 2 + 0.6), Vector3.new(LOOK_X1 - 0.6, 0, zc + platW / 2 - 0.6),
+	} do
+		local yTop = if p.X > LOOK_RAMP0 + 1 then high - 0.8 else top - 0.8
+		box(parent, cf, Vector3.new(1.1, yTop + 6, 1.1), Vector3.new(p.X, (yTop - 6) / 2, p.Z), WOOD_DARK, Enum.Material.Wood)
+	end
+	-- lanterns on the platform's outer corners
+	for _, s in { -1, 1 } do
+		local base = Vector3.new(LOOK_X1 - 0.6, high, zc + s * (platW / 2 - 0.6))
+		box(parent, cf, Vector3.new(0.5, 4.2, 0.5), base + Vector3.new(0, 2.1, 0), WOOD_DARK, Enum.Material.Wood)
+		-- (not Neon: with the sky's bloom a Neon lamp this close to the camera glows into a blob)
+		local lamp = box(parent, cf, Vector3.new(1.1, 1.3, 1.1), base + Vector3.new(0, 4.8, 0), Color3.fromRGB(255, 226, 150), Enum.Material.SmoothPlastic, { CanCollide = false })
+		local light = Instance.new("PointLight")
+		light.Range = 12
+		light.Brightness = 1.2
+		light.Color = Color3.fromRGB(255, 206, 120)
+		light.Parent = lamp
+		box(parent, cf, Vector3.new(1.4, 0.3, 1.4), base + Vector3.new(0, 5.6, 0), WOOD_DARK, nil, { CanCollide = false })
+	end
+end
+
 local function buildShip(world: Folder, index: number): Ship
 	local angle =(index - 1) / Config.SHIP_COUNT * math.pi * 2
 	local center = Vector3.new(math.sin(angle) * Config.SHIP_RING_RADIUS, Config.SEA_LEVEL, math.cos(angle) * Config.SHIP_RING_RADIUS)
@@ -897,9 +1015,11 @@ local function buildShip(world: Folder, index: number): Ship
 	for z = -BOW, sternZ - 2, 4 do
 		box(model, cf, Vector3.new(W - 2, 0.4, 3.8), Vector3.new(0, deck + 0.2, z + 2), if (z // 4) % 2 == 0 then WOOD_LIGHT else Color3.fromRGB(186, 130, 80))
 	end
-	-- rails, with a gap on each side (BOARD_Z1..BOARD_Z2) where the boarding stairs come up
+	-- rails, with a gap on each side: port where the boarding stairs come up (BOARD_Z1..BOARD_Z2),
+	-- starboard where the arena lookout pier leaves (LAND_Z1..LAND_Z2)
 	for _, sx in { -1, 1 } do
-		for _, seg in { { -BOW, BOARD_Z1 }, { BOARD_Z2, sternZ } } do
+		local g1, g2 = if sx < 0 then BOARD_Z1 else LAND_Z1, if sx < 0 then BOARD_Z2 else LAND_Z2
+		for _, seg in { { -BOW, g1 }, { g2, sternZ } } do
 			box(model, cf, Vector3.new(1, 3, seg[2] - seg[1]), Vector3.new(sx * (W / 2 - 0.5), deck + 1.9, (seg[1] + seg[2]) / 2), WOOD_DARK)
 		end
 	end
@@ -1176,31 +1296,19 @@ local function buildShip(world: Folder, index: number): Ship
 		pp:SetAttribute("Upgrade", id)
 	end
 
-	-- arena: a ring of buoys on open water off the starboard side
-	local arenaCenter = cf * CFrame.new(Config.ARENA_OFFSET, 0, 0)
+	-- arena: the blue hole off the starboard side (ArenaBuilder: its islets, rocks and surf here,
+	-- its terrain in WorldBuilder.build once every ship exists)
+	local arenaCenter = cf * CFrame.new(Config.ARENA_OFFSET, 0, Config.ARENA_OFFSET_Z)
 	-- the arena faces the ship: player monsters on the ship side, enemies on the far side
 	local arenaCf = CFrame.lookAt(arenaCenter.Position, arenaCenter.Position + (arenaCenter.Position - cf.Position).Unit)
 	local ring = Instance.new("Model")
 	ring.Name = "Arena"
 	ring.Parent = model
-	local n = 16
-	for i = 0, n - 1 do
-		local a = i / n * math.pi * 2
-		local bf = arenaCf * CFrame.new(math.cos(a) * Config.ARENA_RADIUS, 0, math.sin(a) * Config.ARENA_RADIUS)
-		local col = if i % 2 == 0 then Color3.fromRGB(240, 60, 60) else Color3.fromRGB(250, 250, 250)
-		box(ring, bf, Vector3.new(2.4, 2.4, 2.4), Vector3.new(0, 0.6, 0), col)
-		box(ring, bf, Vector3.new(0.4, 2, 0.4), Vector3.new(0, 2.8, 0), Color3.fromRGB(40, 44, 60))
-		local a2 = (i + 0.5) / n * math.pi * 2
-		local mid = arenaCf * CFrame.new(math.cos(a2) * Config.ARENA_RADIUS, 0.3, math.sin(a2) * Config.ARENA_RADIUS) * CFrame.Angles(0, -a2, 0)
-		box(ring, mid, Vector3.new(0.5, 0.5, 8.6), Vector3.zero, Color3.fromRGB(250, 250, 250), nil, { CanCollide = false })
-	end
-	-- a little gangplank floating dock from the ship to the arena
-	for k = 0, 3 do
-		box(ring, cf, Vector3.new(6, 0.8, 8), Vector3.new(W / 2 + 4 + k * 6.2, 0.4, 0), WOOD_LIGHT)
-	end
-	-- boarding stairs back up to the deck: starboard ones start on that gangplank (the spot you
-	-- watch fights from, top at y = 0.8), port ones start at the water
-	buildBoardingRamp(model, cf, index, 1, 0.8)
+	ArenaBuilder.props(ring, arenaCf)
+	buildLookout(ring, cf, arenaCf)
+	-- starboard: just the landing the lookout pier leaves from; port: boarding stairs up from the
+	-- water, so anyone who jumped or swam off climbs back aboard there
+	buildBoardingRamp(model, cf, index, 1, 0.8, false)
 	buildBoardingRamp(model, cf, index, -1, 0.3)
 
 	-- boarding gate: a see-through wall across the bow ramp that only this ship's crew can walk
@@ -1602,7 +1710,7 @@ function WorldBuilder.applyFittings(ship: Ship, fit: { [string]: number }?)
 		for _, sx in { -1, 1 } do
 			for z = -52, 80, 6.6 do
 				-- stay off the boarding stairs
-				local blocked = z + 3 > BOARD_Z0 - 3.1 and z + 3 < BOARD_Z2 + 3.1
+				local blocked = sx < 0 and z + 3 > BOARD_Z0 - 3.1 and z + 3 < BOARD_Z2 + 3.1
 				if not blocked then
 					box(m, cf, Vector3.new(0.5, ph, 6.1), Vector3.new(sx * (W / 2 + 0.3), y, z + 3), PLATE, Enum.Material.Metal, { CanCollide = false })
 					box(m, cf, Vector3.new(0.3, 0.4, 0.4), Vector3.new(sx * (W / 2 + 0.62), y, z + 1), RIVET, Enum.Material.Metal, { CanCollide = false })
@@ -1910,6 +2018,13 @@ function WorldBuilder.build()
 		WorldBuilder.buildTrench(WorldBuilder.ships[i])
 		WorldBuilder.buildTrench(WorldBuilder.ships[i], "deep")
 		WorldBuilder.buildTrench(WorldBuilder.ships[i], "abyss")
+		task.wait()
+	end
+	-- the blue hole arenas' terrain, before the trenches (their shafts are carved after, so a
+	-- neighbouring trench is never filled in by an arena's reef)
+	ArenaBuilder.paintTerrain()
+	for i = 1, Config.SHIP_COUNT do
+		ArenaBuilder.terrain(WorldBuilder.ships[i].arenaCf)
 		task.wait()
 	end
 	-- trench terrain in passes over EVERY ship (see trenchTerrain): walls, then floors, then water
