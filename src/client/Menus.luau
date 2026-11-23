@@ -848,6 +848,92 @@ function Menus.currencyInfo(kind: string)
 end
 
 ---------------------------------------------------------------------------
+-- Settings: music and sound-effect volume (saved with the player's data)
+---------------------------------------------------------------------------
+local volumeSaveQueued = false
+local function saveVolume()
+	if volumeSaveQueued then
+		return
+	end
+	volumeSaveQueued = true
+	task.delay(0.5, function()
+		volumeSaveQueued = false
+		State.action("Volume", { music = Sound.getVolume("music"), sfx = Sound.getVolume("sfx") })
+	end)
+end
+
+function Menus.settings()
+	local UserInputService = game:GetService("UserInputService")
+	local f, body = window("Settings", Vector2.new(620, 240), C.Plank)
+	local conns: { RBXScriptConnection } = {}
+	f.Destroying:Connect(function()
+		for _, c in conns do
+			c:Disconnect()
+		end
+	end)
+
+	local function row(title: string, kind: string, y: number)
+		UI.label({ Text = title, Stroke = 0, TextColor3 = C.Ink, MaxText = 26, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.fromOffset(150, 40), Position = UDim2.fromOffset(12, y), Parent = body })
+		local track = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(205, 182, 138), BorderSizePixel = 0, Size = UDim2.new(1, -350, 0, 18), Position = UDim2.new(0, 218, 0, y + 11), Parent = body }, { UI.corner(9), UI.stroke(2.5) })
+		local fill = UI.new("Frame", { BackgroundColor3 = C.Sea, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), Parent = track }, { UI.corner(9) })
+		local knob = UI.new("Frame", { BackgroundColor3 = C.Brass, Size = UDim2.fromOffset(34, 34), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0, 0.5), ZIndex = 3, Parent = track }, { UI.corner(17), UI.stroke(3) })
+		local pct = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Deep, MaxText = 24, Size = UDim2.fromOffset(64, 40), Position = UDim2.new(1, -70, 0, y), Parent = body })
+
+		local function show(v: number)
+			fill.Size = UDim2.fromScale(v, 1)
+			knob.Position = UDim2.fromScale(v, 0.5)
+			pct.Text = math.floor(v * 100 + 0.5) .. "%"
+		end
+		local function set(v: number)
+			v = math.clamp(v, 0, 1)
+			Sound.setVolume(kind, v)
+			show(v)
+		end
+		show(Sound.getVolume(kind))
+
+		-- -/+ step by 10% (handy on a controller), and the track itself drags
+		UI.button({ Text = "-", Color = C.Coral, Radius = 12, Size = UDim2.fromOffset(40, 40), Position = UDim2.fromOffset(166, y), Parent = body }, function()
+			set(math.floor(Sound.getVolume(kind) * 10 + 0.5) / 10 - 0.1)
+			saveVolume()
+		end)
+		UI.button({ Text = "+", Color = C.Kelp, Radius = 12, Size = UDim2.fromOffset(40, 40), Position = UDim2.new(1, -120, 0, y), Parent = body }, function()
+			set(math.floor(Sound.getVolume(kind) * 10 + 0.5) / 10 + 0.1)
+			saveVolume()
+		end)
+
+		local hit = UI.new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 30, 0, 44), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 4, Parent = track })
+		local dragging = false
+		local function fromX(x: number)
+			local w = track.AbsoluteSize.X
+			if w > 0 then
+				set((x - track.AbsolutePosition.X) / w)
+			end
+		end
+		hit.InputBegan:Connect(function(input: InputObject)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				fromX(input.Position.X)
+			end
+		end)
+		table.insert(conns, UserInputService.InputChanged:Connect(function(input: InputObject)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				fromX(input.Position.X)
+			end
+		end))
+		table.insert(conns, UserInputService.InputEnded:Connect(function(input: InputObject)
+			if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+				dragging = false
+				Sound.play("Click")
+				saveVolume()
+			end
+		end))
+	end
+
+	row("Music", "music", 24)
+	row("Sound FX", "sfx", 104)
+end
+
+---------------------------------------------------------------------------
 -- Event
 ---------------------------------------------------------------------------
 function Menus.event()

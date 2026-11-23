@@ -244,6 +244,22 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 	Speed = function(player, arg)
 		return BattleService.setSpeed(player, arg), nil
 	end,
+	-- Settings: music / sound-effect volume. Cosmetic only, so it just saves (no snapshot push).
+	Volume = function(player, arg)
+		if typeof(arg) ~= "table" then
+			return false, nil
+		end
+		local m, s = arg.music, arg.sfx
+		if typeof(m) ~= "number" or typeof(s) ~= "number" or m ~= m or s ~= s then
+			return false, nil
+		end
+		local data = DataService.get(player)
+		if not data then
+			return false, nil
+		end
+		data.volume = { music = math.clamp(m, 0, 1), sfx = math.clamp(s, 0, 1) }
+		return true, nil
+	end,
 	Fuse = function(player, arg)
 		if typeof(arg) ~= "table" then
 			return false, "Pick two monsters"

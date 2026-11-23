@@ -91,6 +91,7 @@ Hud.on("Sell", Menus.sell)
 Hud.on("Event", Menus.event)
 Hud.on("Gifts", Menus.gifts)
 Hud.on("Powers", Menus.powers)
+Hud.on("Settings", Menus.settings)
 Hud.on("InfoPearls", function()
 	Menus.currencyInfo("Pearls")
 end)
@@ -199,6 +200,11 @@ end)
 
 local snap = State.waitForData()
 Hud.refresh()
+-- the player's saved Settings volumes, before the music starts
+if typeof(snap.volume) == "table" then
+	Sound.setVolume("music", tonumber(snap.volume.music) or 1)
+	Sound.setVolume("sfx", tonumber(snap.volume.sfx) or 1)
+end
 Sound.music("Music")
 
 -- first visit: wait for the character on the ship, then roll the intro. Also plays again the

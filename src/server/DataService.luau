@@ -81,6 +81,7 @@ function DataService.defaultData()
 		favAsked = false,
 		lastSeen = 0,
 		battleSpeed = 1,
+		volume = { music = 1, sfx = 1 }, -- Settings sliders (0..1), applied on the client
 		team = {}, -- uids that fight (empty = best automatically)
 		teamSlots = Config.TEAM_START,
 		nestsOwned = {}, -- nest index(string) -> true for bought nests past the free ones

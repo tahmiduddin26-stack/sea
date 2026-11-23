@@ -69,6 +69,7 @@ local hotbarSlot: Frame
 local powersCard: TextButton
 local giftLbl: TextLabel
 local spellRow: Frame
+local settingsBtn: TextButton -- the gear: music / sound volume (always shown, even mid-tutorial)
 
 local handlers: { [string]: () -> () } = {}
 function Hud.on(name: string, fn: () -> ())
@@ -696,6 +697,12 @@ function Hud.init(screen: ScreenGui)
 	banner = UI.panel({ Size = UDim2.fromOffset(600, 50), Position = UDim2.new(0.5, 0, 0, 116), AnchorPoint = Vector2.new(0.5, 0), Color = Color3.fromRGB(40, 140, 235), Radius = 25, Visible = false, Parent = root })
 	bannerLbl = UI.label({ Text = "", MaxText = 28, Size = UDim2.new(1, -40, 0.72, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2.5, Parent = banner })
 
+	-- settings gear (placed by Hud.setMode below)
+	settingsBtn = UI.button({ Text = "", Color = C.Plank, Radius = 28, Size = UDim2.fromOffset(56, 56), Position = UDim2.new(1, -14, 1, -14), AnchorPoint = Vector2.new(1, 1), Parent = root }, function()
+		fire("Settings")
+	end)
+	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = "rbxasset://textures/ui/Settings/MenuBarIcons/GameSettingsTab.png", ImageColor3 = C.Panel, ScaleType = Enum.ScaleType.Fit, Size = UDim2.fromScale(0.62, 0.62), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 2, Parent = settingsBtn })
+
 	-- currencies (pearls above coins, coins bigger)
 	pearlLbl = currency(-118, I.Pearl, 44, "InfoPearls")
 	coinLbl = currency(-68, I.Coin, 56, "InfoCoins")
@@ -716,11 +723,18 @@ function Hud.init(screen: ScreenGui)
 			pf.Position = UDim2.new(0, 14 + 210, 0, off + 8)
 			-- the Starter Pack and the offer stay in a column down the right edge (the jump button
 			-- is small and sits lower), starting under the top-right row
+			-- the gear sits at the top of that column (the jump button owns the bottom right),
+			-- so the column starts one gear lower
+			settingsBtn.AnchorPoint = Vector2.new(1, 0)
+			settingsBtn.Position = UDim2.new(1, -14, 0, 70)
 			rightCol.AnchorPoint = Vector2.new(1, 0)
-			rightCol.Position = UDim2.new(1, -10, 0, 70)
+			rightCol.Position = UDim2.new(1, -10, 0, 134)
 			rightCol.Size = UDim2.fromOffset(140, 300)
 			rightLayout.FillDirection = Enum.FillDirection.Vertical
 		else
+			-- PC / console: the gear in the empty bottom-right corner
+			settingsBtn.AnchorPoint = Vector2.new(1, 1)
+			settingsBtn.Position = UDim2.new(1, -14, 1, -14)
 			cf.Size = UDim2.fromOffset(260, 56)
 			pf.Size = UDim2.fromOffset(260, 44)
 			rightCol.Size = UDim2.fromOffset(140, 300)
