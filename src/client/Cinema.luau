@@ -26,6 +26,9 @@ local C = UI.Colors
 local BIND = "TideCinema"
 
 local layer: Frame
+local barsRoot: ScreenGui
+local BAR_H = 0.11 -- each letterbox bar, as a share of the full screen height
+local barsToken = 0
 local topBar: Frame
 local bottomBar: Frame
 local caption: TextLabel
@@ -73,15 +76,25 @@ local function stopCamera()
 	end
 end
 
+-- slide the letterbox bars in from the screen edges (or back out)
 local function bars(on: boolean)
-	local h = if on then 0.12 else 0
 	layer.Visible = true
-	-- the bars are oversized and slide in from beyond the screen edges, so they also
-	-- cover the top bar inset at any UI scale
-	local topPos = if on then UDim2.fromScale(0.5, h) else UDim2.new(0.5, 0, 0, -160)
-	local botPos = if on then UDim2.fromScale(0.5, 1 - h) else UDim2.new(0.5, 0, 1, 160)
-	TweenService:Create(topBar, TweenInfo.new(0.4), { Position = topPos }):Play()
-	TweenService:Create(bottomBar, TweenInfo.new(0.4), { Position = botPos }):Play()
+	barsRoot.Enabled = true
+	local info = TweenInfo.new(0.45, Enum.EasingStyle.Quad, if on then Enum.EasingDirection.Out else Enum.EasingDirection.In)
+	-- the top bar hangs from its bottom edge, so at y = BAR_H it fills the top; at 0 it is off screen
+	TweenService:Create(topBar, info, { Position = UDim2.fromScale(0, if on then BAR_H else 0) }):Play()
+	TweenService:Create(bottomBar, info, { Position = UDim2.fromScale(0, if on then 1 - BAR_H else 1) }):Play()
+	barsToken += 1
+	if not on then
+		-- once they're out, switch the layer off (their soft edges would still peek in), unless the
+		-- black card is up or the bars were called back in meanwhile
+		local token = barsToken
+		task.delay(0.5, function()
+			if token == barsToken and not black.Visible then
+				barsRoot.Enabled = false
+			end
+		end)
+	end
 end
 
 local function say(text: string?, who: string?, color: Color3?)
@@ -264,6 +277,25 @@ function Cinema.intro()
 			end
 			params.FilterDescendantsInstances = ignore
 			local hidden: { BasePart } = {}
+			local hiddenTrees: { [Instance]: boolean } = {}
+			-- a palm is ~30 parts: hiding only the ones a ray hit left half a tree floating, so a
+			-- hit on any part of one hides the whole tree
+			local function hide(part: BasePart)
+				local tree = part:FindFirstAncestor("Palm")
+				if tree and not hiddenTrees[tree] then
+					hiddenTrees[tree] = true
+					for _, d in tree:GetDescendants() do
+						if d:IsA("BasePart") then
+							d.LocalTransparencyModifier = 1
+							table.insert(hidden, d)
+							table.insert(ignore, d)
+						end
+					end
+				elseif not tree then
+					part.LocalTransparencyModifier = 1
+					table.insert(hidden, part)
+				end
+			end
 			local from = camC.Position
 			local targets = {}
 			for _, up in { 2, 8, 14, 20, 28 } do
@@ -278,9 +310,8 @@ function Cinema.intro()
 						break
 					end
 					local part = hit.Instance :: BasePart
-					if not part:IsA("Terrain") and part.Size.Magnitude < 14 and part.Position.Y > grassY + 0.8 then
-						part.LocalTransparencyModifier = 1
-						table.insert(hidden, part)
+					if not part:IsA("Terrain") and (part:FindFirstAncestor("Palm") or (part.Size.Magnitude < 14 and part.Position.Y > grassY + 0.8)) then
+						hide(part)
 					end
 					table.insert(ignore, part) -- (hidden or not, look past it)
 					params.FilterDescendantsInstances = ignore
@@ -336,6 +367,7 @@ function Cinema.intro()
 	bars(false)
 	black.Visible = true
 	black.BackgroundTransparency = 1
+	blackText.Visible = true
 	blackText.Text = UI.keyword("Reach <DEPTH " .. Config.FINAL_DEPTH .. "> to rescue your monster...")
 	TweenService:Create(black, TweenInfo.new(0.5), { BackgroundTransparency = 0 }):Play()
 	task.wait(0.5)
@@ -350,7 +382,9 @@ function Cinema.intro()
 	TweenService:Create(blackText, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
 	task.wait(0.6)
 	black.Visible = false
+	blackText.Visible = false
 	blackText.TextTransparency = 0
+	barsRoot.Enabled = false
 	skipBtn.Visible = false
 	layer.Visible = false
 	State.cinematic = false
@@ -407,13 +441,54 @@ function Cinema.isPlaying(): boolean
 end
 
 function Cinema.init(screen: ScreenGui)
+	-- The letterbox and the fade-to-black live in their own ScreenGui that ignores the safe-area
+	-- insets: inside the main UI (safe-area only, so phone notches stay clear) the bars stopped
+	-- short of both screen edges. It sits just under the main UI, so the caption and SKIP stay on top.
+	local barsGui = UI.new("ScreenGui", {
+		Name = "TideCinemaBars",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		ScreenInsets = Enum.ScreenInsets.None,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder = screen.DisplayOrder - 1,
+		Enabled = false,
+		Parent = screen.Parent,
+	})
+	barsRoot = barsGui
+	local function bar(top: boolean): Frame
+		local f = UI.new("Frame", {
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0, if top then 1 else 0),
+			Position = UDim2.fromScale(0, if top then 0 else 1),
+			Size = UDim2.fromScale(1, BAR_H),
+			Parent = barsGui,
+		})
+		-- a soft fade on the inner edge instead of a hard line across the picture
+		local fade = UI.new("Frame", {
+			BackgroundColor3 = Color3.new(0, 0, 0),
+			BorderSizePixel = 0,
+			AnchorPoint = Vector2.new(0, if top then 0 else 1),
+			Position = UDim2.fromScale(0, if top then 1 else 0),
+			Size = UDim2.new(1, 0, 0, 26),
+			Parent = f,
+		})
+		UI.new("UIGradient", {
+			Rotation = if top then 90 else -90,
+			Transparency = NumberSequence.new(0.35, 1),
+			Parent = fade,
+		})
+		return f
+	end
+	topBar = bar(true)
+	bottomBar = bar(false)
+	black = UI.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 5, Visible = false, Parent = barsGui })
+
 	layer = UI.new("Frame", { Name = "Cinema", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), ZIndex = 50, Visible = false, Parent = screen })
-	topBar = UI.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 0, -160), Size = UDim2.fromScale(3, 2), ZIndex = 50, Parent = layer })
-	bottomBar = UI.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 160), Size = UDim2.fromScale(3, 2), ZIndex = 50, Parent = layer })
 	speaker = UI.label({ Text = "", TextColor3 = C.Gold, Size = UDim2.new(0.6, 0, 0, 30), Position = UDim2.new(0.5, 0, 1, -112), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 52, Visible = false, Parent = layer })
 	caption = UI.label({ Text = "", MaxText = 36, Size = UDim2.new(0.8, 0, 0, 52), Position = UDim2.new(0.5, 0, 1, -78), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 52, Visible = false, Parent = layer })
-	black = UI.new("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(3, 3), ZIndex = 60, Visible = false, Parent = layer })
-	blackText = UI.label({ Text = "", MaxText = 44, Size = UDim2.new(0.24, 0, 0, 60), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 61, Stroke = 0, Parent = black })
+	-- the card's words stay in the main (scaled) UI, over the black
+	blackText = UI.label({ Text = "", MaxText = 44, Size = UDim2.new(0.24, 0, 0, 60), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 61, Stroke = 0, Visible = false, Parent = layer })
 	-- a bright gold pill on the black bar (a dark one disappeared into the letterbox)
 	skipBtn = UI.button({ Text = "SKIP  >>", Color = C.Gold, Size = UDim2.fromOffset(150, 52), Position = UDim2.new(1, -20, 0, 16), AnchorPoint = Vector2.new(1, 0), ZIndex = 70, Visible = false, Parent = layer }, function()
 		skipping = true
