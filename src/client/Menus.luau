@@ -1115,6 +1115,44 @@ function Menus.gifts()
 		local ok, msg = State.action("Daily")
 		Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
 	end)
+	-- Ready and claimed must look nothing alike (same size either way): ready = a green face, a
+	-- border pulsing gold/white and a red "!" badge; claimed = a muted grey face with a countdown.
+	local dailyGrad = daily:FindFirstChildOfClass("UIGradient")
+	local dailyStroke = daily:FindFirstChildOfClass("UIStroke")
+	local dailyBadge = UI.new("Frame", { BackgroundColor3 = C.Coral, Size = UDim2.fromOffset(30, 30), Position = UDim2.new(1, -8, 0, 4), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false, ZIndex = 5, Parent = daily }, { UI.corner(15), UI.stroke(2.5) })
+	UI.label({ Text = "!", Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), ZIndex = 6, Parent = dailyBadge })
+	local dailyPulse: Tween? = nil
+	local dailyReady: boolean? = nil
+	daily.Destroying:Connect(function()
+		if dailyPulse then
+			dailyPulse:Cancel()
+		end
+	end)
+	local function setDailyReady(ready: boolean)
+		if dailyReady == ready then
+			return
+		end
+		dailyReady = ready
+		local face = if ready then C.Kelp else C.Muted
+		if dailyGrad then
+			dailyGrad.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, face:Lerp(Color3.new(1, 1, 1), 0.25)),
+				ColorSequenceKeypoint.new(1, face:Lerp(Color3.new(0, 0, 0), 0.12)),
+			})
+		end
+		dailyBadge.Visible = ready
+		if dailyPulse then
+			dailyPulse:Cancel()
+			dailyPulse = nil
+		end
+		if dailyStroke then
+			dailyStroke.Color = C.Ink
+			if ready then
+				dailyPulse = game:GetService("TweenService"):Create(dailyStroke, TweenInfo.new(0.55, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Color = Color3.fromRGB(255, 245, 170) })
+				;(dailyPulse :: Tween):Play()
+			end
+		end
+	end
 	task.spawn(function()
 		while daily.Parent do
 			local s = State.snapshot
@@ -1129,7 +1167,18 @@ function Menus.gifts()
 					UI.setText(b, Format.time(g.min * 60 - played))
 				end
 			end
-			UI.setText(daily, if s.dailyDay == State.now() // 86400 then "Daily Chest: come back tomorrow" else ("Daily Chest: Day " .. ((s.dailyStreak or 0) + 1)))
+			local today = State.now() // 86400
+			local claimed = s.dailyDay == today
+			setDailyReady(not claimed)
+			if claimed then
+				-- the chest resets at the next UTC midnight (the server's day boundary)
+				local left = (today + 1) * 86400 - State.now()
+				UI.setText(daily, "Daily Chest: next in " .. string.format("%dh %02dm", left // 3600, (left % 3600) // 60))
+			else
+				-- same rule as ExtrasService.claimDaily: the streak only carries on from yesterday
+				local day = if s.dailyDay == today - 1 then (s.dailyStreak or 0) + 1 else 1
+				UI.setText(daily, "OPEN DAILY CHEST! (Day " .. day .. ")")
+			end
 			task.wait(1)
 		end
 	end)
