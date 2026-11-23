@@ -225,10 +225,18 @@ Rules: never sell power that can't also be earned slowly; always show roll odds;
 - VIP Captain: gold nests, a gold "VIP CAPTAIN" tag over your head and [VIP] in chat.
 
 ### Analytics (Creator Dashboard, `server/Analytics.luau`)
-- **Onboarding funnel:** step 1 joined, then one step per tutorial step.
-- **Store funnel** per item: prompted, then purchased. **Vendor funnel** per vendor: opened, then used.
+- **Onboarding funnel** (built in): steps 1-12, joined through "Tutorial complete", with fixed step names.
+- **Growth funnel** (custom, once per player ever, after the tutorial): Tutorial complete, First dive, then stages cleared
+  1, 2, 3, 5, 8, 10, 15 and Maw (stage 20). Only ever moves forward; skipped steps are filled in.
+- **Loop funnel** (custom, once per play session): Session start, Fished an egg, Hatched an egg, Fused monsters, Went on a
+  dive, Pushed a new depth, Beat a boss. Shows what returning players do each time they play.
+- **Store funnel** per item: seen, prompted, purchased (Revive is "seen" when the defeat window offers it).
+  **Vendor funnel** per vendor: opened, then used.
 - **Economy:** every coin and pearl source and sink, tagged Shop / IAP / TimedReward / Onboarding / Gameplay.
-- **Progression:** each dive start, stage clear and end. **Custom:** Hatch, Fuse, SpellDrop, SpellCast, DailyClaim, GiftClaim, Code, BestDepth.
+- **Progression:** each dive start, stage clear and end.
+- **Custom events:** SessionStart / SessionEnd (fields stage, floor, tut; SessionEnd's value is minutes played), RodCast
+  (rod = egg / deep / abyss), Hatch, Fuse, BuyNest, UnlockFloor2, UnlockFloor3, SpellDrop, SpellCast, DailyClaim,
+  GiftClaim, Code, BestDepth.
 
 ### Controls
 | Action | PC | Console | Mobile |

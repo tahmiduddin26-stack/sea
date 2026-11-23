@@ -249,6 +249,51 @@ function Cinema.intro()
 		local seaSpot = CFrame.lookAt(seaPos, Vector3.new(stagePos.X, seaPos.Y, stagePos.Z)) * CFrame.Angles(0, math.rad(90), 0)
 		-- high and to the dock side so the palms don't block the view of Maw
 		local camC = CFrame.lookAt(stagePos + dir * 16 + side * -10 + Vector3.new(0, 10, 0), seaPos + Vector3.new(0, 10, 0))
+		-- palms (and other small things standing on the island) between the camera and Maw hide for this
+		-- shot only, so nothing blocks him: we cast rays from the camera to Maw's whole rise and make every
+		-- blocker see-through (just for this player), then put them back when the scene ends
+		do
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.IgnoreWater = true
+			local ignore: { Instance } = {}
+			for _, m in (workspace:FindFirstChild("World") :: Instance):GetChildren() do
+				if m:GetAttribute("ShipIndex") then
+					table.insert(ignore, m) -- ships never hide
+				end
+			end
+			params.FilterDescendantsInstances = ignore
+			local hidden: { BasePart } = {}
+			local from = camC.Position
+			local targets = {}
+			for _, up in { 2, 8, 14, 20, 28 } do
+				for _, off in { -10, 0, 10 } do
+					table.insert(targets, seaPos + Vector3.new(0, up, 0) + side * off)
+				end
+			end
+			for _, to in targets do
+				for _ = 1, 25 do
+					local hit = workspace:Raycast(from, to - from, params)
+					if not hit then
+						break
+					end
+					local part = hit.Instance :: BasePart
+					if not part:IsA("Terrain") and part.Size.Magnitude < 14 and part.Position.Y > grassY + 0.8 then
+						part.LocalTransparencyModifier = 1
+						table.insert(hidden, part)
+					end
+					table.insert(ignore, part) -- (hidden or not, look past it)
+					params.FilterDescendantsInstances = ignore
+				end
+			end
+			table.insert(cleanup, function()
+				for _, p in hidden do
+					if p.Parent then
+						p.LocalTransparencyModifier = 0
+					end
+				end
+			end)
+		end
 		setCamera(camC, 60)
 		local rig, stopM, moveM = actor("Maw", 2.6, seaSpot * CFrame.new(0, -24, 0) * CFrame.Angles(0, math.rad(-90), 0), true)
 		table.insert(cleanup, stopM)

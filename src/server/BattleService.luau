@@ -226,6 +226,7 @@ local function killEnemy(run: Run)
 	end
 	if run.depth > data.bestDepth then
 		data.bestDepth = run.depth
+		Analytics.loop(player, 6) -- pushed a new depth this session
 		if run.depth % 5 == 0 then
 			Analytics.event(player, "BestDepth", run.depth)
 		end
@@ -415,6 +416,9 @@ local function finish(run: Run)
 	Analytics.diveEnd(player, run.depth, run.retreat)
 	if not run.retreat then
 		ended[player] = { depth = run.depth, until_ = os.clock() + Config.REVIVE_WINDOW }
+		if not FarmService.inTutorial(player) then
+			Analytics.store(player, "Revive", 1) -- the defeat window offered a Revive (step 2 = tapped it, 3 = bought)
+		end
 	end
 	broadcast(player, "end", {
 		depth = run.depth,

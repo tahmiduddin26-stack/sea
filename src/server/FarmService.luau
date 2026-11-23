@@ -700,6 +700,7 @@ local function haul(player: Player, kind: any)
 	-- line comes up (every client plays the same dive from "haul")
 	s.fishing = true
 	MissionService.record(player, "fish", 1)
+	Analytics.event(player, "RodCast", 1, { rod = info.kind or "egg", zone = zone }) -- also the Loop funnel's "fished an egg"
 	-- the Deep Rod has its own pedestal (the last one), so the two rods never clear each other's eggs
 	-- one egg per cast: the hook pulls a single egg out of a rock nest on the sea floor
 	local count = 1
