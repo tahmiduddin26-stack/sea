@@ -178,6 +178,53 @@ function MonsterModels.fade(rig: Rig, alpha: number)
 	end
 end
 
+-- Hologram look (a nest whose monster is away fighting): every part turns cyan tinted glass
+-- (the caller flickers it with MonsterModels.fade), and its sparkles / lights / rainbow cycling
+-- are paused. Turning it off puts back exactly what was there (materials, colours, effects).
+-- Glass, not Neon: neon washes out to white in daylight and the monster's shape gets lost.
+local HOLO = Color3.fromRGB(70, 200, 255)
+function MonsterModels.hologram(rig: Rig, on: boolean)
+	local r = rig :: any
+	if on == (r.holo == true) then
+		return
+	end
+	if on then
+		local saved = { mats = {}, refl = {}, fx = {}, rainbow = r.rainbow }
+		r.rainbow = nil
+		for k, part in rig.parts do
+			saved.mats[k] = part.Material
+			saved.refl[k] = part.Reflectance
+			part.Material = Enum.Material.Glass
+			part.Reflectance = 0
+			part.Color = rig.baseColor[k]:Lerp(HOLO, 0.85)
+		end
+		for _, d in rig.model:GetDescendants() do
+			if d:IsA("ParticleEmitter") or d:IsA("Light") then
+				saved.fx[d] = (d :: any).Enabled
+				;(d :: any).Enabled = false
+			end
+		end
+		r.holoSaved = saved
+		r.holo = true
+	else
+		local saved = r.holoSaved
+		for k, part in rig.parts do
+			part.Material = saved.mats[k]
+			part.Reflectance = saved.refl[k]
+			part.Color = rig.baseColor[k]
+			part.Transparency = rig.baseTransp[k]
+		end
+		for d, enabled in saved.fx do
+			if d.Parent then
+				d.Enabled = enabled
+			end
+		end
+		r.rainbow = saved.rainbow
+		r.holoSaved = nil
+		r.holo = nil
+	end
+end
+
 -- Mutation look: Golden = gold-plated with a metal sheen; Rainbow = colours cycle while it
 -- moves (MonsterModels.pose does the cycling). Both also get a shimmer.
 function MonsterModels.applyVariant(rig: Rig, variant: string?)

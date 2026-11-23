@@ -139,6 +139,11 @@ local function clearSlot(slot: Slot)
 	end
 	slot.timer = nil
 	;(slot :: any).rest = nil
+	local bg = (slot :: any).battleGui :: BillboardGui?
+	if bg then
+		bg:Destroy()
+		;(slot :: any).battleGui = nil
+	end
 	local sg = (slot :: any).sleepGui :: BillboardGui?
 	if sg then
 		sg:Destroy()
@@ -547,10 +552,33 @@ function ShipView.init()
 		local now = State.now()
 		for anchor, slot in slots do
 			local near = (anchor.Position - cam).Magnitude < DRAW_DIST
-			local hide = ShipView.hidden[anchor] == true or anchor:GetAttribute("InBattle") == true
+			-- away fighting: the nest stays visibly taken, with a flickering hologram of its monster
+			local away = anchor:GetAttribute("InBattle") == true and slot.rig ~= nil
+			local hide = ShipView.hidden[anchor] == true or (anchor:GetAttribute("InBattle") == true and not away)
 			if slot.rig then
 				slot.rig.model.Parent = if near and not hide then folder else nil
-				if near and not hide then
+				if (slot.rig :: any).holo ~= (away or nil) then
+					MonsterModels.hologram(slot.rig, away)
+					if not away then
+						(slot :: any).dimmed = nil -- the hologram reset the fade
+					end
+				end
+				local battleGui = (slot :: any).battleGui :: BillboardGui?
+				if away and not battleGui then
+					battleGui = UI.new("BillboardGui", { Size = UDim2.fromOffset(150, 30), StudsOffsetWorldSpace = Vector3.new(0, MonsterModels.height(slot.rig) + 1.6, 0), LightInfluence = 0, MaxDistance = 60, Parent = anchor })
+					UI.label({ Text = "⚔ IN BATTLE", TextColor3 = Color3.fromRGB(130, 235, 255), Size = UDim2.fromScale(1, 1), Parent = battleGui })
+					;(slot :: any).battleGui = battleGui
+				elseif not away and battleGui then
+					battleGui:Destroy()
+					;(slot :: any).battleGui = nil
+				end
+				if near and away then
+					-- hover a little above the nest, turning slowly, flickering like a projection
+					local cf = slot.base * CFrame.new(0, 0.5 + math.sin(t * 1.5 + slot.phase) * 0.2, 0) * CFrame.Angles(0, t * 0.6, 0)
+					MonsterModels.pose(slot.rig, cf, t * 0.5 + slot.phase, false, true)
+					local glitch = if math.random() < 0.03 then 0.25 else 0
+					MonsterModels.fade(slot.rig, 0.5 + math.sin(t * 9 + slot.phase) * 0.08 + glitch)
+				elseif near and not hide then
 					local mark = ShipView.marks[anchor]
 					local cf = slot.base
 					local fly = ShipView.flights[anchor]
@@ -594,7 +622,7 @@ function ShipView.init()
 					hl:Destroy()
 				end
 				local dimNow = mark == "dim"
-				if (slot :: any).dimmed ~= dimNow then
+				if not away and (slot :: any).dimmed ~= dimNow then
 					(slot :: any).dimmed = dimNow
 					MonsterModels.fade(slot.rig, if dimNow then 0.72 else 0)
 				end
@@ -603,7 +631,7 @@ function ShipView.init()
 			local sleepLeft = math.ceil(((anchor:GetAttribute("RestUntil") or 0) :: number) - now)
 			local sleeping = sleepLeft > 0
 			if slot.gui then
-				slot.gui.Enabled = not hide and not sleeping
+				slot.gui.Enabled = not hide and not sleeping and not away -- away: the "IN BATTLE" tag instead
 			end
 			local sleepGui = (slot :: any).sleepGui :: BillboardGui?
 			local restLbl = (slot :: any).rest :: TextLabel?
