@@ -303,19 +303,24 @@ local function buildHub(world: Folder)
 	-- out of the crown (each frond is a chain of blocks that touch end to end)
 	local function palm(base: CFrame, seed: number)
 		local rng = Random.new(seed)
+		-- one Model per palm, so the intro can hide a whole tree that stands in its shot (it hid
+		-- them part by part before and left half a palm floating)
+		local tree = Instance.new("Model")
+		tree.Name = "Palm"
+		tree.Parent = hub
 		local cf = base * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
 		local bend = math.rad(rng:NextNumber(3, 5.5))
 		for k = 0, 5 do
 			local w = 2.1 - k * 0.14
 			local h = 2.4
-			box(hub, cf, Vector3.new(w, h + 0.25, w), Vector3.new(0, h / 2, 0), if k % 2 == 0 then WOOD_DARK else Color3.fromRGB(125, 78, 46))
+			box(tree, cf, Vector3.new(w, h + 0.25, w), Vector3.new(0, h / 2, 0), if k % 2 == 0 then WOOD_DARK else Color3.fromRGB(125, 78, 46))
 			cf = cf * CFrame.new(0, h, 0) * CFrame.Angles(0, 0, -bend)
 		end
-		local crown = ball(hub, cf, Vector3.new(2.8, 2.4, 2.8), Vector3.new(0, 0.2, 0), Color3.fromRGB(55, 150, 60))
+		local crown = ball(tree, cf, Vector3.new(2.8, 2.4, 2.8), Vector3.new(0, 0.2, 0), Color3.fromRGB(55, 150, 60))
 		crown.Name = "Crown"
 		for k = 0, 2 do
 			local a = k / 3 * math.pi * 2 + 0.4
-			ball(hub, cf * CFrame.Angles(0, a, 0), Vector3.new(1.1, 1.1, 1.1), Vector3.new(0.7, -0.9, 0.5), Color3.fromRGB(110, 70, 40))
+			ball(tree, cf * CFrame.Angles(0, a, 0), Vector3.new(1.1, 1.1, 1.1), Vector3.new(0.7, -0.9, 0.5), Color3.fromRGB(110, 70, 40))
 		end
 		local fronds = 7
 		local lens = { 4.2, 3.8, 3.2 }
@@ -326,7 +331,7 @@ local function buildHub(world: Folder)
 			local fc = cf * CFrame.new(0, 0.4, 0) * CFrame.Angles(0, a, 0) * CFrame.Angles(math.rad(8), 0, 0)
 			for j = 1, 3 do
 				local len = lens[j]
-				box(hub, fc, Vector3.new(widths[j], 0.35, len + 0.15), Vector3.new(0, 0, -len / 2), if (k + j) % 2 == 0 then Color3.fromRGB(70, 175, 70) else Color3.fromRGB(55, 150, 60), nil, { CanCollide = false })
+				box(tree, fc, Vector3.new(widths[j], 0.35, len + 0.15), Vector3.new(0, 0, -len / 2), if (k + j) % 2 == 0 then Color3.fromRGB(70, 175, 70) else Color3.fromRGB(55, 150, 60), nil, { CanCollide = false })
 				fc = fc * CFrame.new(0, 0, -len) * CFrame.Angles(math.rad(droop[j]), 0, 0)
 			end
 		end
@@ -1234,7 +1239,9 @@ local function buildShip(world: Folder, index: number): Ship
 	-- (they are at z qz0 - 14) and its feet are a hair above the deck, so nothing pokes through it or
 	-- shares a plane with it; it is 12 wide, filling the gap between the stair side walls.
 	local barrier = box(model, cf, Vector3.new(12, 11.9, 0.6), Vector3.new(0, deck + 0.05 + 11.9 / 2, qz0 - 15.2), Color3.fromRGB(150, 215, 255), Enum.Material.Glass, { Transparency = 0.5, Name = "Floor2Barrier" })
-	label(barrier, "FLOOR LOCKED", UDim2.fromOffset(190, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80))
+	-- the main mast stands right in front of this gate, so the sign draws over it (AlwaysOnTop;
+	-- it still only shows within the label's MaxDistance)
+	label(barrier, "FLOOR LOCKED", UDim2.fromOffset(190, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80)).AlwaysOnTop = true
 	-- Permanent, invisible, tall walls so the gate can't be hopped round (they never open, for anyone;
 	-- the owner walks up the middle of the stairs between them): one along each side of the stairs,
 	-- and one across the foot of the quarterdeck from the stairs to each rail, so nobody can jump
@@ -1306,7 +1313,7 @@ local function buildShip(world: Folder, index: number): Ship
 	-- the same clean glass gate (see Floor2Barrier): in front of the rail posts (z p3z0 - 14), 5 wide
 	-- between the stair side walls (x 26..31), feet a hair above the quarterdeck
 	local barrier3 = box(model, cf, Vector3.new(5, 11.9, 0.6), Vector3.new(28.5, up + 0.05 + 11.9 / 2, p3z0 - 15.2), Color3.fromRGB(150, 215, 255), Enum.Material.Glass, { Transparency = 0.5, Name = "Floor3Barrier" })
-	label(barrier3, "FLOOR 3 LOCKED", UDim2.fromOffset(210, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80))
+	label(barrier3, "FLOOR 3 LOCKED", UDim2.fromOffset(210, 40), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 220, 80)).AlwaysOnTop = true
 	-- the same permanent invisible side walls for the Floor 3 stairs (x 26..31 on the quarterdeck;
 	-- the outer one fills the gap up to the quarterdeck rail). They start at the gate and run up to
 	-- the platform's front edge, and reach well above a jump from the quarterdeck rail top.
