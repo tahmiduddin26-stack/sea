@@ -202,7 +202,8 @@ end
 ---------------------------------------------------------------------------
 -- Currency pops
 ---------------------------------------------------------------------------
-local shown = { coins = -1, pearls = -1, best = -1 }
+local shown = { coins = -1, pearls = -1, shells = -1, best = -1 }
+local shellLbl: TextLabel -- Tide Festival shells (only shown while the festival runs)
 local tickShown = -1
 local tickTarget = 0
 local screenRoot: ScreenGui
@@ -575,6 +576,15 @@ function Hud.refresh()
 	end
 	shown.best = snap.bestDepth
 	shown.coins, shown.pearls = snap.coins, snap.pearls
+	-- festival shells: a counter of their own while the Tide Festival runs
+	local shells = snap.shells or 0
+	local festival = State.now() < Config.EVENT.endsAt
+	;(shellLbl.Parent :: GuiObject).Visible = festival
+	if festival and shown.shells >= 0 and shells > shown.shells then
+		popNumber(shellLbl, shells - shown.shells, Color3.fromRGB(255, 160, 60))
+	end
+	shown.shells = shells
+	shellLbl.Text = Format.abbrev(shells)
 	-- coins tick up smoothly towards the real value (the ticker)
 	tickTarget = snap.coins
 	if tickShown < 0 then
@@ -736,12 +746,15 @@ function Hud.init(screen: ScreenGui)
 	-- currencies (pearls above coins, coins bigger)
 	pearlLbl = currency(-118, I.Pearl, 44, "InfoPearls")
 	coinLbl = currency(-68, I.Coin, 56, "InfoCoins")
+	shellLbl = currency(-162, I.Shell, 40, "InfoShells")
+	shellLbl.TextColor3 = Color3.fromRGB(255, 200, 150)
 	-- Platform tells us the input mode ("key" | "touch" | "pad"). Phones: the currencies go up
 	-- top-left (the thumbstick lives bottom-left) and the Robux offers sit just under the spell
 	-- row, clear of the jump button at the bottom right.
 	function Hud.setMode(m: string)
 		local touch = m == "touch"
 		local pf, cf = pearlLbl.Parent :: Frame, coinLbl.Parent :: Frame
+		local sf = shellLbl.Parent :: Frame
 		if touch then
 			-- the HUD runs to the top edge on phones; only the top-left (Roblox's own menu and
 			-- chat buttons) is left clear. Coins and pearls sit side by side under those buttons,
@@ -751,6 +764,8 @@ function Hud.init(screen: ScreenGui)
 			pf.Size = UDim2.fromOffset(150, 44)
 			cf.Position = UDim2.new(0, 14, 0, off + 2)
 			pf.Position = UDim2.new(0, 14 + 210, 0, off + 8)
+			sf.Size = UDim2.fromOffset(140, 40)
+			sf.Position = UDim2.new(0, 14 + 210 + 154, 0, off + 10)
 			-- the Starter Pack and the offer stay in a column down the right edge (the jump button
 			-- is small and sits lower), starting under the top-right row
 			-- the gear sits at the top of that column (the jump button owns the bottom right),
@@ -771,6 +786,8 @@ function Hud.init(screen: ScreenGui)
 			rightLayout.FillDirection = Enum.FillDirection.Vertical
 			pf.Position = UDim2.new(0, 14, 1, -118)
 			cf.Position = UDim2.new(0, 14, 1, -68)
+			sf.Size = UDim2.fromOffset(260, 40)
+			sf.Position = UDim2.new(0, 14, 1, -162)
 			rightCol.AnchorPoint = Vector2.new(1, 0.5)
 			rightCol.Position = UDim2.new(1, -10, 0.5, -30)
 		end

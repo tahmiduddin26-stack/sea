@@ -828,6 +828,13 @@ local CURRENCY_INFO = {
 		get = "Free Gifts (every few minutes you play), the Daily Chest, Missions, and the first time you discover each monster in the Index.",
 		use = "Egg Shop eggs (Rare, Epic, Golden) and Tide Power spins.",
 	},
+	Shells = {
+		icon = "Shell",
+		color = Color3.fromRGB(255, 140, 40),
+		what = "Tide Festival money. Only around while the festival runs.",
+		get = "Free Gifts (some of them carry shells) and the Daily Chest, during the festival.",
+		use = "Festival prizes at the Tide Festival stand. Spend them before the festival ends!",
+	},
 }
 
 function Menus.currencyInfo(kind: string)
