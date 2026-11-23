@@ -134,6 +134,125 @@ local function prompt(parent: BasePart, action: string, object: string, hold: nu
 end
 
 ---------------------------------------------------------------------------
+-- The three fishing rods' looks (rodStation). Each style colours the five animated sections and
+-- adds trim on them. Section frames: -Z runs towards the tip; the handle's butt is at +Z (z 2.5),
+-- the blanks run z -3.8..3.8, the reel is a ball beside the handle (its axle is X).
+---------------------------------------------------------------------------
+local ROD_BRASS = Color3.fromRGB(255, 200, 70)
+local NEON, METAL, GLASS, WOODM = Enum.Material.Neon, Enum.Material.Metal, Enum.Material.Glass, Enum.Material.Wood
+local BALL, CYL = Enum.PartType.Ball, Enum.PartType.Cylinder
+local ROD_STYLES: { [string]: any } = {
+	-- the Egg Rod: a varnished wooden pirate rod with a leather grip, brass fittings, red thread
+	-- wraps at the guides, a wooden reel with a brass crank and a glowing tip
+	egg = {
+		handle = Color3.fromRGB(150, 95, 55),
+		handleMat = WOODM,
+		blank = Color3.fromRGB(250, 235, 190),
+		trim = function(trim, band, guide, crank, _along, ring, _tip)
+			local LEATHER, THREAD = Color3.fromRGB(70, 42, 28), Color3.fromRGB(200, 40, 50)
+			for _, z in { 0.5, 1.05, 1.6, 2.1 } do
+				band("RodHandle", 0.98, z, 0.32, LEATHER)
+			end
+			trim("RodHandle", Vector3.new(1.15, 1.15, 1.15), Vector3.new(0, 0, 2.65), ROD_BRASS, METAL, { Shape = BALL })
+			band("RodHandle", 1.02, -2.35, 0.3, ROD_BRASS, METAL)
+			band("RodS1", 0.68, 3.65, 0.3, ROD_BRASS, METAL)
+			band("RodS2", 0.62, 3.6, 0.28, ROD_BRASS, METAL)
+			band("RodS3", 0.46, 3.65, 0.26, ROD_BRASS, METAL)
+			for _, g in { { "RodS1", 0.55, -1.5 }, { "RodS2", 0.5, -1.2 }, { "RodS3", 0.35, -0.8 }, { "RodS3", 0.35, -3.2 } } do
+				guide(g[1], g[2], g[3], ROD_BRASS, METAL)
+				band(g[1], g[2] + 0.06, g[3] - 0.3, 0.14, THREAD)
+				band(g[1], g[2] + 0.06, g[3] + 0.3, 0.14, THREAD)
+			end
+			for _, x in { -0.72, 0.72 } do
+				trim("RodReel", Vector3.new(0.16, 1.95, 1.95), Vector3.new(x, 0, 0), Color3.fromRGB(90, 55, 32), WOODM, { Shape = CYL })
+			end
+			crank(ROD_BRASS, Color3.fromRGB(240, 230, 210), METAL)
+			trim("RodS3", Vector3.new(0.45, 0.45, 0.45), Vector3.new(0, 0, -3.95), ring, NEON, { Shape = BALL })
+		end,
+	},
+	-- the Deep Rod: sleek dark metal with glowing cyan rings, a violet crystal butt and grip fins,
+	-- violet glowing guides, a glass reel with a glowing core, and a crystal shard at the tip
+	deep = {
+		handle = Color3.fromRGB(28, 30, 62),
+		handleMat = METAL,
+		blank = Color3.fromRGB(70, 56, 140),
+		blankMat = METAL,
+		reel = Color3.fromRGB(150, 220, 255),
+		reelMat = GLASS,
+		reelTransparency = 0.45,
+		trim = function(trim, band, guide, crank, _along, _ring, _tip)
+			local CYAN, VIOLET, GUN = Color3.fromRGB(120, 230, 255), Color3.fromRGB(150, 110, 255), Color3.fromRGB(50, 54, 100)
+			for _, z in { 0.6, 1.3, 2.0 } do
+				band("RodHandle", 0.96, z, 0.12, CYAN, NEON)
+			end
+			trim("RodHandle", Vector3.new(0.75, 0.75, 0.75), Vector3.new(0, 0, 2.85), VIOLET, GLASS, { Transparency = 0.15 },
+				CFrame.Angles(math.rad(45), 0, math.rad(45)))
+			band("RodHandle", 1.05, -2.35, 0.35, GUN, METAL)
+			for _, x in { -1, 1 } do
+				trim("RodHandle", Vector3.new(0.06, 0.55, 1.3), Vector3.new(x * 0.5, 0.15, -1.6), VIOLET, METAL, nil, CFrame.Angles(0, 0, math.rad(x * 25)))
+			end
+			for _, b in { { "RodS1", 0.55, { -2.5, 0, 2.5 } }, { "RodS2", 0.5, { -2.4, 0, 2.4 } }, { "RodS3", 0.35, { -1.5, 1.5 } } } do
+				for _, z in b[3] do
+					band(b[1], b[2] + 0.08, z, 0.1, CYAN, NEON)
+				end
+			end
+			band("RodS1", 0.68, 3.65, 0.3, GUN, METAL)
+			band("RodS2", 0.62, 3.6, 0.28, GUN, METAL)
+			band("RodS3", 0.46, 3.65, 0.26, GUN, METAL)
+			for _, g in { { "RodS1", 0.55, -1.2 }, { "RodS2", 0.5, -1.2 }, { "RodS3", 0.35, -0.5 }, { "RodS3", 0.35, -3.0 } } do
+				guide(g[1], g[2], g[3], VIOLET, NEON)
+			end
+			trim("RodReel", Vector3.new(0.9, 0.9, 0.9), Vector3.zero, CYAN, NEON, { Shape = BALL })
+			trim("RodReel", Vector3.new(1.9, 0.25, 0.25), Vector3.zero, GUN, METAL, { Shape = CYL })
+			crank(GUN, CYAN, METAL, NEON)
+			trim("RodS3", Vector3.new(0.4, 0.4, 1.0), Vector3.new(0, 0, -4.2), CYAN, GLASS, { Transparency = 0.1 }, CFrame.Angles(0, 0, math.rad(45)))
+		end,
+	},
+	-- the Abyss Rod: black with pink glowing veins and bone fangs, a watching eye at the butt, an
+	-- eyeball reel, and a glowing lure with thorns at the tip
+	abyss = {
+		handle = Color3.fromRGB(26, 18, 36),
+		blank = Color3.fromRGB(42, 28, 58),
+		reel = Color3.fromRGB(240, 235, 225),
+		trim = function(trim, band, guide, crank, along, _ring, _tip)
+			local PINK, BONE, VOID, PLUM = Color3.fromRGB(255, 60, 150), Color3.fromRGB(235, 225, 200), Color3.fromRGB(10, 5, 15), Color3.fromRGB(70, 30, 80)
+			for _, z in { 0.4, 1.0, 1.6, 2.2 } do
+				band("RodHandle", 0.96, z, 0.1, PINK, NEON)
+			end
+			for k = 0, 3 do
+				local a = k * math.pi / 2 + math.pi / 4
+				trim("RodHandle", Vector3.new(0.12, 0.55, 0.12), Vector3.new(math.cos(a) * 0.55, math.sin(a) * 0.55, -2.2), BONE, nil, nil,
+					CFrame.Angles(0, 0, a - math.pi / 2) * CFrame.Angles(math.rad(-30), 0, 0))
+			end
+			trim("RodHandle", Vector3.new(1.1, 1.1, 1.1), Vector3.new(0, 0, 2.7), Color3.fromRGB(26, 18, 36), nil, { Shape = BALL })
+			trim("RodHandle", Vector3.new(0.45, 0.45, 0.08), Vector3.new(0, 0, 3.24), PINK, NEON)
+			trim("RodHandle", Vector3.new(0.14, 0.3, 0.06), Vector3.new(0, 0, 3.29), VOID)
+			for _, b in { { "RodS1", 0.55, 7.6 }, { "RodS2", 0.5, 7.5 }, { "RodS3", 0.35, 7.6 } } do
+				trim(b[1], Vector3.new(0.06, 0.06, b[3] * 0.85), Vector3.new(0, b[2] / 2 + 0.01, 0), PINK, NEON)
+				trim(b[1], Vector3.new(0.06, 0.06, b[3] * 0.6), Vector3.new(b[2] / 2 + 0.01, 0, 0.5), PINK, NEON)
+			end
+			for _, f in { { "RodS1", 0.55, -2.6 }, { "RodS1", 0.55, 0.2 }, { "RodS1", 0.55, 2.6 }, { "RodS2", 0.5, -2.2 }, { "RodS2", 0.5, 1.0 } } do
+				trim(f[1], Vector3.new(0.1, 0.4, 0.1), Vector3.new(0, -(f[2] / 2 + 0.15), f[3]), BONE, nil, nil, CFrame.Angles(math.rad(-25), 0, 0))
+			end
+			band("RodS1", 0.68, 3.65, 0.3, PLUM)
+			band("RodS2", 0.62, 3.6, 0.28, PLUM)
+			band("RodS3", 0.46, 3.65, 0.26, PLUM)
+			for _, g in { { "RodS1", 0.55, -1.3 }, { "RodS2", 0.5, -0.6 }, { "RodS3", 0.35, -0.8 }, { "RodS3", 0.35, -3.0 } } do
+				guide(g[1], g[2], g[3], BONE)
+			end
+			-- the reel is an eyeball looking up the rod: a pink iris with a slit pupil
+			trim("RodReel", Vector3.new(0.08, 0.95, 0.95), Vector3.new(0, 0, -0.78), PINK, NEON, { Shape = CYL }, along)
+			trim("RodReel", Vector3.new(0.2, 0.55, 0.08), Vector3.new(0, 0, -0.84), VOID)
+			crank(PLUM, PINK, nil, NEON)
+			-- the lure: a glowing orb past the tip, with two thorns
+			trim("RodS3", Vector3.new(0.55, 0.55, 0.55), Vector3.new(0, 0, -4.15), PINK, NEON, { Shape = BALL })
+			for _, s in { -1, 1 } do
+				trim("RodS3", Vector3.new(0.08, 0.45, 0.08), Vector3.new(s * 0.22, 0.15, -3.6), BONE, nil, nil, CFrame.Angles(0, 0, math.rad(s * -35)))
+			end
+		end,
+	},
+}
+
 local function buildHub(world: Folder)
 	local hub = Instance.new("Model")
 	hub.Name = "Harbour"
@@ -1229,7 +1348,7 @@ local function buildShip(world: Folder, index: number): Ship
 	-- fishing station at the port rail: a rod on a stand that casts out to sea for eggs.
 	-- The client animates the Rod model's parts (see BattleView "haul").
 	-- built twice: the Egg Rod (port) and the Deep Rod (starboard, Config.DEEP_ROD)
-	local function rodStation(wp: Vector3, yaw: number, rodName: string, hitName: string, promptName: string, objectText: string, signText: string, ringColor: Color3, rodColor: Color3, floorY: number?)
+	local function rodStation(wp: Vector3, yaw: number, rodName: string, hitName: string, promptName: string, objectText: string, signText: string, ringColor: Color3, rodColor: Color3, floorY: number?, style: string)
 	local winchFrame = cf * CFrame.new(wp.X, (floorY or deck) + 0.4, wp.Z)
 	local S = Config.ROD_SCALE
 	local rodFrame = winchFrame * CFrame.new(0, 4.2 * S, 0) * CFrame.Angles(0, math.rad(yaw), 0) -- rod points -Z = out over the rail
@@ -1252,15 +1371,51 @@ local function buildShip(world: Folder, index: number): Ship
 		local a = RodAnim.Tracks[name]
 		return rodFrame * CFrame.new(a[1] * S, a[2] * S, a[3] * S, a[4], a[5], a[6], a[7])
 	end
-	local function rodPart(name: string, size: Vector3, color: Color3): BasePart
-		return part({ Name = name, Size = size * S, CFrame = rest(name), Color = color, CanCollide = false, Parent = rod })
+	local function rodPart(name: string, size: Vector3, color: Color3, mat: Enum.Material?): BasePart
+		return part({ Name = name, Size = size * S, CFrame = rest(name), Color = color, Material = mat or Enum.Material.SmoothPlastic, CanCollide = false, Parent = rod })
 	end
-	rodPart("RodHandle", Vector3.new(0.9, 0.9, 5), Color3.fromRGB(240, 60, 60))
-	rodPart("RodS1", Vector3.new(0.55, 0.55, 7.6), Color3.fromRGB(250, 235, 190))
-	rodPart("RodS2", Vector3.new(0.5, 0.5, 7.5), Color3.fromRGB(250, 235, 190))
-	rodPart("RodS3", Vector3.new(0.35, 0.35, 7.6), rodColor)
-	local reel = rodPart("RodReel", Vector3.new(1.6, 1.6, 1.6), ringColor)
+	local st = ROD_STYLES[style]
+	rodPart("RodHandle", Vector3.new(0.9, 0.9, 5), st.handle, st.handleMat)
+	rodPart("RodS1", Vector3.new(0.55, 0.55, 7.6), st.blank, st.blankMat)
+	rodPart("RodS2", Vector3.new(0.5, 0.5, 7.5), st.blank, st.blankMat)
+	rodPart("RodS3", Vector3.new(0.35, 0.35, 7.6), rodColor, st.tipMat)
+	local reel = rodPart("RodReel", Vector3.new(1.6, 1.6, 1.6), st.reel or ringColor, st.reelMat)
 	reel.Shape = Enum.PartType.Ball
+	if st.reelTransparency then
+		reel.Transparency = st.reelTransparency
+	end
+	-- trim: extra parts that ride on one section (the client re-poses them during the cast from
+	-- their Follow + Offset attributes; Spin = the crank, which turns about the reel's axle)
+	local function trim(seg: string, size: Vector3, pos: Vector3, color: Color3, mat: Enum.Material?, extra: { [string]: any }?, rot: CFrame?): BasePart
+		local off = CFrame.new(pos * S) * (rot or CFrame.identity)
+		local props: { [string]: any } = { Name = seg .. "Trim", Size = size * S, CFrame = rest(seg) * off, Color = color, Material = mat or Enum.Material.SmoothPlastic, CanCollide = false, CanQuery = false, CastShadow = false, Parent = rod }
+		if extra then
+			for k, v in extra do
+				props[k] = v
+			end
+		end
+		local p = part(props)
+		p:SetAttribute("Follow", seg)
+		p:SetAttribute("Offset", off)
+		return p
+	end
+	local ALONG = CFrame.Angles(0, math.rad(90), 0) -- a cylinder's axis (X) turned to run along the rod (Z)
+	-- a ring around a section (z: along the section, -Z is towards the tip)
+	local function band(seg: string, width: number, z: number, len: number, color: Color3, mat: Enum.Material?)
+		return trim(seg, Vector3.new(len, width, width), Vector3.new(0, 0, z), color, mat, { Shape = Enum.PartType.Cylinder }, ALONG)
+	end
+	-- a line guide: a little stand-off under the blank with an eyelet ring
+	local function guide(seg: string, width: number, z: number, color: Color3, mat: Enum.Material?)
+		trim(seg, Vector3.new(0.08, 0.28, 0.08), Vector3.new(0, -(width / 2 + 0.12), z), color, mat)
+		trim(seg, Vector3.new(0.07, 0.34, 0.34), Vector3.new(0, -(width / 2 + 0.36), z), color, mat, { Shape = Enum.PartType.Cylinder }, ALONG)
+	end
+	-- the reel crank: an arm and a knob on the outside of the reel that winds during the haul
+	local function crank(color: Color3, knob: Color3, mat: Enum.Material?, knobMat: Enum.Material?)
+		trim("RodReel", Vector3.new(0.3, 0.55, 0.55), Vector3.new(0.92, 0, 0), color, mat, { Shape = Enum.PartType.Cylinder })
+		trim("RodReel", Vector3.new(0.14, 1.1, 0.22), Vector3.new(1.08, 0.42, 0), color, mat, { Name = "CrankArm" }):SetAttribute("Spin", true)
+		trim("RodReel", Vector3.new(0.4, 0.4, 0.4), Vector3.new(1.2, 0.9, 0), knob, knobMat, { Shape = Enum.PartType.Ball, Name = "CrankKnob" }):SetAttribute("Spin", true)
+	end
+	st.trim(trim, band, guide, crank, ALONG, ringColor, rodColor)
 	local winch = box(model, winchFrame, Vector3.new(10, 8, 10), Vector3.new(0, 4, 0), Color3.new(1, 1, 1), nil, { Transparency = 1, CanCollide = false, Name = hitName })
 	local wpp = prompt(winch, "Fish", objectText, 0.35, 14)
 	wpp.Name = promptName
@@ -1268,14 +1423,14 @@ local function buildShip(world: Folder, index: number): Ship
 	sign.MaxDistance = 260
 	return winch, sign
 	end
-	local winch = rodStation(Config.WINCH_POS, 90, "Rod", "Winch", "WinchPrompt", "Egg Rod", "FISH FOR EGGS!", Color3.fromRGB(255, 210, 70), Color3.fromRGB(255, 120, 90))
+	local winch = rodStation(Config.WINCH_POS, 90, "Rod", "Winch", "WinchPrompt", "Egg Rod", "FISH FOR EGGS!", Color3.fromRGB(255, 210, 70), Color3.fromRGB(255, 120, 90), nil, "egg")
 	-- the Deep Rod: points out over the starboard rail. Its sign is rewritten by the owner's
 	-- client (DeepRodView) with the unlock / cooldown countdown.
-	local deepWinch, dsign = rodStation(Config.DEEP_ROD.pos, -90, "DeepRod", "DeepWinch", "DeepRodPrompt", "Deep Rod", "DEEP ROD", Color3.fromRGB(150, 110, 255), Color3.fromRGB(120, 230, 255))
+	local deepWinch, dsign = rodStation(Config.DEEP_ROD.pos, -90, "DeepRod", "DeepWinch", "DeepRodPrompt", "Deep Rod", "DEEP ROD", Color3.fromRGB(150, 110, 255), Color3.fromRGB(120, 230, 255), nil, "deep")
 	dsign.Name = "DeepSign"
 	-- the Abyss Rod: on the Floor 3 balcony, pointing straight out astern. Its sign is rewritten by
 	-- the owner's client (ShipView) with Floor 3 / unlock / cooldown.
-	local abyssWinch, asign = rodStation(Config.ABYSS_ROD.pos, 180, "AbyssRod", "AbyssWinch", "AbyssRodPrompt", "Abyss Rod", "ABYSS ROD", Color3.fromRGB(255, 60, 150), Color3.fromRGB(255, 120, 220), f3)
+	local abyssWinch, asign = rodStation(Config.ABYSS_ROD.pos, 180, "AbyssRod", "AbyssWinch", "AbyssRodPrompt", "Abyss Rod", "ABYSS ROD", Color3.fromRGB(255, 60, 150), Color3.fromRGB(255, 120, 220), f3, "abyss")
 	asign.Name = "AbyssSign"
 
 	-- egg pedestals

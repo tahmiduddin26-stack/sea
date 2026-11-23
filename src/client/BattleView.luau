@@ -754,9 +754,24 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			rodParts[n] = p
 		end
 	end
+	-- trim parts (WorldBuilder.rodStation decorations) ride on the section named by their Follow
+	-- attribute at a fixed Offset; Spin ones (the reel crank) also turn about the reel's axle
+	local trims: { { p: BasePart, seg: string, off: CFrame, spin: boolean } } = {}
+	for _, d in rod:GetChildren() do
+		local seg = d:GetAttribute("Follow")
+		local off = d:GetAttribute("Offset")
+		if d:IsA("BasePart") and typeof(seg) == "string" and typeof(off) == "CFrame" and rodParts[seg] then
+			table.insert(trims, { p = d, seg = seg, off = off, spin = d:GetAttribute("Spin") == true })
+		end
+	end
+	local crankAngle = 0
 	local function poseRod(t: number)
 		for n, p in rodParts do
 			p.CFrame = base * (trackCf(n, t))
+		end
+		for _, tr in trims do
+			local at = rodParts[tr.seg].CFrame
+			tr.p.CFrame = if tr.spin then at * CFrame.Angles(crankAngle, 0, 0) * tr.off else at * tr.off
 		end
 	end
 	local function tipPos(): Vector3
@@ -1332,6 +1347,8 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			if t >= total then
 				break
 			end
+			-- the reel crank winds while the catch comes up
+			crankAngle = math.max(0, math.min(t, tFly) - tUp) * 14
 			if t < CAST then
 				-- Blender cast: wind up, whip, the hook arcs out to sea
 				poseRod(t)
