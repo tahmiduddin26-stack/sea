@@ -167,11 +167,51 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 	return true, "Done: " .. cmd
 end
 
+-- Decide whether this player gets the admin panel (the "Admin" attribute). The group check is a
+-- web call that can fail or time out; a failed lookup used to leave a group member without the
+-- panel for the whole session, so it now retries in the background until Roblox answers.
+local GROUP_RETRIES = { 2, 4, 8, 15, 30 } -- seconds between attempts after a failed lookup
+local function grantIfAdmin(player: Player)
+	if not RunService:IsStudio() then
+		return
+	end
+	if table.find(Config.ADMIN_IDS, player.UserId) ~= nil then
+		player:SetAttribute("Admin", true)
+		return
+	end
+	if player.UserId <= 0 then
+		-- Studio's "Start Server + Players" test gives players made-up negative ids: not in the
+		-- group, and not in ADMIN_IDS
+		print("[Admin] no admin panel for", player.Name, "(Studio test player, id " .. player.UserId .. ")")
+		return
+	end
+	for attempt = 0, #GROUP_RETRIES do
+		if attempt > 0 then
+			task.wait(GROUP_RETRIES[attempt])
+		end
+		if not player.Parent then
+			return
+		end
+		local ok, member = pcall(function()
+			return player:IsInGroup(Config.ADMIN_GROUP_ID)
+		end)
+		if ok then
+			inGroup[player] = member == true
+			if member then
+				player:SetAttribute("Admin", true)
+			else
+				print("[Admin] no admin panel for", player.Name, "(not in the FLNK LTD group or Config.ADMIN_IDS)")
+			end
+			return
+		end
+		warn("[Admin] group check failed for", player.Name, "(try " .. (attempt + 1) .. "):", member)
+	end
+	warn("[Admin] gave up checking the group for", player.Name, "- rejoin to try again")
+end
+
 function AdminService.init()
 	DataService.Loaded:Connect(function(player)
-		if AdminService.isAdmin(player) then
-			player:SetAttribute("Admin", true)
-		end
+		task.spawn(grantIfAdmin, player)
 	end)
 	game:GetService("Players").PlayerRemoving:Connect(function(player)
 		inGroup[player] = nil
