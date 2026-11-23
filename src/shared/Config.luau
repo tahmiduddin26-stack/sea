@@ -577,6 +577,9 @@ Config.TUTORIAL_EGGS = {
 for _, e in Config.TUTORIAL_EGGS do
 	e.price *= Config.COIN_SCALE -- coin inflation
 end
+-- The tutorial fight (step 5): if the mini boss hasn't shown up after this many seconds, a card
+-- tells the player to go fish for more monsters and offers to end the fight.
+Config.TUTORIAL_FIGHT_PROMPT = 25
 Config.HUD_UNLOCK_STEP = 12 -- the full HUD (menus, offers) appears from this step
 Config.SIGNS_UNLOCK_STEP = 10 -- the ship's upgrade signs can be bought from this step (the Fuse step)
 

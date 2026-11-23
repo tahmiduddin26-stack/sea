@@ -69,6 +69,7 @@ local hotbarSlot: Frame
 local powersCard: TextButton
 local giftLbl: TextLabel
 local spellRow: Frame
+local fuseRing: UIStroke -- the ring around the Fuse heart that pulses while a fuse is possible
 local settingsBtn: TextButton -- the gear: music / sound volume (always shown, even mid-tutorial)
 
 local handlers: { [string]: () -> () } = {}
@@ -222,6 +223,22 @@ function Hud.splash(text: string, color: Color3?)
 		task.wait(0.55)
 		l:Destroy()
 	end)
+end
+
+-- A small card under the banner: one short line and one button. Returns the card (destroy it
+-- to dismiss). Pressing the button runs onClick and dismisses it.
+function Hud.callout(text: string, buttonText: string, onClick: () -> ()): Frame?
+	if not root then
+		return nil
+	end
+	local card = UI.panel({ Size = UDim2.fromOffset(430, 116), Position = UDim2.new(0.5, 0, 0, 176), AnchorPoint = Vector2.new(0.5, 0), Radius = 18, ZIndex = 20, Parent = root })
+	UI.label({ Text = text, Stroke = 0, TextColor3 = C.Ink, MaxText = 26, Size = UDim2.new(1, -24, 0, 36), Position = UDim2.fromOffset(12, 10), ZIndex = 21, Parent = card })
+	UI.button({ Text = buttonText, Color = C.Kelp, Size = UDim2.fromOffset(200, 50), Position = UDim2.new(0.5, 0, 1, -12), AnchorPoint = Vector2.new(0.5, 1), ZIndex = 21, Parent = card }, function()
+		card:Destroy()
+		onClick()
+	end)
+	UI.pop(card, 0.6)
+	return card
 end
 
 local function spellDef(id: string): any
@@ -576,6 +593,19 @@ function Hud.refresh()
 	end
 	-- the heart is replaced by the fuse tray while the tray is open
 	fuseBtn.Visible = snap.tutorial >= 10 and not Hud.inBattle and not Hud.fuseOpen
+	-- the ring pulses when some level has enough monsters to fuse (Stats.fuseNeeded)
+	local byLvl: { [number]: number } = {}
+	local canFuse = false
+	for _, m in snap.monsters do
+		if m.lvl < Config.MAX_LEVEL then
+			byLvl[m.lvl] = (byLvl[m.lvl] or 0) + 1
+			if byLvl[m.lvl] >= Stats.fuseNeeded(m.lvl) then
+				canFuse = true
+			end
+		end
+	end
+	local ringHolder = fuseRing.Parent :: GuiObject
+	ringHolder.Visible = canFuse
 	-- Sell sits beside it once the tutorial is done (the server won't sell before that)
 	sellBtn.Visible = snap.tutorial >= Config.TUTORIAL_DONE and monsters > 0 and not Hud.inBattle and not Hud.fuseOpen
 	-- toasts ride above the tray so the two never overlap
@@ -869,6 +899,20 @@ function Hud.init(screen: ScreenGui)
 	sellBtn.AnchorPoint = Vector2.new(0.5, 0)
 	sellBtn.Visible = false
 	local sl = sellBtn:FindFirstChild("Label") :: TextLabel
+	-- a round ring around the heart; its line fades in and out (the heart itself doesn't move)
+	local ring = UI.new("Frame", { Name = "FuseRing", BackgroundTransparency = 1, Size = UDim2.new(1, 8, 1, 8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false, ZIndex = 0, Parent = fuseBtn }, { UI.corner(999) })
+	fuseRing = UI.new("UIStroke", { Thickness = 5, Color = Color3.fromRGB(255, 150, 210), ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = ring })
+	task.spawn(function()
+		while fuseRing.Parent do
+			if ring.Visible then
+				UI.tween(fuseRing, 0.6, { Transparency = 0.85 }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
+				UI.tween(fuseRing, 0.6, { Transparency = 0 }, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
+			else
+				fuseRing.Transparency = 0
+				task.wait(0.5)
+			end
+		end
+	end)
 	sl.Text = "Sell!"
 	sl.TextColor3 = C.Gold
 	sl.Size = UDim2.new(1.2, 0, 0, 30)

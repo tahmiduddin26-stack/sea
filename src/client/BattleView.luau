@@ -284,7 +284,43 @@ local function onStart(owner: number, payload: any)
 		Sound.music("BattleMusic")
 		Sound.play("Splash", 0.6)
 		BattleView.showArena(f)
+		BattleView.watchTutorialFight(f)
 	end
+end
+
+-- The tutorial fight: one Lv1 monster takes a long time to reach the mini boss. If it hasn't
+-- appeared after Config.TUTORIAL_FIGHT_PROMPT seconds, suggest fishing for more monsters and
+-- offer to end the fight (retreating moves the tutorial on to "You need MORE MONSTERS").
+function BattleView.watchTutorialFight(f: Fight)
+	local State = require(script.Parent.State) :: any
+	local snap = State.snapshot
+	if not snap or snap.tutorial ~= 5 then
+		return
+	end
+	task.spawn(function()
+		local function live(): boolean
+			return fights[f.owner] == f and not f.ending
+		end
+		local t0 = os.clock()
+		while live() and os.clock() - t0 < Config.TUTORIAL_FIGHT_PROMPT do
+			if f.enemyKind == "miniboss" then
+				return
+			end
+			task.wait(0.5)
+		end
+		if not live() or f.enemyKind == "miniboss" then
+			return
+		end
+		local card = Hud.callout("Too slow! Hatch more monsters to win faster.", "Go Fish!", function()
+			State.action("Retreat")
+		end)
+		while card and card.Parent and live() do
+			task.wait(0.5)
+		end
+		if card then
+			card:Destroy()
+		end
+	end)
 end
 
 -- Where is my fight? When it starts, the camera glides out to the arena for a moment (the team
