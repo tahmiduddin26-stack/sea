@@ -185,7 +185,7 @@ local function buildNest(slot: Slot)
 			nameTag(slot, sp, lvl, stars, MonsterModels.height(rig) + foot, pad:GetAttribute("Variant") :: string?)
 		end
 	elseif (state == "egg" or state == "fuse") and sp then
-		local egg = MonsterModels.buildEgg(sp, EGG_SCALE, state == "fuse")
+		local egg = MonsterModels.buildEgg(sp, EGG_SCALE, state == "fuse", pad:GetAttribute("Variant") :: string?)
 		egg.Parent = folder
 		slot.egg = egg
 		slot.base = pad.CFrame * CFrame.new(0, pad.Size.Y / 2 + 0.85 * EGG_SCALE, 0)
@@ -218,7 +218,7 @@ local function buildPedestal(slot: Slot)
 	end
 	local lvl = (ped:GetAttribute("Lvl") or 1) :: number
 	local stars = (ped:GetAttribute("Stars") or 1) :: number
-	local egg = MonsterModels.buildEgg(sp, EGG_SCALE)
+	local egg = MonsterModels.buildEgg(sp, EGG_SCALE, false, ped:GetAttribute("Variant") :: string?)
 	egg.Parent = folder
 	slot.egg = egg
 	slot.base = ped.CFrame * CFrame.new(0, ped.Size.Y / 2 + 1.6 * EGG_SCALE, 0)
@@ -238,9 +238,11 @@ local function buildPedestal(slot: Slot)
 	-- my own hauls roll like a slot reel before landing
 	if ped:GetAttribute("Owner") == player.UserId then
 		local finalColors = {}
+		local finalMats = {}
 		for _, d in egg:GetChildren() do
 			if d:IsA("BasePart") then
 				finalColors[d] = d.Color
+				finalMats[d] = d.Material
 			end
 		end
 		local labels = {}
@@ -265,8 +267,7 @@ local function buildPedestal(slot: Slot)
 				Sound.play("Click", 0.25, 0.8 + k * 0.05)
 				task.wait(0.12)
 			end
-			local first = next(finalColors)
-			local col = if first then finalColors[first] else C.White
+			local col = MonsterModels.elementColor(sp) -- the egg type's colour
 			for part in finalColors do
 				part.Color = Color3.new(1, 1, 1)
 				part.Material = Enum.Material.Neon
@@ -275,8 +276,8 @@ local function buildPedestal(slot: Slot)
 			reel.TextColor3 = col
 			Sound.play("Super", 0.6, 1.2)
 			task.wait(0.25)
-			for part in finalColors do
-				part.Material = Enum.Material.SmoothPlastic
+			for part, m in finalMats do
+				part.Material = m
 			end
 			task.wait(0.5)
 			for part, c in finalColors do

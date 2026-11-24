@@ -355,37 +355,265 @@ function MonsterModels.elementColor(sp: string): Color3
 	return if el then el.color else Color3.new(1, 1, 1)
 end
 
--- A blocky egg: stacked blocks in the species' element colours with neon spots.
-function MonsterModels.buildEgg(sp: string, scale: number, mystery: boolean?): Model
-	local def = Config.MONSTERS[sp]
-	local c1 = if mystery then Color3.fromRGB(70, 70, 90) else MonsterModels.elementColor(sp)
-	local c2 = c1
-	if def and #def.elements > 1 and not mystery then
-		c2 = Config.ELEMENTS[def.elements[2]].color
+---------------------------------------------------------------------------
+-- Eggs. A glossy egg-shaped shell (one tall ellipsoid) decorated
+-- by element, so you can tell what's inside at a glance:
+--   Tide  = rolling wave band with foam caps, a scallop-shell crest, bubbles
+--   Coral = polka spots and coral branches sprouting out of the shell, glowing tips
+--   Storm = a glowing zig-zag lightning crack round the middle and a bolt on top
+--   Abyss = a slit-pupilled glowing eye, rune dots, crystals bursting out of the top
+-- Hybrids: a band of shell tiles and a glow ring in the second element round the bottom.
+-- Mystery (fusing / fished-up): a dark shell with a faint glowing crack. Golden / Rainbow variants
+-- restyle the shell. Every egg also gets a soft glowing aura, a tilted ring of gems orbiting its
+-- waist (it turns as the egg spins), a light, and particles in its element's style.
+-- Origin at the egg's centre: the shell spans about -0.93 to +1.17 (x scale), the ring 1.15 wide.
+---------------------------------------------------------------------------
+local EGG_TRIM: { [string]: { trim: Color3, glow: Color3 } } = {
+	Tide = { trim = Color3.fromRGB(200, 240, 255), glow = Color3.fromRGB(130, 230, 255) },
+	Coral = { trim = Color3.fromRGB(255, 225, 205), glow = Color3.fromRGB(255, 170, 215) },
+	Storm = { trim = Color3.fromRGB(70, 80, 140), glow = Color3.fromRGB(255, 250, 150) },
+	Abyss = { trim = Color3.fromRGB(35, 20, 60), glow = Color3.fromRGB(200, 120, 255) },
+}
+
+-- Radius of the egg at height y (unit egg)
+local EGG_R, EGG_H, EGG_Y = 0.8, 1.05, 0.12 -- shell radius, half height, centre height
+local function eggRadius(y: number): number
+	local a = (y - EGG_Y) / EGG_H
+	return if math.abs(a) < 1 then EGG_R * math.sqrt(1 - a * a) else 0
+end
+
+-- A frame on the egg's surface at angle a (radians round Y, 0 = the front, -Z) and height y, with
+-- local -Z pointing straight out of the shell. Keep y within about -0.8 .. 1.05 (the poles are flat).
+local function eggSurface(a: number, y: number): CFrame
+	local dir = Vector3.new(math.sin(a), 0, -math.cos(a))
+	local dr = (eggRadius(y + 0.02) - eggRadius(y - 0.02)) / 0.04
+	local p = dir * eggRadius(y) + Vector3.new(0, y, 0)
+	return CFrame.lookAt(p, p + (dir - Vector3.yAxis * dr).Unit)
+end
+
+local function hue(i: number, n: number): Color3
+	return Color3.fromHSV((i / n) % 1, 0.65, 1)
+end
+
+-- Particles per egg style. Emitted from the shell's surface; ignored inside ViewportFrames.
+local EGG_FX = {
+	Tide = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 6, life = 1.6, speed = 0.6, accel = Vector3.new(0, 2.5, 0), size = 0.22, light = 0.6 },
+	Coral = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 5, life = 2.2, speed = 0.4, accel = Vector3.new(0, 0.6, 0), size = 0.26, light = 0.8 },
+	Storm = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 12, life = 0.3, speed = 3.5, accel = Vector3.zero, size = 0.24, light = 1 },
+	Abyss = { tex = "rbxasset://textures/particles/smoke_main.dds", rate = 4, life = 1.8, speed = 0.3, accel = Vector3.new(0, 0.8, 0), size = 0.5, light = 0.4 },
+	Mystery = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 3, life = 1.4, speed = 0.5, accel = Vector3.new(0, 1, 0), size = 0.2, light = 1 },
+}
+local RAINBOW_SEQ = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 90, 90)),
+	ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 230, 80)),
+	ColorSequenceKeypoint.new(0.66, Color3.fromRGB(80, 255, 160)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(110, 130, 255)),
+})
+
+local function eggFx(shell: BasePart, style: string, glow: Color3, scale: number, variant: string?)
+	local fx = EGG_FX[style] or EGG_FX.Mystery
+	local pe = Instance.new("ParticleEmitter")
+	pe.Name = "EggFx"
+	pe.Texture = fx.tex
+	pe.Color = if variant == "Rainbow" then RAINBOW_SEQ else ColorSequence.new(glow, glow:Lerp(Color3.new(1, 1, 1), 0.5))
+	pe.LightEmission = fx.light
+	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, fx.size * scale), NumberSequenceKeypoint.new(1, 0) })
+	pe.Transparency = NumberSequence.new(if style == "Abyss" then 0.55 else 0.1, 1)
+	pe.Lifetime = NumberRange.new(fx.life * 0.6, fx.life)
+	pe.Rate = fx.rate
+	pe.Speed = NumberRange.new(fx.speed * 0.5 * scale, fx.speed * scale)
+	pe.Acceleration = fx.accel * scale
+	pe.SpreadAngle = Vector2.new(180, 180)
+	pe.ShapeStyle = Enum.ParticleEmitterShapeStyle.Surface
+	pe.Parent = shell
+	if variant == "Golden" or variant == "Rainbow" then
+		local sp = Instance.new("ParticleEmitter")
+		sp.Name = "EggShine"
+		sp.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		sp.Color = if variant == "Rainbow" then RAINBOW_SEQ else ColorSequence.new(Color3.fromRGB(255, 225, 110))
+		sp.LightEmission = 1
+		sp.Size = NumberSequence.new(0.3 * scale, 0)
+		sp.Lifetime = NumberRange.new(0.6, 1)
+		sp.Rate = 10
+		sp.Speed = NumberRange.new(1 * scale, 2 * scale)
+		sp.SpreadAngle = Vector2.new(180, 180)
+		sp.Parent = shell
 	end
+	local light = Instance.new("PointLight")
+	light.Name = "EggGlow"
+	light.Color = glow
+	light.Range = 7 * scale
+	light.Brightness = 1.3
+	light.Shadows = false
+	light.Parent = shell
+end
+
+function MonsterModels.buildEgg(sp: string, scale: number, mystery: boolean?, variant: string?): Model
+	local def = Config.MONSTERS[sp]
+	local el1 = def and def.elements[1] or "Tide"
+	local el2 = def and def.elements[2] or nil
 	local model = Instance.new("Model")
 	model.Name = "Egg"
-	local rows = {
-		{ y = -0.75, w = 1.1, h = 0.35 },
-		{ y = -0.4, w = 1.5, h = 0.45 },
-		{ y = 0.05, w = 1.6, h = 0.5 },
-		{ y = 0.5, w = 1.4, h = 0.45 },
-		{ y = 0.88, w = 1.0, h = 0.35 },
-		{ y = 1.12, w = 0.55, h = 0.18 },
-	}
-	for i, r in rows do
-		local p = newPart(Vector3.new(r.w, r.h, r.w) * scale, if i % 2 == 0 then c1 else c1:Lerp(Color3.new(1, 1, 1), 0.15), "p", "B")
-		p.CFrame = CFrame.new(0, r.y * scale, 0)
+	local count = 0
+	local rainbow = variant == "Rainbow" and not mystery
+	-- one decoration piece; cf is in unit-egg space
+	local function add(size: Vector3, cf: CFrame, color: Color3, mat: string?, kind: string?): BasePart
+		count += 1
+		if rainbow and (mat == "n" or kind == "deco") then
+			color = hue(count, 9)
+		end
+		local p = newPart(size * scale, color, mat or "p", if kind == "S" then "S" else "B")
+		p.CFrame = cf.Rotation + cf.Position * scale
 		p.Parent = model
-		if i == 3 then
-			model.PrimaryPart = p
+		return p
+	end
+	local function onShell(a: number, y: number, size: Vector3, color: Color3, mat: string?, lift: number?, twist: number?)
+		local cf = eggSurface(a, y) * CFrame.Angles(0, 0, math.rad(twist or 0)) * CFrame.new(0, 0, -(lift or 0))
+		return add(size, cf, color, mat, "deco")
+	end
+	-- the soft glowing aura and the tilted ring of gems orbiting the egg's waist
+	local function aura(glow: Color3)
+		local a = add(Vector3.new(EGG_R * 2.24, EGG_H * 2.16, EGG_R * 2.24), CFrame.new(0, EGG_Y, 0), glow, "n", "S")
+		a.Transparency = 0.93
+		-- a thin glowing hoop (tangent segments) with three gems set in it
+		local tilt = CFrame.new(0, -0.05, 0) * CFrame.Angles(math.rad(16), 0, math.rad(-8))
+		for i = 0, 23 do
+			local ring = tilt * CFrame.Angles(0, i / 24 * math.pi * 2, 0) * CFrame.new(0, 0, -1.12)
+			add(Vector3.new(0.31, 0.06, 0.06), ring, glow, "n")
+			if i % 8 == 0 then
+				add(Vector3.new(0.2, 0.2, 0.2), ring * CFrame.Angles(math.rad(45), 0, math.rad(45)), Color3.new(1, 1, 1):Lerp(glow, 0.4), "n")
+			end
 		end
 	end
-	for _, s in { { 0.81, 0.1, 0.2 }, { -0.81, 0.45, -0.25 }, { 0.2, 0.5, 0.71 }, { -0.3, -0.35, -0.76 } } do
-		local spot = newPart(Vector3.new(0.3, 0.3, 0.3) * scale, c2:Lerp(Color3.new(1, 1, 1), 0.3), "n", "B")
-		spot.CFrame = CFrame.new(Vector3.new(s[1], s[2], s[3]) * scale)
-		spot.Parent = model
+
+	-- the shell
+	local top = if mystery then Color3.fromRGB(48, 48, 66) else Config.ELEMENTS[el1].color
+	if variant == "Golden" and not mystery then
+		top = Color3.fromRGB(255, 205, 60)
+	elseif rainbow then
+		top = Color3.fromRGB(255, 140, 210)
 	end
+	local shell = add(Vector3.new(EGG_R * 2, EGG_H * 2, EGG_R * 2), CFrame.new(0, EGG_Y, 0), top, "p", "S")
+	shell.Reflectance = 0.08
+	if variant == "Golden" and not mystery then
+		shell.Material = Enum.Material.Metal
+		shell.Reflectance = 0.2
+	end
+	model.PrimaryPart = shell
+	-- a glossy highlight up on the left
+	local glint = onShell(-0.7, 0.7, Vector3.new(0.16, 0.38, 0.04), Color3.new(1, 1, 1), "p", 0, -20)
+	glint.Color = Color3.new(1, 1, 1)
+	glint.Transparency = 0.35
+	onShell(-0.55, 0.42, Vector3.new(0.1, 0.12, 0.04), Color3.new(1, 1, 1), "p").Transparency = 0.35
+
+	if mystery then
+		-- a faint glowing crack round the middle and a few speckles
+		local crack = Color3.fromRGB(150, 140, 255)
+		for i = 0, 13 do
+			local a = i / 14 * math.pi * 2
+			onShell(a, if i % 2 == 0 then 0.18 else 0.0, Vector3.new(0.36, 0.07, 0.05), crack, "n", 0, if i % 2 == 0 then -30 else 30)
+		end
+		for i = 0, 6 do
+			onShell(i * 1.9, -0.5 + (i % 3) * 0.55, Vector3.new(0.1, 0.1, 0.05), Color3.fromRGB(200, 200, 230), "n")
+		end
+		add(Vector3.new(0.22, 0.22, 0.22), CFrame.new(0, 1.24, 0) * CFrame.Angles(0, math.rad(45), math.rad(45)), crack, "n")
+		aura(crack)
+		eggFx(shell, "Mystery", crack, scale, nil)
+		model.WorldPivot = CFrame.identity
+		return model
+	end
+
+	local t1 = EGG_TRIM[el1] or EGG_TRIM.Tide
+	local glow = t1.glow
+	local trim = t1.trim
+	if el1 == "Tide" then
+		-- a rolling wave band with foam caps
+		for i = 0, 11 do
+			local a = i / 12 * math.pi * 2
+			onShell(a, -0.28 + (i % 2) * 0.1, Vector3.new(0.42, 0.24, 0.07), trim, "p")
+			if i % 2 == 1 then
+				onShell(a, -0.12, Vector3.new(0.2, 0.1, 0.08), Color3.new(1, 1, 1), "p", 0.01)
+			end
+		end
+		-- a scallop-shell crest on the front with a pearl
+		for d = -2, 2 do
+			onShell(0, 0.42, Vector3.new(0.11, 0.42, 0.06), trim, "p", 0.01, d * 22) -- fanned ribs
+		end
+		add(Vector3.new(0.18, 0.18, 0.18), eggSurface(0, 0.3) * CFrame.new(0, 0, -0.06), glow, "n", "S")
+		-- little fins on the sides and back, as if something is swimming inside
+		for _, a in { math.pi / 2, -math.pi / 2 } do
+			onShell(a, 0.15, Vector3.new(0.06, 0.42, 0.36), trim, "p", 0.14, 0)
+			onShell(a, 0.32, Vector3.new(0.07, 0.14, 0.2), glow, "n", 0.22)
+		end
+		onShell(math.pi, 0.55, Vector3.new(0.06, 0.5, 0.3), trim, "p", 0.12)
+		-- bubbles
+		for _, b in { { 1.6, 0.6, 0.12 }, { 2.3, 0.85, 0.09 }, { 3.6, 0.5, 0.14 }, { 4.6, 0.95, 0.08 } } do
+			add(Vector3.one * b[3] * 2, eggSurface(b[1], b[2]) * CFrame.new(0, 0, -b[3] * 0.6), glow, "g", "S")
+		end
+	elseif el1 == "Coral" then
+		-- polka spots
+		for i = 0, 9 do
+			onShell(i * 2.4, -0.55 + (i % 4) * 0.42, Vector3.new(0.2, 0.2, 0.05), trim, "p")
+		end
+		-- coral branches growing out of the shell, glowing at the tips
+		local coral = Config.ELEMENTS.Coral.color:Lerp(Color3.new(1, 1, 1), 0.25)
+		for _, b in { { 1.9, 0.75 }, { 4.2, 0.55 }, { 0.5, 0.95 } } do
+			local base = eggSurface(b[1], b[2])
+			add(Vector3.new(0.14, 0.14, 0.5), base * CFrame.new(0, 0, -0.18), coral, "p", "deco")
+			for _, side in { -1, 1 } do
+				local arm = base * CFrame.new(0, 0, -0.3) * CFrame.Angles(0, math.rad(40 * side), 0) * CFrame.new(0, 0, -0.16)
+				add(Vector3.new(0.11, 0.11, 0.32), arm, coral, "p", "deco")
+				add(Vector3.new(0.13, 0.13, 0.13), arm * CFrame.new(0, 0, -0.17), glow, "n")
+			end
+			add(Vector3.new(0.15, 0.15, 0.15), base * CFrame.new(0, 0, -0.45), glow, "n")
+		end
+	elseif el1 == "Storm" then
+		-- a glowing zig-zag lightning crack all the way round
+		for i = 0, 15 do
+			local a = i / 16 * math.pi * 2
+			onShell(a, if i % 2 == 0 then 0.22 else 0.02, Vector3.new(0.34, 0.09, 0.06), glow, "n", 0, if i % 2 == 0 then -32 else 32)
+		end
+		-- dark storm bands above and below it
+		for i = 0, 9 do
+			local a = i / 10 * math.pi * 2
+			onShell(a, -0.45, Vector3.new(0.5, 0.12, 0.05), trim, "p")
+			onShell(a + 0.3, 0.7, Vector3.new(0.4, 0.1, 0.05), trim, "p")
+		end
+		-- a lightning bolt standing on top
+		add(Vector3.new(0.14, 0.34, 0.12), CFrame.new(0.04, 1.3, 0) * CFrame.Angles(0, 0, math.rad(-25)), glow, "n")
+		add(Vector3.new(0.14, 0.3, 0.12), CFrame.new(-0.02, 1.55, 0) * CFrame.Angles(0, 0, math.rad(25)), glow, "n")
+	else -- Abyss
+		-- a big glowing diamond eye on the front: dark socket, glowing iris, slit pupil, a heavy brow
+		onShell(0, 0.3, Vector3.new(0.52, 0.52, 0.04), trim, "p", 0, 45)
+		onShell(0, 0.3, Vector3.new(0.38, 0.38, 0.05), glow, "n", 0.01, 45)
+		onShell(0, 0.3, Vector3.new(0.07, 0.36, 0.05), Color3.fromRGB(15, 8, 25), "p", 0.025)
+		onShell(0, 0.6, Vector3.new(0.5, 0.1, 0.08), trim, "p", 0.01)
+		-- rune dots round the base
+		for i = 0, 9 do
+			onShell(i / 10 * math.pi * 2 + 0.3, -0.48, Vector3.new(0.12, 0.12, 0.05), glow, "n")
+		end
+		-- crystals bursting out of the top
+		local crystal = Config.ELEMENTS.Abyss.color:Lerp(Color3.new(1, 1, 1), 0.3)
+		for i = 0, 3 do
+			local base = eggSurface(i / 4 * math.pi * 2 + 0.4, 0.88)
+			add(Vector3.new(0.2, 0.2, 0.55), base * CFrame.new(0, 0, -0.15) * CFrame.Angles(0, 0, math.rad(45)), crystal, "g", "deco")
+		end
+		add(Vector3.new(0.24, 0.62, 0.24), CFrame.new(0, 1.35, 0) * CFrame.Angles(0, math.rad(45), 0), glow, "n")
+	end
+	if el2 then
+		-- a hybrid wears its second element as a band of shell tiles and a glow ring round the bottom
+		local c2 = if rainbow then Color3.fromRGB(120, 170, 255) else Config.ELEMENTS[el2].color
+		local g2 = (EGG_TRIM[el2] or EGG_TRIM.Tide).glow
+		for i = 0, 11 do
+			onShell(i / 12 * math.pi * 2, -0.6 + (i % 2) * 0.08, Vector3.new(0.46, 0.34, 0.05), c2, "p")
+		end
+		for i = 0, 7 do
+			onShell(i / 8 * math.pi * 2 + 0.2, -0.8, Vector3.new(0.12, 0.12, 0.05), g2, "n", 0.01)
+		end
+	end
+	local fxGlow = if variant == "Golden" then Color3.fromRGB(255, 215, 90) else glow
+	aura(fxGlow)
+	eggFx(shell, el1, fxGlow, scale, variant)
 	model.WorldPivot = CFrame.identity
 	return model
 end

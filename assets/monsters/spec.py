@@ -130,10 +130,10 @@ def spikes(c, bone, points, size, color, mat="p"):
 
 
 # ===========================================================================
-# MONSTERS (player side) - chunky voxel SEA DRAGONS, like the reference game's
-# dragons: big head, horns or fin crest, flapping fin-wings, claws, a fat tapering
-# tail, element accents. Rarity (stars) adds detail: 3* glowing runes + teeth,
-# 4* a crown and extra spikes, 5* a second pair of wings and a halo.
+# MONSTERS (player side). Every element line is its own kind of sea creature
+# (see the roster below); sea_dragon stays for a few legendary true dragons.
+# Rarity (stars) adds size and detail: glowing accents, 4* a spinning halo,
+# 5* orbiting orbs as well.
 # ===========================================================================
 CLAW = (250, 248, 240)
 TOOTH = (255, 255, 255)
@@ -254,91 +254,1083 @@ def sea_dragon(c, body, belly, accent, horn=None, glow=None, crest="horns", wing
                   glow or (255, 220, 80), mat="n")
 
 
+
+
+# ---------------------------------------------------------------------------
+# Creature kits. Every element line is a different kind of sea creature, so a
+# deck full of monsters reads as a zoo, not a row of dragons. Each kit works in
+# "units" (K scales every size / position / pivot by the creature's size) and
+# leaves rarity to k_rarity: 4* gets a spinning halo, 5* orbiting orbs as well.
+# ---------------------------------------------------------------------------
+SIDES = ((-1, "L"), (1, "R"))
+GOLDC = (255, 210, 70)
+BLUSH = (255, 150, 180)
+MOUTH = (190, 50, 80)
+
+
+def lighten(col, t=0.35):
+    return tuple(int(v + (255 - v) * t) for v in col)
+
+
+def darken(col, t=0.3):
+    return tuple(int(v * (1 - t)) for v in col)
+
+
+class K:
+    """Scaled builder: sizes, positions and pivots are in units of the creature's size."""
+
+    def __init__(self, c, s):
+        self.c, self.s = c, s
+
+    def _m(self, v):
+        return tuple(x * self.s for x in v)
+
+    def box(self, bone, size, pos, color, rot=(0, 0, 0), mat="p"):
+        self.c.box(bone, self._m(size), self._m(pos), color, rot=rot, mat=mat)
+
+    def ball(self, bone, size, pos, color, mat="p"):
+        if isinstance(size, (int, float)):
+            size = (size, size, size)
+        self.c.ball(bone, self._m(size), self._m(pos), color, mat=mat)
+
+    def bone(self, name, pivot, **kw):
+        self.c.bone(name, self._m(pivot), **kw)
+
+    def bob(self, amp):
+        self.c.bones[0]["amp"] = amp
+
+
+def k_eyes(k, bone, y, z, dx, s=0.34, brow=INK, glow=None):
+    """Mean toy eyes on a face plane at z (face looks -Z): a squinting white with a small hard pupil
+    (or a glowing slit), and a thick scowling brow slanting down to the middle."""
+    for sx in (-1, 1):
+        x = sx * dx
+        if glow:
+            k.box(bone, (s, s * 0.6, 0.08), (x, y, z - 0.02), glow, mat="n")
+        else:
+            k.box(bone, (s, s * 0.8, 0.08), (x, y, z - 0.02), WHITE)
+            k.box(bone, (s * 0.4, s * 0.55, 0.06), (x - sx * s * 0.12, y - s * 0.08, z - 0.07), INK)
+            k.box(bone, (s * 0.16, s * 0.16, 0.05), (x - sx * s * 0.05, y + s * 0.06, z - 0.1), WHITE, mat="n")
+        if brow:
+            k.box(bone, (s * 1.35, 0.13, 0.1), (x, y + s * 0.42, z - 0.06), brow, rot=(0, 0, sx * 22))
+
+
+def k_smile(k, bone, y, z, w, blush=None, bx=None):
+    """A snarl: a hard mouth line with turned-down corners and fangs (blush is ignored: nothing cute)."""
+    k.box(bone, (w, 0.08, 0.05), (0, y, z - 0.02), INK)
+    for sx in (-1, 1):
+        k.box(bone, (0.08, 0.14, 0.05), (sx * w / 2, y - 0.05, z - 0.02), INK)
+        for f in ((0.28,) if w < 0.5 else (0.14, 0.34)):
+            k.box(bone, (0.08, 0.15, 0.05), (sx * w * f, y - 0.1, z - 0.03), WHITE)
+
+
+def k_spines(k, bone, zs, y, color, h=0.4, x=0.0, lean=-25, tip=None):
+    """A row of sharp spines along a back (z positions), leaning back, optional glowing tips."""
+    for i, z in enumerate(zs):
+        hh = h * (0.75 + 0.25 * math.sin(i / max(1, len(zs) - 1) * math.pi))
+        k.box(bone, (0.14, hh, 0.22), (x, y + hh / 2 - 0.05, z), color, rot=(lean, 0, 0))
+        if tip:
+            k.box(bone, (0.1, 0.12, 0.1), (x, y + hh - 0.05, z + 0.08), tip, mat="n")
+
+
+def k_legs(k, spots, size, col, foot=None, amp=10, speed=1, prefix="Leg"):
+    for i, (x, y, z) in enumerate(spots):
+        n = "%s%d" % (prefix, i + 1)
+        ph = 0 if i % 2 == 0 else math.pi
+        k.bone(n, (x, y, z), anim="rot", axis="X", amp=amp, speed=speed, phase=ph,
+               swim=dict(anim="rot", axis="X", amp=amp * 2.5, speed=speed * 2, phase=ph))
+        k.box(n, size, (x, y - size[1] / 2, z), col)
+        if foot:
+            k.box(n, (size[0] + 0.08, 0.12, size[2] + 0.14), (x, y - size[1] - 0.03, z - 0.05), foot)
+
+
+def k_tail(k, start, segs, axis="Y", amp=14, speed=1, parent="Body", prefix="Tail", lag=0.9):
+    """Phase-lagged chain along +Z. segs: (size, color, mat). Returns [(bone, z centre, size)], end z."""
+    x, y, z = start
+    prev, out = parent, []
+    for i, (size, col, mat) in enumerate(segs):
+        n = "%s%d" % (prefix, i + 1)
+        k.bone(n, (x, y, z), parent=prev, anim="rot", axis=axis, amp=amp, speed=speed, phase=-i * lag)
+        k.box(n, size, (x, y, z + size[2] / 2), col, mat=mat)
+        out.append((n, z + size[2] / 2, size))
+        z += size[2] * 0.92
+        prev = n
+    return out, z
+
+
+def k_arm(k, name, base, d, nseg, seg, col, tip=None, out=0.3, down=0.3, amp=14, phase=0.0, tipmat="p"):
+    """A tentacle stepping out along d (x, z) and down, one bone per segment."""
+    x, y, z = base
+    prev = "Body"
+    ax = "X" if abs(d[1]) > abs(d[0]) else "Z"
+    for j in range(nseg):
+        n = "%s_%d" % (name, j)
+        k.bone(n, (x, y, z), parent=prev, anim="rot", axis=ax, amp=amp, speed=1, phase=phase + j * 0.8)
+        nx, ny, nz = x + d[0] * out, y - down, z + d[1] * out
+        last = j == nseg - 1
+        k.box(n, seg, ((x + nx) / 2, (y + ny) / 2, (z + nz) / 2), tip if (tip and last) else col,
+              mat=tipmat if (tip and last) else "p")
+        x, y, z, prev = nx, ny, nz, n
+    return (x, y, z), prev
+
+
+def k_rarity(k, stars, glow, top, z=0.0, orbit_y=None, orbit_r=1.8):
+    col = glow or GOLDC
+    if stars >= 4:
+        k.bone("Halo", (0, top + 0.4, z), anim="spin", axis="Y", amp=0, speed=1)
+        for i in range(6):
+            a = i / 6 * math.tau
+            k.box("Halo", (0.22, 0.1, 0.22), (math.cos(a) * 0.55, top + 0.4, z + math.sin(a) * 0.55), col, mat="n")
+    if stars >= 5:
+        oy = orbit_y if orbit_y is not None else top * 0.45
+        k.bone("Orbit", (0, oy, z), anim="spin", axis="Y", amp=0, speed=1)
+        for i in range(3):
+            a = i / 3 * math.tau
+            k.ball("Orbit", 0.32, (math.cos(a) * orbit_r, oy, z + math.sin(a) * orbit_r), col, mat="n")
+
+
+# --- the kits -------------------------------------------------------------------------
+def axolotl(c, s, stars, body, gill, belly, accent, glow=None):
+    """A wide-faced axolotl with three waving gill fronds a side and a finned tail."""
+    k = K(c, s)
+    k.box("Body", (1.4, 1.0, 2.0), (0, 0, 0.3), body)
+    k.box("Body", (1.15, 0.22, 1.8), (0, -0.5, 0.3), belly)
+    k_spines(k, "Body", (-0.35, 0.0, 0.35, 0.7, 1.05), 0.5, accent, h=0.45, tip=glow)
+    for (x, z) in ((-0.4, 0.0), (0.45, 0.55), (-0.2, 0.95)):
+        k.box("Body", (0.25, 0.06, 0.25), (x, 0.52, z), lighten(body, 0.3))
+    k.bone("Head", (0, 0.1, -0.6), anim="rot", axis="X", amp=5, speed=1,
+           swim=dict(anim="rot", axis="X", amp=10, speed=2, phase=0))
+    k.box("Head", (1.9, 1.2, 1.3), (0, 0.35, -1.25), body)
+    k.box("Head", (1.6, 0.25, 1.1), (0, -0.25, -1.3), belly)
+    k_eyes(k, "Head", 0.55, -1.9, 0.5, 0.36)
+    k_smile(k, "Head", 0.08, -1.9, 0.6, blush=BLUSH, bx=0.72)
+    tipc = glow or lighten(gill, 0.35)
+    for sx, t in SIDES:
+        for g in range(3):
+            n = "Gill%s%d" % (t, g + 1)
+            th = -25 + g * 40
+            r = math.radians(th)
+            px, py, pz = sx * 0.92, 0.25 + g * 0.3, -1.05
+            k.bone(n, (px, py, pz), parent="Head", anim="rot", axis="Z", amp=12 * sx, speed=1, phase=g * 0.8,
+                   swim=dict(anim="rot", axis="Z", amp=26 * sx, speed=2, phase=g * 0.8))
+            k.box(n, (0.75, 0.15, 0.15), (px + sx * math.cos(r) * 0.37, py + math.sin(r) * 0.37, pz), gill,
+                  rot=(0, 0, sx * th))
+            for f in (0.42, 0.68):
+                k.box(n, (0.12, 0.28, 0.12), (px + sx * math.cos(r) * f, py + math.sin(r) * f + 0.12, pz), tipc,
+                      rot=(0, 0, sx * th), mat="n" if glow else "p")
+    k_legs(k, [(-0.6, -0.45, -0.15), (0.6, -0.45, -0.15), (-0.6, -0.45, 0.85), (0.6, -0.45, 0.85)],
+           (0.3, 0.42, 0.3), body, foot=belly)
+    segs = [((0.85, 0.8, 0.8), body, "p"), ((0.6, 0.65, 0.75), body, "p"), ((0.38, 0.5, 0.7), body, "p")]
+    out, _ = k_tail(k, (0, 0.05, 1.25), segs, amp=16)
+    for n, zc, sz in out:
+        k.box(n, (0.08, sz[1] + 0.4, sz[2] * 0.95), (0, 0.05, zc), accent)
+    k_rarity(k, stars, glow, 1.4, z=-1.0)
+
+
+def starfish(c, s, stars, body, spot, accent, glow=None):
+    """A five-armed star standing on two arms, waving the other three."""
+    k = K(c, s)
+    cy = 0.25
+    k.box("Body", (1.2, 1.2, 0.6), (0, cy, 0), body)
+    for i, a in enumerate((90, 18, 162, -54, 234)):
+        r = math.radians(a)
+        dx, dy = math.cos(r), math.sin(r)
+        n = "Arm%d" % (i + 1)
+        if i < 3:
+            k.bone(n, (dx * 0.45, cy + dy * 0.45, 0), anim="rot", axis="Z", amp=6 if i == 0 else 12, speed=1,
+                   phase=i * 1.1)
+        else:
+            ph = 0 if i == 3 else math.pi
+            k.bone(n, (dx * 0.45, cy + dy * 0.45, 0), anim="rot", axis="X", amp=14, speed=1, phase=ph,
+                   swim=dict(anim="rot", axis="X", amp=30, speed=2, phase=ph))
+        k.box(n, (0.62, 0.8, 0.5), (dx * 0.85, cy + dy * 0.85, 0), body, rot=(0, 0, a - 90))
+        k.box(n, (0.42, 0.45, 0.42), (dx * 1.35, cy + dy * 1.35, 0), lighten(body, 0.2), rot=(0, 0, a - 90))
+        k.box(n, (0.16, 0.16, 0.06), (dx * 0.95, cy + dy * 0.95, -0.27), spot)
+        k.box(n, (0.12, 0.12, 0.06), (dx * 1.3, cy + dy * 1.3, -0.23), spot)
+        k.box(n, (0.1, 0.1, 0.3), (dx * 1.12, cy + dy * 1.12, -0.35), WHITE)
+        k.box(n, (0.18, 0.18, 0.18), (dx * 1.62, cy + dy * 1.62, 0), darken(body, 0.25), rot=(0, 0, a - 45))
+    k_eyes(k, "Body", 0.42, -0.3, 0.24, 0.3)
+    k_smile(k, "Body", 0.06, -0.3, 0.32, blush=BLUSH, bx=0.42)
+    # a little coral sprig growing on the top arm
+    k.box("Arm1", (0.12, 0.4, 0.12), (0, cy + 1.75, 0), accent)
+    k.box("Arm1", (0.1, 0.28, 0.1), (0.14, cy + 1.82, 0), accent, rot=(0, 0, -35))
+    k.box("Arm1", (0.16, 0.16, 0.16), (0, cy + 1.98, 0), glow or lighten(accent, 0.4), mat="n" if glow else "p")
+    k_rarity(k, stars, glow, 2.2)
+
+
+def jellyfish(c, s, stars, bell, core, tent, glow):
+    """A see-through bell with a glowing core and zig-zag lightning tentacles."""
+    k = K(c, s)
+    k.bob(0.18)
+    k.box("Body", (1.9, 0.9, 1.9), (0, 0.85, 0), bell, mat="g")
+    k.box("Body", (1.45, 0.4, 1.45), (0, 1.45, 0), bell, mat="g")
+    k.box("Body", (0.85, 0.22, 0.85), (0, 1.73, 0), bell, mat="g")
+    k.box("Body", (2.15, 0.2, 2.15), (0, 0.38, 0), lighten(bell, 0.3))
+    k.ball("Body", 0.95, (0, 0.95, 0), core, mat="n")
+    for i in range(10):
+        a = i / 10 * math.tau
+        k.box("Body", (0.12, 0.32, 0.12), (math.cos(a) * 1.0, 0.18, math.sin(a) * 1.0), darken(tent, 0.15))
+    k_eyes(k, "Body", 0.85, -0.97, 0.42, 0.34)
+    k_smile(k, "Body", 0.55, -0.97, 0.3, blush=BLUSH, bx=0.62)
+    for i in range(6):
+        a = i / 6 * math.tau + 0.5
+        x, z = math.cos(a) * 0.65, math.sin(a) * 0.65
+        prev, y = "Body", 0.3
+        for j in range(3):
+            n = "Ten%d_%d" % (i, j)
+            k.bone(n, (x, y, z), parent=prev, anim="rot", axis="X" if i % 2 == 0 else "Z", amp=16, speed=1,
+                   phase=i * 0.7 + j * 0.8)
+            last = j == 2
+            k.box(n, (0.16, 0.45, 0.16), (x, y - 0.22, z), glow if last else tent, rot=(0, 0, 20 if j % 2 == 0 else -20),
+                  mat="n" if last else "p")
+            y -= 0.4
+            prev = n
+    k.bone("Frill", (0, 0.3, 0), anim="rot", axis="Y", amp=20, speed=1)
+    for i in range(4):
+        a = i / 4 * math.tau
+        k.box("Frill", (0.2, 0.8, 0.2), (math.cos(a) * 0.22, -0.05, math.sin(a) * 0.22), lighten(tent, 0.4))
+    # a little lightning bolt on top of the bell
+    k.box("Body", (0.15, 0.35, 0.12), (0.05, 1.98, 0), glow, rot=(0, 0, -25), mat="n")
+    k.box("Body", (0.15, 0.35, 0.12), (-0.03, 2.25, 0), glow, rot=(0, 0, 25), mat="n")
+    k_rarity(k, stars, glow, 2.4)
+
+
+def anglerfish(c, s, stars, body, belly, fin, glow):
+    """A round deep-sea angler: underbite full of fangs and a glowing lure."""
+    k = K(c, s)
+    k.bob(0.12)
+    k.box("Body", (1.7, 1.5, 1.6), (0, 0.25, 0.25), body)
+    k.box("Body", (1.6, 0.95, 0.6), (0, 0.55, -0.8), body)
+    k.box("Body", (1.4, 0.3, 1.4), (0, -0.55, 0.3), belly)
+    k_eyes(k, "Body", 0.78, -1.1, 0.42, 0.36, brow=darken(body, 0.45))
+    for x in (-0.55, -0.2, 0.2, 0.55):
+        k.box("Body", (0.12, 0.26, 0.12), (x, -0.02, -1.0), WHITE)
+    for (x, y, z) in ((0.86, 0.5, 0.5), (-0.86, 0.3, 0.1), (0.86, 0.0, 0.0), (-0.86, 0.6, 0.6)):
+        k.box("Body", (0.06, 0.12, 0.12), (x, y, z), glow, mat="n")
+    k.bone("Jaw", (0, -0.2, -0.4), anim="rot", axis="X", amp=6, speed=1,
+           swim=dict(anim="rot", axis="X", amp=22, speed=4, phase=0))
+    k.box("Jaw", (1.75, 0.5, 1.05), (0, -0.4, -0.9), darken(body, 0.15))
+    k.box("Jaw", (1.4, 0.08, 0.9), (0, -0.14, -0.9), MOUTH)
+    for x in (-0.6, -0.3, 0, 0.3, 0.6):
+        k.box("Jaw", (0.12, 0.3, 0.12), (x, -0.05, -1.33), WHITE)
+    k.bone("Lure", (0, 1.0, -0.55), anim="rot", axis="X", amp=16, speed=1)
+    k.box("Lure", (0.09, 0.9, 0.09), (0, 1.37, -0.81), darken(body, 0.2), rot=(-35, 0, 0))
+    k.box("Lure", (0.08, 0.08, 0.45), (0, 1.76, -1.25), darken(body, 0.2))
+    k.ball("Lure", 0.42, (0, 1.62, -1.5), glow, mat="n")
+    for sx, t in SIDES:
+        k.bone("Fin" + t, (sx * 0.85, 0.1, 0.3), anim="rot", axis="Z", amp=22 * sx, speed=2)
+        k.box("Fin" + t, (0.5, 0.1, 0.45), (sx * 1.1, 0.1, 0.3), fin, rot=(0, 0, -sx * 15))
+    for i, z in enumerate((-0.1, 0.3, 0.7)):
+        k.box("Body", (0.1, 0.35, 0.25), (0, 1.1, z), fin, rot=(20, 0, 0))
+    out, zend = k_tail(k, (0, 0.25, 1.05), [((0.7, 0.7, 0.6), body, "p")], amp=20)
+    k.box("Tail1", (0.1, 1.0, 0.7), (0, 0.25, zend + 0.25), fin)
+    k_rarity(k, stars, glow, 2.0)
+
+
+def narwhal(c, s, stars, body, belly, spots, tusk, glow=None):
+    """A chubby narwhal with a twisted tusk, a blowhole fountain and up-down flukes."""
+    k = K(c, s)
+    k.box("Body", (1.6, 1.35, 2.6), (0, 0.1, 0.2), body)
+    k.box("Body", (1.4, 1.0, 0.5), (0, 0.15, -1.2), body)
+    k.box("Body", (1.3, 0.3, 2.4), (0, -0.55, 0.1), belly)
+    for (x, z) in ((-0.45, -0.2), (0.4, 0.3), (-0.2, 0.8), (0.5, 1.1), (0.05, -0.7)):
+        k.box("Body", (0.24, 0.06, 0.24), (x, 0.78, z), spots)
+    k_spines(k, "Body", (-0.5, -0.1, 0.3, 0.7, 1.1), 0.75, spots, h=0.45, tip=glow)
+    k_eyes(k, "Body", 0.3, -1.45, 0.45, 0.3)
+    k_smile(k, "Body", -0.15, -1.45, 0.45, blush=BLUSH, bx=0.62)
+    k.bone("Tusk", (0, 0.3, -1.45), anim="rot", axis="Y", amp=4, speed=1)
+    for i, (w, ln) in enumerate(((0.24, 0.6), (0.18, 0.55), (0.13, 0.5))):
+        tip = glow and i == 2
+        k.box("Tusk", (w, w, ln), (0, 0.3 + i * 0.07, -1.75 - i * 0.52), glow if tip else tusk,
+              rot=(0, 0, 45 if i % 2 == 0 else 0), mat="n" if tip else "p")
+    for sx, t in SIDES:
+        k.bone("Flip" + t, (sx * 0.8, -0.25, -0.4), anim="rot", axis="Z", amp=18 * sx, speed=1)
+        k.box("Flip" + t, (0.7, 0.12, 0.45), (sx * 1.1, -0.35, -0.35), body, rot=(0, 0, -sx * 20))
+    out, zend = k_tail(k, (0, 0.15, 1.5), [((1.1, 0.9, 0.7), body, "p"), ((0.75, 0.65, 0.65), body, "p")],
+                       axis="X", amp=14)
+    for sx in (-1, 1):
+        k.box(out[-1][0], (0.8, 0.12, 0.45), (sx * 0.42, 0.15, zend + 0.15), darken(body, 0.15), rot=(0, -sx * 20, 0))
+    k.bone("Spout", (0, 0.8, -0.4), anim="move", axis="Y", amp=0.1, speed=2)
+    water = (170, 225, 255)
+    k.box("Spout", (0.18, 0.4, 0.18), (0, 1.0, -0.4), water, mat="g")
+    for sx in (-1, 1):
+        k.box("Spout", (0.14, 0.14, 0.14), (sx * 0.25, 1.28, -0.4), water, mat="g")
+    k_rarity(k, stars, glow, 1.4)
+
+
+def isopod(c, s, stars, shell, under, accent):
+    """A giant armoured isopod: overlapping arched plates, feelers and lots of little legs."""
+    k = K(c, s)
+    k.box("Body", (1.5, 0.4, 2.6), (0, -0.25, 0.15), under)
+    for i in range(6):
+        z = -0.85 + i * 0.42
+        w = 2.0 - abs(i - 2.5) * 0.16
+        col = shell if i % 2 == 0 else lighten(shell, 0.15)
+        k.box("Body", (w, 0.6, 0.48), (0, 0.4, z), col)
+        k.box("Body", (w - 0.5, 0.2, 0.44), (0, 0.78, z), lighten(col, 0.12))
+        k.box("Body", (w + 0.12, 0.32, 0.4), (0, 0.0, z), darken(col, 0.2))
+        k.box("Body", (0.16, 0.42, 0.16), (0, 1.05, z), accent, rot=(-20, 0, 0))
+        for sx in (-1, 1):
+            k.box("Body", (0.3, 0.12, 0.12), (sx * (w / 2 + 0.12), 0.0, z), accent, rot=(0, 0, -sx * 25))
+    k.bone("Head", (0, 0.2, -1.1), anim="rot", axis="X", amp=5, speed=1)
+    k.box("Head", (1.4, 0.75, 0.55), (0, 0.3, -1.35), darken(shell, 0.1))
+    k_eyes(k, "Head", 0.4, -1.63, 0.4, 0.3)
+    k_smile(k, "Head", 0.08, -1.63, 0.3)
+    for sx, t in SIDES:
+        k.bone("Ant" + t, (sx * 0.35, 0.55, -1.5), parent="Head", anim="rot", axis="Y", amp=15 * sx, speed=1)
+        k.box("Ant" + t, (0.08, 0.08, 0.9), (sx * 0.45, 0.74, -1.9), accent, rot=(25, 0, 0))
+    spots = []
+    for z in (-0.6, 0.15, 0.9):
+        spots += [(-0.7, -0.3, z), (0.7, -0.3, z)]
+    k_legs(k, spots, (0.16, 0.5, 0.16), darken(under, 0.1), amp=25, speed=2)
+    k.box("Body", (1.1, 0.3, 0.4), (0, 0.25, 1.45), shell)
+    for sx in (-1, 1):
+        k.box("Body", (0.15, 0.15, 0.5), (sx * 0.35, 0.1, 1.6), accent)
+    k_rarity(k, stars, None, 1.1)
+
+
+def eel(c, s, stars, body, belly, fin, glow, serpent=False):
+    """A long ribbon of a body. Eels ripple side to side; serpents arch up and down in coils."""
+    k = K(c, s)
+    k.box("Body", (1.0, 0.9, 1.0), (0, 0.35, -0.5), body)
+    k.box("Body", (0.8, 0.25, 0.95), (0, -0.1, -0.5), belly)
+    k.bone("Head", (0, 0.5, -0.95), anim="rot", axis="X", amp=7, speed=1,
+           swim=dict(anim="rot", axis="X", amp=14, speed=2, phase=0))
+    k.box("Head", (1.1, 0.95, 1.1), (0, 0.75, -1.45), body)
+    k.box("Head", (0.85, 0.45, 0.6), (0, 0.5, -2.25), body)
+    k_eyes(k, "Head", 0.98, -2.0, 0.33, 0.3, brow=INK if serpent else None)
+    k.bone("Jaw", (0, 0.3, -1.9), parent="Head", anim="rot", axis="X", amp=4, speed=1,
+           swim=dict(anim="rot", axis="X", amp=18, speed=4, phase=0))
+    k.box("Jaw", (0.8, 0.22, 0.6), (0, 0.18, -2.2), belly)
+    for x in (-0.3, -0.1, 0.1, 0.3):
+        k.box("Head", (0.09, 0.2, 0.09), (x, 0.22, -2.5), WHITE)
+    for sx, t in SIDES:
+        k.box("Head", (0.1, 0.45, 0.5), (sx * 0.6, 0.95, -1.4), fin, rot=(0, sx * 25, 0))
+        if serpent:
+            k.box("Head", (0.18, 0.7, 0.18), (sx * 0.35, 1.45, -1.1), lighten(fin, 0.5), rot=(35, 0, -sx * 15))
+            k.bone("Whisk" + t, (sx * 0.4, 0.5, -2.4), parent="Head", anim="rot", axis="Y", amp=18 * sx, speed=1)
+            k.box("Whisk" + t, (0.07, 0.07, 0.9), (sx * 0.7, 0.5, -2.75), glow, rot=(0, -sx * 40, 0), mat="n")
+    widths = (0.95, 0.85, 0.75, 0.62, 0.5, 0.38)
+    segs = [((w, w * 0.95, 0.85), body, "p") for w in widths]
+    out, zend = k_tail(k, (0, 0.35, 0.0), segs, axis="X" if serpent else "Y", amp=12 if serpent else 18, lag=0.8)
+    for i, (n, zc, sz) in enumerate(out):
+        top = 0.35 + sz[1] / 2
+        if serpent:
+            k.box(n, (0.16, 0.4, 0.3), (0, top + 0.12, zc), fin, rot=(-20, 0, 0))
+        else:
+            k.box(n, (0.07, 0.3, sz[2] * 0.9), (0, top + 0.1, zc), glow, mat="n")
+        k.box(n, (sz[0] * 0.8, 0.12, sz[2]), (0, 0.35 - sz[1] / 2, zc), belly)
+        if i % 2 == 0 and not serpent:
+            for sx in (-1, 1):
+                k.box(n, (0.05, 0.14, 0.3), (sx * sz[0] / 2, 0.4, zc), glow, mat="n")
+    k.box(out[-1][0], (0.08, 0.6, 0.5), (0, 0.35, zend + 0.15), glow if not serpent else fin,
+          mat="n" if not serpent else "p")
+    k_rarity(k, stars, glow, 1.6, z=-1.3)
+
+
+def octopus(c, s, stars, body, belly, spot, glow=None, king=False):
+    """A big-headed octopus on eight curling arms. The king wears a crown and scowls."""
+    k = K(c, s)
+    k.box("Body", (1.7, 1.6, 1.6), (0, 1.0, 0.15), body)
+    k.box("Body", (1.3, 0.45, 1.3), (0, 1.95, 0.25), body)
+    k.box("Body", (1.9, 0.4, 1.8), (0, 0.15, 0.05), lighten(body, 0.1))
+    for (x, z) in ((-0.4, 0.0), (0.35, 0.5), (0.0, 0.2)):
+        k.box("Body", (0.25, 0.06, 0.25), (x, 2.19, z), spot)
+    for (y, z) in ((1.2, 0.3), (0.8, 0.6)):
+        for sx in (-1, 1):
+            k.box("Body", (0.06, 0.22, 0.22), (sx * 0.86, y, z), spot)
+    k_eyes(k, "Body", 0.95, -0.65, 0.42, 0.42, brow=INK if king else None)
+    k_smile(k, "Body", 0.52, -0.65, 0.3, blush=None if king else BLUSH, bx=0.62)
+    nseg = 4 if king else 3
+    seg = (0.36, 0.36, 0.36) if king else (0.32, 0.34, 0.32)
+    for i in range(8):
+        a = i / 8 * math.tau + math.tau / 16
+        d = (math.cos(a), math.sin(a))
+        k_arm(k, "Arm%d" % i, (d[0] * 0.6, -0.05, d[1] * 0.6), d, nseg, seg, body, tip=glow or belly,
+              out=0.3, down=0.26 if king else 0.3, amp=14, phase=i * 0.7, tipmat="n" if glow else "p")
+    if king:
+        k.box("Body", (1.4, 0.16, 1.4), (0, 2.25, 0.25), GOLDC, mat="m")
+        for i in range(6):
+            a = i / 6 * math.tau
+            k.box("Body", (0.18, 0.5, 0.18), (math.cos(a) * 0.55, 2.55, 0.25 + math.sin(a) * 0.55), GOLDC, mat="m")
+        k.box("Body", (0.24, 0.24, 0.08), (0, 2.25, -0.47), glow or (255, 80, 120), mat="n")
+    k_rarity(k, stars, glow, 2.9 if king else 2.2, z=0.25, orbit_y=1.2, orbit_r=2.4)
+
+
+def seahorse(c, s, stars, body, belly, leaf, glow=None, king=False):
+    """An upright leafy seahorse: long snout, curled tail, kelp fronds waving off its back."""
+    k = K(c, s * 0.9)
+    k.bob(0.15)
+    k.box("Body", (1.0, 1.5, 0.95), (0, 0.35, 0.05), body)
+    k.box("Body", (0.75, 1.3, 0.12), (0, 0.3, -0.45), belly)
+    for y in (-0.15, 0.2, 0.55, 0.9):
+        k.box("Body", (0.8, 0.06, 0.14), (0, y, -0.5), darken(belly, 0.15))
+    k.bone("Head", (0, 1.05, 0), anim="rot", axis="X", amp=6, speed=1)
+    k.box("Head", (0.95, 0.85, 1.0), (0, 1.5, -0.05), body)
+    k.box("Head", (0.36, 0.34, 0.8), (0, 1.3, -0.9), body)
+    k.box("Head", (0.46, 0.42, 0.22), (0, 1.3, -1.38), lighten(body, 0.15))
+    k_eyes(k, "Head", 1.68, -0.56, 0.3, 0.3)
+    if king:
+        k.box("Head", (0.9, 0.14, 0.9), (0, 1.98, -0.05), GOLDC, mat="m")
+        for x in (-0.3, 0, 0.3):
+            k.box("Head", (0.14, 0.4 if x == 0 else 0.3, 0.14), (x, 2.2, -0.35), GOLDC, mat="m")
+        k.box("Head", (0.14, 0.14, 0.06), (0, 2.0, -0.52), glow or (255, 90, 120), mat="n")
+    else:
+        for x in (-0.22, 0, 0.22):
+            k.box("Head", (0.14, 0.35, 0.14), (x, 2.05, 0.05), leaf)
+    lc = glow or lighten(leaf, 0.3)
+    leaves = [(-1, 0.6, 0.2), (1, 0.6, 0.2), (-1, 1.0, 0.35), (1, 1.0, 0.35)]
+    if king:
+        leaves += [(-1, 0.2, 0.3), (1, 0.2, 0.3)]
+    for i, (sx, y, z) in enumerate(leaves):
+        n = "Leaf%d" % (i + 1)
+        k.bone(n, (sx * 0.5, y, z), anim="rot", axis="Z", amp=14 * sx, speed=1, phase=i * 0.7)
+        k.box(n, (0.55, 0.14, 0.35), (sx * 0.8, y + 0.12, z), leaf, rot=(0, 0, sx * 30))
+        k.box(n, (0.22, 0.12, 0.22), (sx * 1.1, y + 0.33, z), lc, rot=(0, 0, sx * 30), mat="n" if glow else "p")
+    k_spines(k, "Body", (-0.2, 0.15, 0.5, 0.85), 0.6, darken(body, 0.3), h=0.3, lean=-70)
+    k.bone("Dorsal", (0, 0.4, 0.5), anim="rot", axis="Y", amp=25, speed=2)
+    k.box("Dorsal", (0.08, 0.5, 0.45), (0, 0.45, 0.72), lighten(leaf, 0.2), mat="g")
+    k.bone("Mane", (0, 1.7, 0.4), parent="Head", anim="rot", axis="X", amp=10, speed=1)
+    k.box("Mane", (0.12, 0.5, 0.4), (0, 1.8, 0.6), leaf, rot=(30, 0, 0))
+    k.box("Mane", (0.18, 0.18, 0.18), (0, 2.05, 0.75), lc, mat="n" if glow else "p")
+    k.bone("T1", (0, -0.35, 0.05), anim="rot", axis="X", amp=8, speed=1)
+    k.box("T1", (0.7, 0.55, 0.7), (0, -0.6, 0.1), body)
+    k.bone("T2", (0, -0.85, 0.1), parent="T1", anim="rot", axis="X", amp=8, speed=1, phase=-0.8)
+    k.box("T2", (0.52, 0.45, 0.55), (0, -1.05, 0.1), body)
+    k.bone("T3", (0, -1.25, 0.1), parent="T2", anim="rot", axis="X", amp=10, speed=1, phase=-1.6)
+    k.box("T3", (0.4, 0.36, 0.5), (0, -1.35, -0.2), body)
+    k.box("T3", (0.3, 0.4, 0.3), (0, -1.18, -0.5), lighten(body, 0.15))
+    k_rarity(k, stars, glow, 2.3)
+
+
+def whale(c, s, stars, body, belly, accent, glow, tempest=False):
+    """A round, smiling whale with a spout. The tempest whale carries its own storm cloud."""
+    k = K(c, s)
+    k.box("Body", (2.0, 1.7, 3.0), (0, 0.25, 0.3), body)
+    k.box("Body", (1.8, 1.3, 0.5), (0, 0.35, -1.4), body)
+    k.box("Body", (1.7, 0.35, 2.8), (0, -0.65, 0.1), belly)
+    for x in (-0.5, -0.17, 0.17, 0.5):
+        k.box("Body", (0.08, 0.06, 2.4), (x, -0.83, 0.1), darken(belly, 0.15))
+    k_eyes(k, "Body", 0.15, -1.67, 0.6, 0.32)
+    k_smile(k, "Body", -0.25, -1.67, 0.9, blush=BLUSH, bx=0.75)
+    for i, z in enumerate((-0.3, 0.4, 1.1)):
+        k.box("Body", (0.14, 0.07, 0.55), (0.1 if i % 2 else -0.1, 1.12, z), glow, rot=(0, 30 if i % 2 else -30, 0), mat="n")
+    k_spines(k, "Body", (-0.9, -0.5, 0.0, 0.5, 1.0, 1.5), 1.1, darken(body, 0.35), h=0.45)
+    for sx, t in SIDES:
+        k.bone("Flip" + t, (sx * 1.0, -0.3, -0.3), anim="rot", axis="Z", amp=18 * sx, speed=1)
+        k.box("Flip" + t, (0.9, 0.15, 0.55), (sx * 1.4, -0.45, -0.25), body, rot=(0, 0, -sx * 25))
+    segs = [((1.3, 1.1, 0.8), body, "p"), ((0.9, 0.8, 0.7), body, "p"), ((0.55, 0.55, 0.6), body, "p")]
+    out, zend = k_tail(k, (0, 0.3, 1.8), segs, axis="X", amp=12)
+    for sx in (-1, 1):
+        k.box(out[-1][0], (1.0, 0.14, 0.6), (sx * 0.5, 0.3, zend + 0.2), accent if tempest else darken(body, 0.15),
+              rot=(0, -sx * 25, 0))
+    water = (170, 225, 255)
+    k.bone("Spout", (0, 1.1, -0.6), anim="move", axis="Y", amp=0.1, speed=2)
+    k.box("Spout", (0.25, 0.5, 0.25), (0, 1.35, -0.6), water, mat="g")
+    for sx in (-1, 1):
+        k.box("Spout", (0.16, 0.16, 0.16), (sx * 0.3, 1.65, -0.6), water, mat="g")
+    if tempest:
+        grey, dark = (150, 160, 185), (110, 118, 145)
+        k.bone("Cloud", (0, 2.3, 0.4), anim="move", axis="Y", amp=0.12, speed=1)
+        k.box("Cloud", (1.4, 0.5, 0.9), (0, 2.3, 0.4), grey)
+        k.box("Cloud", (0.9, 0.45, 0.7), (-0.45, 2.6, 0.35), lighten(grey, 0.2))
+        k.box("Cloud", (0.75, 0.45, 0.7), (0.45, 2.55, 0.45), dark)
+        k.box("Cloud", (0.14, 0.4, 0.1), (0.1, 1.9, 0.4), glow, rot=(0, 0, -25), mat="n")
+        k.box("Cloud", (0.14, 0.35, 0.1), (0.02, 1.62, 0.4), glow, rot=(0, 0, 25), mat="n")
+    k_rarity(k, stars, glow, 2.9 if tempest else 1.8)
+
+
+def shark(c, s, stars, body, belly, accent, glow=None, abyss=False):
+    """A torpedo shark with a toothy grin, a tall dorsal fin and a crescent tail."""
+    k = K(c, s)
+    k.box("Body", (1.3, 1.2, 2.4), (0, 0.25, 0.2), body)
+    k.box("Body", (1.1, 0.35, 2.2), (0, -0.35, 0.1), belly)
+    for sx in (-1, 1):
+        for g in range(3):
+            k.box("Body", (0.05, 0.4, 0.07), (sx * 0.66, 0.3, -0.6 + g * 0.16), darken(body, 0.3))
+        if abyss:
+            k.box("Body", (0.05, 0.12, 1.6), (sx * 0.66, 0.05, 0.4), glow, mat="n")
+    for z in (-0.3, 0.3, 0.9):
+        k.box("Body", (0.5, 0.06, 0.18), (0, 0.86, z), accent)
+    k.bone("Head", (0, 0.25, -0.9), anim="rot", axis="Y", amp=5, speed=1)
+    k.box("Head", (1.15, 0.95, 0.9), (0, 0.35, -1.35), body)
+    k.box("Head", (0.6, 0.4, 0.5), (0, 0.33, -1.95), body)
+    k.box("Head", (1.0, 0.2, 0.75), (0, -0.05, -1.45), belly)
+    for x in (-0.36, -0.12, 0.12, 0.36):
+        k.box("Head", (0.12, 0.18, 0.1), (x, -0.2, -1.78), WHITE, rot=(0, 0, 45))
+    k_eyes(k, "Head", 0.64, -1.8, 0.42, 0.26, brow=INK, glow=glow if abyss else None)
+    k.bone("Jaw", (0, -0.1, -0.9), parent="Head", anim="rot", axis="X", amp=5, speed=1,
+           swim=dict(anim="rot", axis="X", amp=22, speed=4, phase=0))
+    k.box("Jaw", (1.0, 0.3, 0.85), (0, -0.3, -1.35), belly)
+    k.box("Jaw", (0.9, 0.06, 0.7), (0, -0.13, -1.35), MOUTH)
+    for x in (-0.3, -0.1, 0.1, 0.3):
+        k.box("Jaw", (0.11, 0.18, 0.1), (x, -0.08, -1.72), WHITE, rot=(0, 0, 45))
+    k.box("Body", (0.16, 1.0, 0.8), (0, 1.15, 0.25), body, rot=(25, 0, 0))
+    k.box("Body", (0.17, 0.35, 0.4), (0, 1.62, 0.55), glow if abyss else accent, rot=(35, 0, 0), mat="n" if abyss else "p")
+    for sx, t in SIDES:
+        k.bone("Fin" + t, (sx * 0.6, -0.2, -0.3), anim="rot", axis="Z", amp=12 * sx, speed=1)
+        k.box("Fin" + t, (0.9, 0.12, 0.5), (sx * 1.0, -0.4, -0.2), body, rot=(0, 0, -sx * 30))
+    out, zend = k_tail(k, (0, 0.3, 1.4), [((0.9, 0.85, 0.8), body, "p"), ((0.55, 0.55, 0.7), body, "p")], amp=18)
+    k.box(out[-1][0], (0.15, 1.1, 0.4), (0, 0.75, zend + 0.05), body, rot=(35, 0, 0))
+    k.box(out[-1][0], (0.15, 0.6, 0.35), (0, -0.1, zend), body, rot=(-30, 0, 0))
+    k_rarity(k, stars, glow, 1.9)
+
+
+def crab(c, s, stars, shell, belly, claw, glow=None, big=False):
+    """A wide crab with eyes on stalks and snapping pincers. The big one carries lightning rods."""
+    k = K(c, s)
+    cm = 1.3 if big else 1.0
+    k.box("Body", (2.0, 0.9, 1.5), (0, 0.15, 0.1), shell)
+    k.box("Body", (1.7, 0.25, 1.25), (0, 0.7, 0.15), lighten(shell, 0.12))
+    k.box("Body", (1.8, 0.2, 1.3), (0, -0.38, 0.1), belly)
+    for sx in (-1, 1):
+        for z in (-0.2, 0.35):
+            k.box("Body", (0.2, 0.3, 0.2), (sx * 1.02, 0.45, z), shell, rot=(0, 0, -sx * 35))
+    for (x, z) in ((-0.45, 0.4), (0.5, 0.0), (0.1, 0.55)):
+        k.box("Body", (0.22, 0.06, 0.22), (x, 0.85, z), lighten(shell, 0.35))
+    k_smile(k, "Body", 0.0, -0.66, 0.4, blush=BLUSH, bx=0.6)
+    for sx, t in SIDES:
+        k.bone("Stalk" + t, (sx * 0.38, 0.6, -0.5), anim="rot", axis="Z", amp=10 * sx, speed=1, phase=1 if sx > 0 else 0)
+        k.box("Stalk" + t, (0.14, 0.55, 0.14), (sx * 0.38, 0.95, -0.5), shell)
+        k.box("Stalk" + t, (0.36, 0.38, 0.3), (sx * 0.38, 1.35, -0.5), WHITE)
+        k.box("Stalk" + t, (0.18, 0.22, 0.06), (sx * 0.35, 1.32, -0.67), INK)
+        k.box("Stalk" + t, (0.07, 0.07, 0.04), (sx * 0.44, 1.42, -0.69), WHITE, mat="n")
+        k.box("Stalk" + t, (0.46, 0.12, 0.1), (sx * 0.38, 1.52, -0.66), INK, rot=(0, 0, sx * 22))
+        k.bone("Claw" + t, (sx * 0.95, 0.1, -0.35), anim="rot", axis="Y", amp=12 * sx, speed=2,
+               swim=dict(anim="rot", axis="Y", amp=30 * sx, speed=4, phase=0))
+        k.box("Claw" + t, (0.4, 0.35, 0.6), (sx * 1.15, 0.1, -0.6), shell)
+        k.box("Claw" + t, (0.8 * cm, 0.7 * cm, 0.65 * cm), (sx * 1.3, 0.2, -1.05), claw)
+        k.box("Claw" + t, (0.3 * cm, 0.25 * cm, 0.6 * cm), (sx * 1.4, 0.2 + 0.25 * cm, -1.05 - 0.55 * cm), claw)
+        k.box("Claw" + t, (0.2 * cm, 0.2 * cm, 0.2 * cm), (sx * 1.4, 0.2 + 0.25 * cm, -1.05 - 0.9 * cm),
+              glow or lighten(claw, 0.3), mat="n" if glow else "p")
+        k.bone("Pinch" + t, (sx * 1.3, 0.0, -1.0 - 0.25 * cm), parent="Claw" + t, anim="rot", axis="X", amp=10, speed=2,
+               swim=dict(anim="rot", axis="X", amp=30, speed=4, phase=0))
+        k.box("Pinch" + t, (0.3 * cm, 0.2 * cm, 0.55 * cm), (sx * 1.3, -0.05, -1.05 - 0.5 * cm), darken(claw, 0.1))
+    spots = []
+    for z in (-0.1, 0.3, 0.7):
+        spots += [(-0.9, -0.25, z), (0.9, -0.25, z)]
+    k_legs(k, spots, (0.18, 0.5, 0.18), darken(shell, 0.15), amp=22, speed=2)
+    if big and glow:
+        for sx in (-1, 1):
+            k.box("Body", (0.12, 0.45, 0.12), (sx * 0.4, 1.05, 0.4), glow, rot=(0, 0, 20), mat="n")
+            k.box("Body", (0.12, 0.4, 0.12), (sx * 0.45, 1.4, 0.4), glow, rot=(0, 0, -20), mat="n")
+    k_rarity(k, stars, glow, 1.8)
+
+
+def skull_hermit(c, s, stars, bonec, body, glow, lord=False):
+    """A hermit crab living in a giant skull: the skull's sockets glow, the crab peeks out under the teeth."""
+    k = K(c, s)
+    k.box("Body", (1.3, 0.7, 1.2), (0, -0.35, -0.15), body)
+    k.box("Body", (1.9, 1.4, 1.7), (0, 0.8, 0.35), bonec)
+    k.box("Body", (1.6, 0.4, 1.4), (0, 1.6, 0.4), bonec)
+    k.box("Body", (1.5, 0.35, 0.5), (0, 0.15, -0.4), darken(bonec, 0.08))
+    for sx in (-1, 1):
+        k.box("Body", (0.5, 0.48, 0.08), (sx * 0.45, 1.0, -0.52), INK)
+        k.box("Body", (0.2, 0.2, 0.06), (sx * 0.45, 0.98, -0.57), glow, mat="n")
+    k.box("Body", (0.18, 0.22, 0.06), (0, 0.62, -0.52), INK, rot=(0, 0, 45))
+    for x in (-0.5, -0.25, 0, 0.25, 0.5):
+        k.box("Body", (0.18, 0.22, 0.12), (x, -0.08, -0.66), WHITE)
+    k.box("Body", (0.06, 0.4, 0.05), (0.55, 1.45, -0.5), darken(bonec, 0.3), rot=(0, 0, 20))
+    k_eyes(k, "Body", -0.35, -0.75, 0.28, 0.28)
+    for sx, t in SIDES:
+        k.bone("Claw" + t, (sx * 0.55, -0.4, -0.6), anim="rot", axis="Y", amp=14 * sx, speed=2,
+               swim=dict(anim="rot", axis="Y", amp=30 * sx, speed=4, phase=0))
+        k.box("Claw" + t, (0.3, 0.25, 0.35), (sx * 0.68, -0.45, -0.85), body)
+        k.box("Claw" + t, (0.26, 0.2, 0.24), (sx * 0.68, -0.42, -1.1), lighten(body, 0.3))
+    k_legs(k, [(-0.6, -0.55, -0.1), (0.6, -0.55, -0.1), (-0.6, -0.55, 0.35), (0.6, -0.55, 0.35)],
+           (0.16, 0.4, 0.16), darken(body, 0.1), amp=20, speed=2)
+    if lord:
+        for sx in (-1, 1):
+            k.box("Body", (0.3, 0.7, 0.3), (sx * 1.05, 1.5, 0.3), bonec, rot=(0, 0, sx * 30))
+            k.box("Body", (0.22, 0.45, 0.22), (sx * 1.32, 1.92, 0.4), lighten(bonec, 0.4), rot=(0, 0, -sx * 10))
+            for y in (0.5, 0.9):
+                k.box("Body", (0.06, 0.12, 0.3), (sx * 0.96, y, 0.5), glow, mat="n")
+        k.box("Body", (1.3, 0.15, 1.2), (0, 1.88, 0.4), GOLDC, mat="m")
+        for x in (-0.45, 0, 0.45):
+            k.box("Body", (0.16, 0.42 if x == 0 else 0.32, 0.16), (x, 2.12, -0.15), GOLDC, mat="m")
+    k_rarity(k, stars, glow, 2.3 if lord else 1.9, z=0.35)
+
+
+def manta(c, s, stars, top, belly, accent, glow, night=False):
+    """A devil ray: a thick armoured body, glowing eyes over a fanged maw, curled horns, spined
+    back, huge hooked wings with glowing spots, and a barbed tail ending in a glowing stinger."""
+    k = K(c, s * 1.1)
+    k.bob(0.22)
+    k.box("Body", (1.8, 0.8, 2.2), (0, 0.5, 0.2), top)
+    k.box("Body", (1.6, 0.15, 2.0), (0, 0.05, 0.2), belly)
+    k.box("Body", (1.5, 0.6, 0.6), (0, 0.55, -1.05), top)
+    k.box("Body", (1.2, 0.18, 1.6), (0, 0.95, 0.3), darken(top, 0.25))
+    k_spines(k, "Body", (-0.5, -0.1, 0.3, 0.7, 1.1), 1.0, accent, h=0.8 if night else 0.5, tip=glow)
+    k_eyes(k, "Body", 0.68, -1.35, 0.45, 0.3, glow=glow)
+    k.box("Body", (1.0, 0.22, 0.05), (0, 0.36, -1.37), (40, 10, 30))
+    for x in (-0.4, -0.2, 0, 0.2, 0.4):
+        k.box("Body", (0.09, 0.16, 0.05), (x, 0.42, -1.4), WHITE)
+    for x in (-0.3, -0.1, 0.1, 0.3):
+        k.box("Body", (0.09, 0.14, 0.05), (x, 0.29, -1.4), WHITE)
+    for sx in (-1, 1):
+        k.box("Body", (0.26, 0.26, 0.7), (sx * 0.62, 0.5, -1.55), accent, rot=(-15, 0, 0))
+        k.box("Body", (0.2, 0.5, 0.2), (sx * 0.62, 0.85, -1.85), accent, rot=(25, 0, -sx * 10))
+        k.box("Body", (0.13, 0.13, 0.13), (sx * 0.6, 1.12, -1.95), glow, mat="n")
+    if night:
+        for sx in (-1, 1):  # a second, swept-back pair of horns
+            k.box("Body", (0.18, 0.7, 0.18), (sx * 0.55, 1.15, -0.75), accent, rot=(-35, 0, -sx * 20))
+            k.box("Body", (0.12, 0.12, 0.12), (sx * 0.66, 1.45, -0.55), glow, mat="n")
+        k.box("Body", (0.4, 0.08, 0.14), (-0.08, 1.06, -0.3), glow, rot=(0, 30, 0), mat="n")
+        k.box("Body", (0.4, 0.08, 0.14), (0.1, 1.06, -0.05), glow, rot=(0, -30, 0), mat="n")
+        for (x, z) in ((-0.4, 0.6), (0.35, 0.9), (0.1, 0.4)):
+            k.box("Body", (0.1, 0.06, 0.1), (x, 1.06, z), WHITE, mat="n")
+    for sx, t in SIDES:
+        k.bone("Wing" + t, (sx * 0.85, 0.5, 0.2), anim="rot", axis="Z", amp=22 * sx, speed=1,
+               swim=dict(anim="rot", axis="Z", amp=40 * sx, speed=2, phase=0))
+        k.box("Wing" + t, (2.0, 0.24, 2.0), (sx * 1.6, 0.5, 0.25), top, rot=(0, 45, 0))
+        k.box("Wing" + t, (1.8, 0.1, 1.8), (sx * 1.6, 0.36, 0.25), belly, rot=(0, 45, 0))
+        for (x, z) in ((1.3, -0.1), (1.75, 0.45), (2.15, 0.1)):
+            k.box("Wing" + t, (0.2, 0.06, 0.2), (sx * x, 0.64, z), glow, mat="n")
+        for i in range(3):
+            k.box("Wing" + t, (0.12, 0.12, 0.32), (sx * (1.15 + i * 0.45), 0.55, -0.55 + i * 0.42), WHITE,
+                  rot=(0, sx * 40, 0))
+        k.bone("WingTip" + t, (sx * 2.35, 0.5, 0.25), parent="Wing" + t, anim="rot", axis="Z", amp=18 * sx, speed=1,
+               phase=-0.8)
+        k.box("WingTip" + t, (1.1, 0.18, 1.0), (sx * 2.85, 0.6, 0.35), top, rot=(0, 45, 0))
+        k.box("WingTip" + t, (0.15, 0.15, 0.55), (sx * 3.35, 0.62, 0.05), WHITE, rot=(0, sx * 35, 0))
+    segs = [((0.24, 0.24, 0.6), top, "p"), ((0.2, 0.2, 0.6), top, "p"), ((0.16, 0.16, 0.6), top, "p"),
+            ((0.13, 0.13, 0.6), top, "p")]
+    out, zend = k_tail(k, (0, 0.45, 1.3), segs, amp=20, lag=0.7)
+    for n, zc, sz in out:
+        k.box(n, (0.42, 0.07, 0.09), (0, 0.5, zc), WHITE, rot=(0, 45, 0))
+    k.box(out[-1][0], (0.22, 0.22, 0.6), (0, 0.45, zend + 0.25), glow, rot=(0, 0, 45), mat="n")
+    for sx in (-1, 1):
+        k.box(out[-1][0], (0.3, 0.08, 0.1), (sx * 0.15, 0.45, zend + 0.05), glow, rot=(0, -sx * 40, 0), mat="n")
+    k_rarity(k, stars, glow, 1.3)
+
+
+def sea_toad(c, s, stars, body, belly, accent, glow):
+    """A huge-mouthed sea toad with bulging eyes and a curling wave crest down its back."""
+    k = K(c, s)
+    k.box("Body", (2.0, 1.2, 1.9), (0, 0.0, 0.35), body)
+    k.box("Body", (1.7, 0.3, 1.7), (0, -0.55, 0.3), belly)
+    for (x, z) in ((-0.55, 0.6), (0.6, 0.9), (0.2, 0.3), (-0.3, 1.1)):
+        k.box("Body", (0.22, 0.08, 0.22), (x, 0.62, z), lighten(body, 0.3))
+    k.bone("Head", (0, 0.2, -0.4), anim="rot", axis="X", amp=4, speed=1)
+    k.box("Head", (2.2, 0.9, 1.4), (0, 0.55, -0.85), body)
+    for sx in (-1, 1):
+        k.box("Head", (0.65, 0.55, 0.65), (sx * 0.62, 1.15, -0.95), body)
+        k.box("Head", (0.46, 0.46, 0.08), (sx * 0.62, 1.2, -1.29), WHITE)
+        k.box("Head", (0.32, 0.14, 0.06), (sx * 0.62, 1.17, -1.34), INK)
+        k.box("Head", (0.1, 0.1, 0.05), (sx * 0.72, 1.32, -1.36), WHITE, mat="n")
+        k.box("Head", (0.72, 0.16, 0.2), (sx * 0.6, 1.46, -1.3), darken(body, 0.35), rot=(0, 0, sx * 20))
+        k.box("Head", (0.12, 0.28, 0.12), (sx * 0.55, 0.0, -1.45), WHITE)
+    k.box("Head", (2.0, 0.07, 0.05), (0, 0.13, -1.56), INK)
+    k.bone("Jaw", (0, 0.15, -0.3), parent="Head", anim="rot", axis="X", amp=4, speed=1,
+           swim=dict(anim="rot", axis="X", amp=24, speed=4, phase=0))
+    k.box("Jaw", (2.1, 0.45, 1.4), (0, -0.05, -0.85), belly)
+    k.box("Jaw", (1.8, 0.08, 1.1), (0, 0.18, -0.9), MOUTH)
+    k.box("Jaw", (0.4, 0.08, 0.7), (0, 0.23, -1.0), BLUSH)
+    k.bone("Crest", (0, 0.6, 0.0), anim="rot", axis="X", amp=6, speed=1)
+    for i, (h, z) in enumerate(((0.6, 0.0), (0.8, 0.45), (0.65, 0.9))):
+        k.box("Crest", (0.3, h, 0.45), (0, 0.6 + h / 2, z), accent, rot=(-20, 0, 0), mat="g")
+        k.box("Crest", (0.32, 0.14, 0.3), (0, 0.6 + h, z - 0.15), WHITE)
+    if glow:
+        k.box("Crest", (0.18, 0.18, 0.18), (0, 0.85, 0.45), glow, mat="n")
+    for sx in (-1, 1):
+        k.box("Body", (0.35, 0.55, 0.35), (sx * 0.75, -0.65, -0.5), body)
+        k.box("Body", (0.6, 0.1, 0.55), (sx * 0.8, -0.95, -0.6), accent)
+    for sx, t in SIDES:
+        k.bone("Hop" + t, (sx * 1.0, -0.1, 0.6), anim="rot", axis="X", amp=8, speed=1, phase=0 if sx < 0 else math.pi)
+        k.box("Hop" + t, (0.6, 0.7, 1.1), (sx * 1.1, -0.3, 0.75), body)
+        k.box("Hop" + t, (0.7, 0.12, 0.8), (sx * 1.15, -0.92, 0.55), accent)
+    k_rarity(k, stars, glow, 1.6, z=-0.6)
+
+
+def lionfish(c, s, stars, body, stripe, fin, glow):
+    """A striped lionfish: a mane of venom spines and two huge feathery fans."""
+    k = K(c, s)
+    k.bob(0.12)
+    k.box("Body", (1.2, 1.4, 2.0), (0, 0.35, 0.25), body)
+    for z in (-0.35, 0.25, 0.85):
+        k.box("Body", (1.24, 1.44, 0.2), (0, 0.35, z), stripe)
+    k.box("Body", (1.1, 1.2, 0.6), (0, 0.4, -0.95), body)
+    k.box("Body", (1.14, 0.2, 0.62), (0, 0.78, -0.95), stripe)
+    k_eyes(k, "Body", 0.45, -1.25, 0.3, 0.3, brow=INK)
+    k.box("Body", (0.4, 0.15, 0.1), (0, 0.08, -1.28), lighten(body, 0.4))
+    for sx in (-1, 1):
+        k.box("Body", (0.08, 0.32, 0.08), (sx * 0.25, -0.2, -1.15), stripe)
+    k.box("Body", (0.04, 0.8, 1.6), (0, 1.45, 0.15), fin, mat="g")
+    for i in range(6):
+        z = -0.6 + i * 0.3
+        h = 1.25 - abs(i - 1.5) * 0.12
+        k.box("Body", (0.08, h, 0.08), (0, 1.05 + h / 2, z), stripe, rot=(-15, 0, 0))
+        k.box("Body", (0.14, 0.14, 0.14), (0, 1.05 + h, z - h * 0.13), glow, mat="n")
+    for sx, t in SIDES:
+        k.bone("Fan" + t, (sx * 0.6, 0.2, -0.3), anim="rot", axis="Y", amp=15 * sx, speed=1,
+               swim=dict(anim="rot", axis="Y", amp=30 * sx, speed=2, phase=0))
+        for j in range(4):
+            a = -20 + j * 28
+            r = math.radians(a)
+            k.box("Fan" + t, (1.3, 0.06, 0.2), (sx * (0.6 + math.cos(r) * 0.65), 0.2 - j * 0.12, -0.3 + math.sin(r) * 0.65),
+                  stripe if j % 2 == 0 else fin, rot=(0, -sx * a, 0))
+    for sx in (-1, 1):
+        k.box("Body", (0.14, 0.45, 0.14), (sx * 0.3, 1.15, -1.0), fin, rot=(0, 0, -sx * 15))
+        k.box("Body", (0.16, 0.16, 0.16), (sx * 0.38, 1.42, -1.0), glow, mat="n")
+    out, zend = k_tail(k, (0, 0.35, 1.25), [((0.7, 0.8, 0.5), body, "p")], amp=16)
+    k.box("Tail1", (0.06, 1.2, 0.8), (0, 0.35, zend + 0.35), fin, mat="g")
+    k_rarity(k, stars, glow, 2.4)
+
+
+def mantis_shrimp(c, s, stars, body, belly, accent, glow):
+    """A mantis shrimp: striped stalk eyes, a curled armoured tail and two glowing punching clubs."""
+    k = K(c, s)
+    k.box("Body", (1.2, 0.9, 1.0), (0, 0.35, -0.3), body)
+    k.box("Body", (1.0, 0.25, 0.95), (0, -0.18, -0.3), belly)
+    k.bone("Head", (0, 0.55, -0.75), anim="rot", axis="Y", amp=6, speed=1)
+    k.box("Head", (0.9, 0.6, 0.6), (0, 0.7, -1.05), body)
+    k_smile(k, "Head", 0.6, -1.35, 0.3)
+    for sx, t in SIDES:
+        k.bone("Eye" + t, (sx * 0.25, 1.0, -1.1), parent="Head", anim="rot", axis="Z", amp=12 * sx, speed=1,
+               phase=0 if sx < 0 else 1.5)
+        k.box("Eye" + t, (0.12, 0.4, 0.12), (sx * 0.27, 1.2, -1.1), body)
+        k.box("Eye" + t, (0.36, 0.22, 0.36), (sx * 0.3, 1.66, -1.12), accent)
+        k.box("Eye" + t, (0.36, 0.22, 0.36), (sx * 0.3, 1.44, -1.12), lighten(accent, 0.5))
+        k.box("Eye" + t, (0.38, 0.06, 0.38), (sx * 0.3, 1.55, -1.12), INK)
+        k.box("Eye" + t, (0.1, 0.1, 0.04), (sx * 0.3, 1.6, -1.32), WHITE, mat="n")
+        k.bone("Ant" + t, (sx * 0.3, 0.8, -1.3), parent="Head", anim="rot", axis="Y", amp=14 * sx, speed=2)
+        k.box("Ant" + t, (0.35, 0.08, 0.6), (sx * 0.55, 0.85, -1.55), accent, rot=(0, -sx * 30, 0))
+        k.bone("Punch" + t, (sx * 0.45, 0.2, -1.0), anim="rot", axis="X", amp=10, speed=1,
+               swim=dict(anim="rot", axis="X", amp=45, speed=4, phase=0 if sx < 0 else math.pi))
+        k.box("Punch" + t, (0.25, 0.6, 0.25), (sx * 0.5, 0.0, -1.15), body)
+        k.box("Punch" + t, (0.42, 0.42, 0.48), (sx * 0.5, -0.25, -1.45), glow, mat="n")
+    spots = []
+    for z in (-0.55, -0.1):
+        spots += [(-0.5, -0.25, z), (0.5, -0.25, z)]
+    k_legs(k, spots, (0.14, 0.5, 0.14), accent, amp=20, speed=2)
+    segs = [((1.15, 0.85, 0.55), body, "p"), ((1.05, 0.78, 0.55), body, "p"), ((0.95, 0.7, 0.5), body, "p"),
+            ((0.8, 0.6, 0.5), body, "p")]
+    out, zend = k_tail(k, (0, 0.25, 0.2), segs, axis="X", amp=8, lag=0.6)
+    for n, zc, sz in out:
+        k.box(n, (sz[0] * 0.9, 0.08, sz[2] * 0.5), (0, 0.25 + sz[1] / 2 + 0.02, zc), accent)
+    k.box(out[-1][0], (1.3, 0.12, 0.5), (0, 0.25, zend + 0.2), accent)
+    for sx in (-1, 1):
+        k.box(out[-1][0], (0.14, 0.06, 0.14), (sx * 0.4, 0.32, zend + 0.2), glow, mat="n")
+    k_rarity(k, stars, glow, 1.9, z=-1.0)
+
+
+def vampire_squid(c, s, stars, body, cape, glow):
+    """A vampire squid: glowing eyes, little fangs and an umbrella cape fringed with spikes."""
+    k = K(c, s)
+    k.bob(0.15)
+    k.box("Body", (1.3, 1.5, 1.3), (0, 1.2, 0.1), body)
+    k.box("Body", (0.9, 0.4, 0.9), (0, 2.1, 0.15), body)
+    k_eyes(k, "Body", 1.25, -0.55, 0.32, 0.36, brow=INK, glow=glow)
+    k.box("Body", (0.45, 0.06, 0.05), (0, 0.88, -0.57), INK)
+    for sx in (-1, 1):
+        k.box("Body", (0.1, 0.25, 0.1), (sx * 0.15, 0.75, -0.6), WHITE)
+    for sx, t in SIDES:
+        k.bone("Ear" + t, (sx * 0.6, 1.8, 0.2), anim="rot", axis="Z", amp=20 * sx, speed=2)
+        k.box("Ear" + t, (0.7, 0.12, 0.5), (sx * 0.95, 1.9, 0.2), darken(body, 0.2), rot=(0, 0, sx * 25))
+    k.bone("Cape", (0, 0.5, 0.1), anim="rot", axis="Y", amp=10, speed=1)
+    k.box("Cape", (1.6, 0.45, 1.6), (0, 0.35, 0.1), cape)
+    k.box("Cape", (2.1, 0.4, 2.1), (0, -0.05, 0.1), cape, rot=(0, 45, 0))
+    k.box("Cape", (2.5, 0.25, 2.5), (0, -0.4, 0.1), darken(cape, 0.25))
+    for i in range(8):
+        a = i / 8 * math.tau
+        k.box("Cape", (0.12, 0.4, 0.12), (math.cos(a) * 1.2, -0.65, 0.1 + math.sin(a) * 1.2), WHITE)
+        if i % 2 == 0:
+            k.box("Cape", (0.12, 0.08, 0.12), (math.cos(a) * 0.75, 0.6, 0.1 + math.sin(a) * 0.75), glow, mat="n")
+    k_rarity(k, stars, glow, 2.3)
+
+
+def coral_golem(c, s, stars, rock, coral, glow):
+    """A walking coral reef: boulder body, glowing heart, barnacled fists, coral growing out of it."""
+    k = K(c, s * 0.9)
+    k.box("Body", (2.0, 1.5, 1.3), (0, 0.9, 0.1), rock)
+    k.box("Body", (1.6, 0.6, 1.1), (0, 0.0, 0.1), darken(rock, 0.1))
+    k.box("Body", (0.7, 0.7, 0.08), (0, 1.0, -0.56), darken(rock, 0.3))
+    k.box("Body", (0.45, 0.45, 0.08), (0, 1.0, -0.6), glow, mat="n")
+    for sx in (-1, 1):
+        k.box("Body", (0.8, 0.7, 0.8), (sx * 1.2, 1.5, 0.1), lighten(rock, 0.1))
+        k.box("Body", (0.14, 0.55, 0.14), (sx * 1.3, 2.05, 0.1), coral, rot=(0, 0, -sx * 15))
+        k.box("Body", (0.12, 0.35, 0.12), (sx * 1.48, 2.2, 0.1), coral, rot=(0, 0, sx * 30))
+        k.box("Body", (0.16, 0.16, 0.16), (sx * 1.35, 2.38, 0.1), glow, mat="n")
+    for (x, y) in ((-0.6, 0.5), (0.65, 1.35), (-0.5, 1.4)):
+        k.box("Body", (0.22, 0.18, 0.1), (x, y, -0.58), lighten(rock, 0.45))
+    k.box("Body", (0.1, 0.55, 0.06), (0.4, 0.45, -0.58), (90, 170, 90))
+    k.bone("Head", (0, 1.65, 0), anim="rot", axis="Y", amp=6, speed=1)
+    k.box("Head", (1.1, 0.85, 1.0), (0, 2.05, -0.05), rock)
+    k.box("Head", (1.15, 0.2, 0.3), (0, 2.28, -0.45), darken(rock, 0.25))
+    k_eyes(k, "Head", 2.05, -0.55, 0.27, 0.24, glow=glow)
+    k.box("Head", (0.4, 0.06, 0.05), (0, 1.8, -0.57), INK)
+    for (x, h, r) in ((0.3, 0.5, -15), (-0.25, 0.4, 20)):
+        k.box("Head", (0.14, h, 0.14), (x, 2.47 + h / 2, 0), coral, rot=(0, 0, r))
+        k.box("Head", (0.16, 0.16, 0.16), (x * 1.3, 2.5 + h, 0), glow, mat="n")
+    for sx, t in SIDES:
+        ph = 0 if sx < 0 else math.pi
+        k.bone("Arm" + t, (sx * 1.2, 1.35, 0.1), anim="rot", axis="X", amp=10, speed=1, phase=ph,
+               swim=dict(anim="rot", axis="X", amp=32, speed=2, phase=ph))
+        k.box("Arm" + t, (0.65, 1.0, 0.65), (sx * 1.35, 0.75, 0.1), rock)
+        k.box("Arm" + t, (0.95, 0.8, 0.95), (sx * 1.4, 0.0, 0.0), darken(rock, 0.15))
+        k.box("Arm" + t, (0.2, 0.2, 0.2), (sx * 1.4, 0.25, -0.5), lighten(rock, 0.45))
+    k_legs(k, [(-0.5, -0.3, 0.1), (0.5, -0.3, 0.1)], (0.7, 0.65, 0.8), rock, foot=darken(rock, 0.2), amp=10)
+    k_rarity(k, stars, glow, 3.0)
+
+
+def tide_king(c, s, stars, water, tail, gold, glow):
+    """A living-water merking: see-through body with a glowing heart, foam beard, crown and trident."""
+    k = K(c, s * 0.9)
+    k.bob(0.12)
+    k.box("Body", (1.1, 0.7, 0.9), (0, 0.35, 0.05), tail)
+    k.box("Body", (1.3, 0.15, 1.0), (0, 0.72, 0.05), gold, mat="m")
+    k.box("Body", (1.4, 1.1, 0.85), (0, 1.3, 0), water, mat="g")
+    k.box("Body", (0.45, 0.45, 0.45), (0, 1.35, 0), glow, mat="n")
+    for sx in (-1, 1):
+        k.box("Body", (0.55, 0.3, 0.6), (sx * 0.8, 1.85, 0), gold, mat="m")
+    k.bone("Head", (0, 1.85, 0), anim="rot", axis="Y", amp=6, speed=1)
+    k.box("Head", (0.95, 0.95, 0.9), (0, 2.35, -0.05), water, mat="g")
+    k_eyes(k, "Head", 2.42, -0.5, 0.22, 0.22, glow=glow, brow=WHITE)
+    k.box("Head", (0.8, 0.35, 0.3), (0, 1.95, -0.45), WHITE)
+    k.box("Head", (0.5, 0.3, 0.25), (0, 1.7, -0.45), WHITE)
+    k.box("Head", (1.0, 0.18, 0.95), (0, 2.9, -0.05), gold, mat="m")
+    for x in (-0.36, -0.18, 0, 0.18, 0.36):
+        k.box("Head", (0.12, 0.45 if x == 0 else 0.3, 0.12), (x, 3.1, -0.45), gold, mat="m")
+    k.box("Head", (0.16, 0.16, 0.06), (0, 2.9, -0.54), glow, mat="n")
+    k.bone("ArmR", (0.85, 1.75, 0), anim="rot", axis="Z", amp=6, speed=1)
+    k.box("ArmR", (0.38, 0.95, 0.38), (1.0, 1.25, 0), water, mat="g")
+    k.box("ArmR", (0.4, 0.35, 0.4), (1.0, 0.7, -0.1), water, mat="g")
+    k.box("ArmR", (0.12, 2.8, 0.12), (1.0, 1.2, -0.35), gold, mat="m")
+    k.box("ArmR", (0.55, 0.1, 0.12), (1.0, 2.55, -0.35), gold, mat="m")
+    for x in (0.78, 1.0, 1.22):
+        k.box("ArmR", (0.1, 0.5 if x == 1.0 else 0.4, 0.1), (x, 2.82, -0.35), gold, mat="m")
+        k.box("ArmR", (0.12, 0.12, 0.12), (x, 3.1 if x == 1.0 else 3.05, -0.35), glow, mat="n")
+    k.bone("ArmL", (-0.85, 1.75, 0), anim="rot", axis="X", amp=15, speed=1)
+    k.box("ArmL", (0.38, 0.9, 0.38), (-1.0, 1.3, 0), water, mat="g")
+    k.ball("ArmL", 0.45, (-1.05, 0.75, -0.3), glow, mat="n")
+    k.bone("T1", (0, 0.1, 0.1), anim="rot", axis="X", amp=10, speed=1)
+    k.box("T1", (0.9, 0.6, 0.85), (0, -0.15, 0.25), tail)
+    k.bone("T2", (0, -0.4, 0.45), parent="T1", anim="rot", axis="X", amp=10, speed=1, phase=-0.8)
+    k.box("T2", (0.7, 0.5, 0.75), (0, -0.55, 0.75), darken(tail, 0.1))
+    k.bone("T3", (0, -0.7, 1.05), parent="T2", anim="rot", axis="X", amp=12, speed=1, phase=-1.6)
+    k.box("T3", (0.5, 0.4, 0.6), (0, -0.75, 1.3), tail)
+    for sx in (-1, 1):
+        k.box("T3", (0.75, 0.1, 0.45), (sx * 0.35, -0.75, 1.7), lighten(water, 0.2), rot=(0, -sx * 25, 0), mat="g")
+    k.bone("Swirl", (0, 0.4, 0.1), anim="spin", axis="Y", amp=0, speed=1)
+    for i in range(6):
+        a = i / 6 * math.tau
+        k.box("Swirl", (0.35, 0.12, 0.2), (math.cos(a) * 1.0, 0.4 + (i % 2) * 0.15, 0.1 + math.sin(a) * 1.0),
+              lighten(water, 0.3), rot=(0, -math.degrees(a) - 90, 0), mat="g")
+    k_rarity(k, stars, glow, 3.4)
+
+
+def thunderbird(c, s, stars, body, belly, accent, glow):
+    """A storm bird: hooked gold beak, lightning crest, huge two-jointed wings and a fan tail."""
+    k = K(c, s * 0.9)
+    k.bob(0.25)
+    k.box("Body", (1.4, 1.4, 1.6), (0, 0.6, 0.2), body)
+    k.box("Body", (1.0, 0.9, 0.3), (0, 0.5, -0.62), belly)
+    k.box("Body", (0.12, 0.45, 0.06), (0.05, 0.62, -0.79), glow, rot=(0, 0, -25), mat="n")
+    k.box("Body", (0.12, 0.35, 0.06), (-0.02, 0.3, -0.79), glow, rot=(0, 0, 25), mat="n")
+    k.bone("Head", (0, 1.15, -0.3), anim="rot", axis="X", amp=6, speed=1,
+           swim=dict(anim="rot", axis="X", amp=12, speed=2, phase=0))
+    k.box("Head", (1.05, 1.0, 1.0), (0, 1.75, -0.55), body)
+    k.box("Head", (0.5, 0.35, 0.65), (0, 1.6, -1.3), GOLDC)
+    k.box("Head", (0.3, 0.3, 0.2), (0, 1.48, -1.65), darken(GOLDC, 0.15))
+    k_eyes(k, "Head", 1.97, -1.06, 0.32, 0.26, brow=INK)
+    k.bone("Beak", (0, 1.45, -1.0), parent="Head", anim="rot", axis="X", amp=4, speed=1,
+           swim=dict(anim="rot", axis="X", amp=16, speed=4, phase=0))
+    k.box("Beak", (0.4, 0.18, 0.5), (0, 1.38, -1.3), darken(GOLDC, 0.2))
+    for i, a in enumerate((20, 40, 60)):
+        r = math.radians(a)
+        h = 0.7 + i * 0.1
+        k.box("Head", (0.15, h, 0.3), (0, 2.2 + math.cos(r) * h / 2, -0.55 + math.sin(r) * h / 2), glow,
+              rot=(a, 0, 0), mat="n")
+    for sx, t in SIDES:
+        k.bone("Wing" + t, (sx * 0.65, 1.0, 0.1), anim="rot", axis="Z", amp=25 * sx, speed=1,
+               swim=dict(anim="rot", axis="Z", amp=40 * sx, speed=2, phase=0))
+        k.box("Wing" + t, (1.4, 0.22, 0.6), (sx * 1.35, 1.25, 0.1), body, rot=(0, 0, sx * 20))
+        for j in range(3):
+            x = sx * (0.9 + j * 0.45)
+            ln = 1.1 + j * 0.15
+            k.box("Wing" + t, (0.32, 0.1, ln), (x, 1.1 + j * 0.17, 0.1 + ln / 2), accent if j % 2 else body)
+            k.box("Wing" + t, (0.3, 0.11, 0.25), (x, 1.1 + j * 0.17, 0.15 + ln), glow, mat="n")
+        k.bone("WingTip" + t, (sx * 2.0, 1.45, 0.1), parent="Wing" + t, anim="rot", axis="Z", amp=15 * sx, speed=1,
+               phase=-0.7)
+        k.box("WingTip" + t, (0.9, 0.18, 0.5), (sx * 2.4, 1.6, 0.1), body, rot=(0, 0, sx * 12))
+        k.box("WingTip" + t, (0.35, 0.1, 1.6), (sx * 2.6, 1.62, 0.8), accent)
+        k.box("WingTip" + t, (0.33, 0.11, 0.3), (sx * 2.6, 1.62, 1.6), glow, mat="n")
+    k.bone("TailF", (0, 0.4, 0.95), anim="rot", axis="X", amp=8, speed=1)
+    for j in range(5):
+        a = (j - 2) * 20
+        r = math.radians(a)
+        k.box("TailF", (0.22, 0.08, 1.4), (math.sin(r) * 0.7, 0.35, 1.0 + math.cos(r) * 0.7),
+              accent if j % 2 else body, rot=(0, a, 0))
+        k.box("TailF", (0.24, 0.09, 0.22), (math.sin(r) * 1.4, 0.35, 1.0 + math.cos(r) * 1.4), glow, rot=(0, a, 0), mat="n")
+    k_legs(k, [(-0.35, -0.1, 0.2), (0.35, -0.1, 0.2)], (0.2, 0.55, 0.2), GOLDC, foot=darken(GOLDC, 0.2), amp=8)
+    k_rarity(k, stars, glow, 3.0, z=-0.4, orbit_y=1.0, orbit_r=2.6)
+
+
+def island_turtle(c, s, stars, shell, skin, coral, glow):
+    """An ancient turtle with a little island on its back: sand, a palm, coral spires, a treasure chest."""
+    k = K(c, s)
+    k.box("Body", (2.6, 0.8, 3.0), (0, 0.3, 0.3), shell)
+    k.box("Body", (2.9, 0.25, 3.3), (0, -0.05, 0.3), darken(shell, 0.2))
+    k.box("Body", (2.3, 0.2, 2.6), (0, -0.25, 0.3), (250, 235, 180))
+    k.box("Body", (2.2, 0.55, 2.5), (0, 0.95, 0.3), lighten(shell, 0.1))
+    k.box("Body", (1.6, 0.3, 1.8), (0, 1.3, 0.35), (240, 215, 150))
+    for sx in (-1, 1):
+        for z in (-0.5, 0.3, 1.1):
+            k.box("Body", (0.06, 0.4, 0.6), (sx * 1.32, 0.35, z), darken(shell, 0.25))
+    brown, green = (130, 85, 45), (70, 190, 80)
+    k.bone("Palm", (0.3, 1.45, 0.6), anim="rot", axis="Z", amp=5, speed=1)
+    k.box("Palm", (0.2, 0.5, 0.2), (0.3, 1.7, 0.6), brown)
+    k.box("Palm", (0.18, 0.5, 0.18), (0.38, 2.15, 0.6), brown, rot=(0, 0, -10))
+    k.box("Palm", (0.16, 0.45, 0.16), (0.5, 2.55, 0.6), brown, rot=(0, 0, -20))
+    for sx in (-1, 1):
+        k.box("Palm", (0.9, 0.08, 0.3), (0.55 + sx * 0.45, 2.75, 0.6), green, rot=(0, 0, -sx * 25))
+        k.box("Palm", (0.3, 0.08, 0.9), (0.55, 2.75, 0.6 + sx * 0.45), green, rot=(sx * 25, 0, 0))
+    k.ball("Palm", 0.18, (0.48, 2.68, 0.5), brown)
+    for (x, z, h) in ((-0.45, 0.0, 0.6), (-0.65, 0.7, 0.45), (-0.2, -0.3, 0.35)):
+        k.box("Body", (0.2, h, 0.2), (x, 1.45 + h / 2, z), coral)
+        k.box("Body", (0.22, 0.22, 0.22), (x, 1.5 + h, z), glow, mat="n")
+    k.box("Body", (0.45, 0.3, 0.32), (-0.2, 1.6, 1.0), brown)
+    k.box("Body", (0.47, 0.08, 0.34), (-0.2, 1.77, 1.0), GOLDC, mat="m")
+    k.ball("Body", 0.14, (0.05, 1.5, 1.1), GOLDC, mat="n")
+    k.box("Body", (0.5, 0.9, 0.12), (0.6, 0.8, 1.62), (160, 220, 255), mat="g")
+    k.bone("Head", (0, 0.2, -1.1), anim="rot", axis="X", amp=6, speed=1)
+    k.box("Head", (0.8, 0.6, 0.7), (0, 0.25, -1.35), skin)
+    k.box("Head", (1.2, 0.95, 1.1), (0, 0.5, -1.95), skin)
+    k_eyes(k, "Head", 0.7, -2.5, 0.33, 0.3)
+    for sx in (-1, 1):
+        k.box("Head", (0.4, 0.12, 0.1), (sx * 0.33, 0.95, -2.52), WHITE, rot=(0, 0, -sx * 10))
+    k_smile(k, "Head", 0.3, -2.5, 0.45)
+    for sx, t in SIDES:
+        k.bone("FlipF" + t, (sx * 1.2, 0.0, -0.6), anim="rot", axis="Y", amp=20 * sx, speed=1,
+               swim=dict(anim="rot", axis="Y", amp=35 * sx, speed=2, phase=0))
+        k.box("FlipF" + t, (1.5, 0.18, 0.7), (sx * 1.85, -0.1, -0.75), skin, rot=(0, sx * 20, 0))
+        k.bone("FlipB" + t, (sx * 1.1, 0.0, 1.3), anim="rot", axis="Y", amp=14 * sx, speed=1, phase=math.pi)
+        k.box("FlipB" + t, (0.9, 0.15, 0.6), (sx * 1.45, -0.1, 1.5), skin, rot=(0, -sx * 25, 0))
+    k.box("Body", (0.4, 0.3, 0.5), (0, 0.0, 2.0), skin)
+    k_rarity(k, stars, glow, 2.9, z=0.3, orbit_y=1.0, orbit_r=2.6)
+
+
+def celestial_koi(c, s, stars, body, patch, fin, glow):
+    """A heavenly koi: patched scales, glowing whiskers, veil fins and six angel wings."""
+    k = K(c, s * 0.9)
+    k.bob(0.25)
+    k.box("Body", (1.3, 1.3, 2.0), (0, 0.7, 0.2), body)
+    k.box("Body", (0.9, 0.08, 0.8), (0.1, 1.36, 0.0), patch)
+    k.box("Body", (0.6, 0.08, 0.6), (-0.2, 1.36, 0.8), patch)
+    k.box("Body", (0.06, 0.6, 0.7), (0.66, 0.8, 0.5), patch)
+    k.box("Body", (0.06, 0.5, 0.6), (-0.66, 0.6, -0.2), patch)
+    k.box("Body", (1.15, 1.1, 0.8), (0, 0.7, -1.15), body)
+    k.box("Body", (0.8, 0.08, 0.5), (0, 1.26, -1.0), patch)
+    k.box("Body", (0.45, 0.3, 0.15), (0, 0.45, -1.6), BLUSH)
+    k_eyes(k, "Body", 0.88, -1.56, 0.38, 0.28)
+    for sx, t in SIDES:
+        k.bone("Whisk" + t, (sx * 0.25, 0.45, -1.6), anim="rot", axis="Y", amp=18 * sx, speed=1)
+        k.box("Whisk" + t, (0.06, 0.06, 0.9), (sx * 0.475, 0.45, -1.99), glow, rot=(0, -sx * 30, 0), mat="n")
+        k.bone("Fin" + t, (sx * 0.6, 0.3, -0.5), anim="rot", axis="Z", amp=15 * sx, speed=1)
+        k.box("Fin" + t, (0.9, 0.06, 0.7), (sx * 1.0, 0.15, -0.4), fin, rot=(0, 0, -sx * 30), mat="g")
+    k.box("Body", (0.08, 0.6, 1.4), (0, 1.6, 0.3), fin, mat="g")
+    out, zend = k_tail(k, (0, 0.7, 1.2), [((1.0, 1.0, 0.7), body, "p"), ((0.7, 0.75, 0.6), patch, "p")], amp=18)
+    k.box(out[-1][0], (0.08, 1.4, 1.3), (0, 1.15, zend + 0.45), fin, rot=(35, 0, 0), mat="g")
+    k.box(out[-1][0], (0.08, 1.2, 1.1), (0, 0.25, zend + 0.35), fin, rot=(-35, 0, 0), mat="g")
+    for p, (y, z, ang, ln) in enumerate(((1.25, -0.2, 35, 1.9), (0.95, 0.5, 10, 1.6), (0.6, 1.0, -20, 1.3))):
+        r = math.radians(ang)
+        for sx, t in SIDES:
+            n = "Wing%d%s" % (p + 1, t)
+            k.bone(n, (sx * 0.6, y, z), anim="rot", axis="Z", amp=20 * sx, speed=1, phase=p * 0.9,
+                   swim=dict(anim="rot", axis="Z", amp=36 * sx, speed=2, phase=p * 0.9))
+            k.box(n, (ln, 0.1, 0.55), (sx * (0.6 + math.cos(r) * ln / 2), y + math.sin(r) * ln / 2, z), glow,
+                  rot=(0, 0, sx * ang), mat="n")
+            k.box(n, (ln * 0.7, 0.08, 0.45), (sx * (0.6 + math.cos(r) * ln * 0.35), y + math.sin(r) * ln * 0.35 - 0.08,
+                                              z + 0.4), fin, rot=(0, 0, sx * ang), mat="g")
+    k_rarity(k, stars, glow, 2.4, z=-0.2, orbit_y=0.8, orbit_r=2.6)
+
+
+# ---------------------------------------------------------------------------
+# The roster. 1-3 stars are sea creatures, each element line its own family, all mean-looking;
+# every 4 and 5 star is a true sea dragon (the prize you work toward).
+#   Tide:  axolotl -> narwhal -> sea toad
+#   Coral: starfish -> isopod -> lionfish
+#   Storm: jellyfish -> electric eel -> mantis shrimp
+#   Abyss: anglerfish -> octopus -> vampire squid
+# Hybrids: leafy seahorse, whale, shark, crab, skull hermit, manta (each with a 3* evolution).
+# Kits not in the roster right now (tide_king, coral_golem, thunderbird, island_turtle,
+# celestial_koi, eel(serpent=True), octopus(king=True)) are kept for events or future species.
+# ---------------------------------------------------------------------------
 # --- 1 star (commons: the winch eggs) -------------------------------------------------
 c = creature("Splashfin", "Splashfin")
-sea_dragon(c, (45, 150, 255), (190, 235, 255), (25, 100, 210), crest="fin", wing="fin", tail_end="fin", size=0.85, stars=1)
+axolotl(c, 1.05, 1, (95, 180, 255), (255, 140, 190), (205, 238, 255), (40, 120, 220))
 
 c = creature("Reefback", "Reefling")
-sea_dragon(c, (255, 120, 150), (255, 225, 200), (120, 210, 160), horn=(255, 190, 210), crest="horns", wing=None,
-           tail_end="spike", size=0.85, stars=1, chunky=1.15)
-for (x, z) in ((-0.45, 0.0), (0.45, 0.5), (0.0, 0.9)):
-    c.box("Body", (0.25, 0.55, 0.25), (x * 0.85, 0.95, z * 0.85), (255, 190, 210))
+starfish(c, 1.05, 1, (255, 120, 150), (255, 225, 200), (120, 210, 160))
 
 c = creature("Zapjelly", "Zappy")
-sea_dragon(c, (255, 215, 50), (255, 245, 190), (255, 150, 30), glow=(255, 255, 150), crest="flame", wing="fin",
-           tail_end="orb", size=0.85, stars=1, whiskers=True)
+jellyfish(c, 1.05, 1, (255, 225, 90), (255, 255, 170), (255, 170, 40), (255, 250, 140))
 
 c = creature("Gloomeel", "Gloomy")
-sea_dragon(c, (120, 70, 200), (200, 170, 240), (70, 35, 130), glow=(160, 255, 220), crest="fin", wing=None,
-           tail_end="orb", size=0.85, stars=1, legs4=False, snout=1.2)
-c.bone("Lure", (0, 1.85 * 0.85, -1.2 * 0.85), parent="Head", anim="rot", axis="X", amp=16, speed=1)
-c.box("Lure", (0.08, 0.7, 0.08), (0, 1.95, -1.3), (70, 35, 130), rot=(30, 0, 0))
-c.ball("Lure", 0.35, (0, 2.25, -1.65), (160, 255, 220), mat="n")
+anglerfish(c, 1.05, 1, (95, 60, 170), (185, 155, 230), (60, 35, 120), (160, 255, 220))
 
 # --- 2 stars (rares + hybrids) -----------------------------------------------------
 c = creature("Wavecrest", "Wavecrest")
-sea_dragon(c, (30, 120, 235), (200, 240, 255), (120, 220, 255), glow=(150, 240, 255), crest="fin", wing="glow",
-           tail_end="fin", size=1.0, stars=2, whiskers=True)
+narwhal(c, 1.25, 2, (70, 140, 230), (210, 240, 255), (40, 100, 200), (240, 235, 215), glow=(150, 240, 255))
 
 c = creature("Shellguard", "Shellguard")
-sea_dragon(c, (240, 100, 90), (255, 220, 190), (255, 170, 120), horn=(255, 240, 220), crest="horns", wing=None,
-           tail_end="spike", size=1.0, stars=2, chunky=1.25)
-c.box("Body", (2.1, 0.7, 2.2), (0, 0.85, 0.4), (255, 140, 120))
-c.box("Body", (1.6, 0.3, 1.7), (0, 1.3, 0.4), (255, 200, 170))
+isopod(c, 1.25, 2, (240, 110, 100), (255, 215, 190), (255, 240, 220))
 
 c = creature("Voltfin", "Voltfin")
-sea_dragon(c, (60, 80, 200), (200, 210, 255), (255, 225, 40), glow=(255, 240, 90), crest="flame", wing="glow",
-           tail_end="flame", size=1.0, stars=2)
+eel(c, 1.25, 2, (50, 70, 190), (200, 210, 255), (255, 225, 40), (255, 240, 90))
 
 c = creature("Inkling", "Inkling")
-sea_dragon(c, (70, 40, 120), (190, 150, 230), (230, 90, 200), glow=(255, 120, 230), crest="horns", wing="fin",
-           tail_end="orb", size=1.0, stars=2, whiskers=True)
+octopus(c, 1.25, 2, (140, 70, 210), (210, 170, 240), (230, 90, 200), glow=(255, 120, 230))
 
 c = creature("Kelpdrake", "Kelpdrake")
-sea_dragon(c, (40, 175, 160), (210, 245, 220), (110, 220, 80), horn=(255, 205, 120), crest="horns", wing="fin",
-           tail_end="fin", size=1.0, stars=2)
+seahorse(c, 1.25, 2, (60, 180, 150), (220, 245, 210), (110, 210, 80))
 
 c = creature("Thunderwhale", "Thunderwhale")
-sea_dragon(c, (55, 115, 225), (225, 240, 255), (255, 230, 40), glow=(255, 240, 120), crest="fin", wing="fin",
-           tail_end="fin", size=1.05, stars=2, chunky=1.3, legs4=False)
+whale(c, 1.25, 2, (60, 115, 220), (225, 240, 255), (255, 230, 40), (255, 240, 120))
 
 c = creature("Inkshark", "Inkshark")
-sea_dragon(c, (60, 70, 140), (210, 210, 235), (140, 90, 220), crest="fin", wing="fin", tail_end="fin", size=1.0,
-           stars=2, snout=1.35)
+shark(c, 1.25, 2, (70, 80, 150), (225, 225, 240), (140, 90, 220))
 
 c = creature("Sparkcrab", "Sparkcrab")
-sea_dragon(c, (255, 125, 80), (255, 230, 200), (255, 220, 40), glow=(255, 240, 90), crest="horns", wing=None,
-           tail_end="spike", size=1.0, stars=2, chunky=1.2)
-for sx, tag in ((-1, "L"), (1, "R")):
-    c.bone("Claw" + tag, (sx * 1.0, 0.3, -0.6), anim="rot", axis="Y", amp=12 * sx, speed=2,
-           swim=dict(anim="rot", axis="Y", amp=30 * sx, speed=4, phase=0))
-    c.box("Claw" + tag, (0.5, 0.5, 0.8), (sx * 1.3, 0.3, -0.9), (255, 125, 80))
-    c.box("Claw" + tag, (0.7, 0.6, 0.6), (sx * 1.4, 0.4, -1.45), (255, 230, 60), mat="n")
+crab(c, 1.25, 2, (255, 125, 80), (255, 230, 200), (255, 160, 90), glow=(255, 240, 90))
 
 c = creature("Bonereef", "Bonereef")
-sea_dragon(c, (235, 230, 210), (150, 90, 210), (190, 120, 255), glow=(190, 120, 255), crest="horns", wing="fin",
-           tail_end="spike", size=1.0, stars=2, spikes_col=(190, 120, 255))
+skull_hermit(c, 1.25, 2, (240, 235, 215), (150, 90, 210), (190, 120, 255))
 
 c = creature("Voidray", "Voidray")
-sea_dragon(c, (60, 30, 110), (200, 180, 240), (255, 220, 60), glow=(255, 230, 90), crest="fin", wing="glow",
-           tail_end="orb", size=1.0, stars=2, legs4=False)
+manta(c, 1.25, 2, (60, 30, 110), (220, 210, 245), (255, 220, 60), (255, 230, 90))
 
 # --- 3 stars (epics) ---------------------------------------------------------------
 c = creature("Tsunamaw", "Tsunamaw")
-sea_dragon(c, (20, 95, 220), (180, 230, 255), (90, 210, 255), glow=(140, 240, 255), crest="horns", wing="glow",
-           tail_end="fin", size=1.2, stars=3, whiskers=True, horn=(230, 250, 255))
+sea_toad(c, 1.45, 3, (40, 110, 220), (190, 230, 255), (120, 220, 255), (150, 240, 255))
 
 c = creature("Coralord", "Coralord")
-sea_dragon(c, (235, 80, 130), (255, 210, 220), (120, 230, 170), glow=(255, 160, 210), crest="horns", wing="fin",
-           tail_end="spike", size=1.2, stars=3, chunky=1.15, horn=(255, 200, 220))
+lionfish(c, 1.45, 3, (235, 80, 120), (255, 235, 225), (255, 160, 190), (255, 170, 215))
 
 c = creature("Thunderjaw", "Thunderjaw")
-sea_dragon(c, (40, 45, 90), (180, 190, 230), (255, 220, 40), glow=(255, 240, 80), crest="flame", wing="glow",
-           tail_end="flame", size=1.2, stars=3, snout=1.2)
+mantis_shrimp(c, 1.45, 3, (255, 200, 40), (255, 240, 190), (60, 90, 220), (130, 220, 255))
 
 c = creature("Nightfang", "Nightfang")
-sea_dragon(c, (35, 20, 60), (130, 90, 190), (200, 60, 255), glow=(220, 90, 255), crest="horns", wing="glow",
-           tail_end="orb", size=1.2, stars=3, horn=(220, 210, 240))
+vampire_squid(c, 1.45, 3, (60, 25, 90), (120, 30, 90), (220, 90, 255))
+
+# --- 3 star hybrid evolutions (two of the same hybrid fused) -------------------------
+c = creature("Kelpking", "Kelp King")
+seahorse(c, 1.45, 3, (30, 150, 130), (210, 250, 220), (120, 230, 90), glow=(170, 255, 140), king=True)
+
+c = creature("TempestWhale", "Tempest Whale")
+whale(c, 1.45, 3, (45, 70, 170), (220, 235, 255), (255, 230, 60), (255, 245, 120), tempest=True)
+
+c = creature("AbyssShark", "Abyss Shark")
+shark(c, 1.45, 3, (40, 40, 100), (200, 200, 230), (150, 90, 255), glow=(170, 110, 255), abyss=True)
+
+c = creature("Voltclaw", "Voltclaw")
+crab(c, 1.45, 3, (230, 90, 60), (255, 225, 190), (255, 140, 80), glow=(255, 245, 110), big=True)
+
+c = creature("Bonelord", "Bonelord")
+skull_hermit(c, 1.45, 3, (240, 235, 215), (120, 60, 180), (210, 130, 255), lord=True)
+
+c = creature("Nightray", "Nightray")
+manta(c, 1.45, 3, (30, 15, 70), (190, 170, 240), (255, 220, 60), (255, 235, 90), night=True)
 
 # --- 4 stars (legendary) -----------------------------------------------------------
 c = creature("Leviathan", "Leviathan")
@@ -355,38 +1347,6 @@ sea_dragon(c, (150, 20, 60), (255, 170, 190), (255, 210, 60), glow=(255, 90, 130
            tail_end="flame", size=1.5, stars=5, whiskers=True, chunky=1.15)
 tentacles(c, 4, 0.7, -0.75, (180, 30, 70), length=2, seg=(0.3, 0.45, 0.3), amp=18, tip=(255, 210, 60))
 
-
-# --- 3 star hybrid evolutions (two of the same hybrid fused) -------------------------
-c = creature("Kelpking", "Kelp King")
-sea_dragon(c, (30, 150, 130), (210, 250, 220), (120, 230, 90), glow=(170, 255, 140), crest="crown", wing="glow",
-           tail_end="fin", size=1.2, stars=3, whiskers=True)
-for z in (0.0, 0.6, 1.2):
-    c.box("Body", (0.5, 0.9, 0.12), (0.7, 1.0, z), (90, 200, 80), rot=(0, 0, -25))
-
-c = creature("TempestWhale", "Tempest Whale")
-sea_dragon(c, (40, 70, 170), (220, 235, 255), (255, 230, 60), glow=(255, 245, 120), crest="flame", wing="glow",
-           tail_end="flame", size=1.25, stars=3, chunky=1.4, legs4=False)
-
-c = creature("AbyssShark", "Abyss Shark")
-sea_dragon(c, (40, 40, 100), (200, 200, 230), (150, 90, 255), glow=(170, 110, 255), crest="fin", wing="glow",
-           tail_end="spike", size=1.2, stars=3, snout=1.5)
-
-c = creature("Voltclaw", "Voltclaw")
-sea_dragon(c, (230, 90, 60), (255, 225, 190), (255, 230, 50), glow=(255, 245, 110), crest="horns", wing="glow",
-           tail_end="spike", size=1.2, stars=3, chunky=1.3)
-for sx, tag in ((-1, "L"), (1, "R")):
-    c.bone("Claw" + tag, (sx * 1.2, 0.3, -0.6), anim="rot", axis="Y", amp=14 * sx, speed=2,
-           swim=dict(anim="rot", axis="Y", amp=32 * sx, speed=4, phase=0))
-    c.box("Claw" + tag, (0.6, 0.6, 1.0), (sx * 1.6, 0.35, -1.0), (230, 90, 60))
-    c.box("Claw" + tag, (0.8, 0.7, 0.7), (sx * 1.7, 0.45, -1.7), (255, 245, 110), mat="n")
-
-c = creature("Bonelord", "Bonelord")
-sea_dragon(c, (240, 235, 215), (120, 60, 180), (200, 110, 255), glow=(210, 130, 255), crest="crown", wing="glow",
-           tail_end="spike", size=1.2, stars=3, spikes_col=(210, 130, 255))
-
-c = creature("Nightray", "Nightray")
-sea_dragon(c, (30, 15, 70), (190, 170, 240), (255, 220, 60), glow=(255, 235, 90), crest="flame", wing="glow",
-           tail_end="orb", size=1.2, stars=3, legs4=False, chunky=1.3)
 
 # --- 4 star element legendaries (two Epics of the same element fused) ---------------
 c = creature("Tidalord", "Tidalord")
