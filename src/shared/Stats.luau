@@ -50,10 +50,19 @@ function Stats.capFor(sp: string?, bestDepth: number): number
 	return Stats.levelCap(bestDepth)
 end
 
--- Monsters can fuse together only if their keys match: same level, and a Divine monster only with
--- its own species
+-- Monsters can fuse together only if their keys match: normal monsters need the same level; a
+-- Divine monster fuses only with its own species, at ANY level (so two catches are never stuck)
 function Stats.fuseKey(sp: string?, lvl: number): string
-	return if Stats.isDivine(sp) then (sp :: string) .. ":" .. lvl else "L" .. lvl
+	return if Stats.isDivine(sp) then sp :: string else "L" .. lvl
+end
+
+-- The level a fuse makes: one above the highest monster going in (normal fuses are all one level)
+function Stats.fuseLevel(levels: { number }): number
+	local top = 1
+	for _, l in levels do
+		top = math.max(top, l)
+	end
+	return top + 1
 end
 
 function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string?, sixth: boolean?): MonsterStats

@@ -144,6 +144,26 @@ local function keyOf(pad: BasePart): string
 	return Stats.fuseKey(pad:GetAttribute("Sp") :: string?, (pad:GetAttribute("Lvl") or 1) :: number)
 end
 
+-- What the next pick must be: "Lv.4" for normal monsters, the species name for a Divine monster
+-- (they fuse with their own kind at any level)
+local function pickWhat(): string
+	local first = chosen[1]
+	local sp = first and first:GetAttribute("Sp") :: string?
+	if sp and Stats.isDivine(sp) then
+		return Config.MONSTERS[sp].name
+	end
+	return "Lv." .. tostring(first and first:GetAttribute("Lvl"))
+end
+
+-- The level the fuse will make: one above the highest monster picked
+local function resultLevel(): number
+	local levels = {}
+	for _, p in chosen do
+		table.insert(levels, (p:GetAttribute("Lvl") or 1) :: number)
+	end
+	return Stats.fuseLevel(levels)
+end
+
 local function needed(): number
 	if #chosen == 0 then
 		return 2
@@ -223,7 +243,7 @@ local function helperText(): string
 		end
 		return pickWord() .. " a monster to <FUSE>!"
 	elseif #chosen < need then
-		return pickWord() .. " " .. (need - #chosen) .. " more <Lv." .. tostring(chosen[1]:GetAttribute("Lvl")) .. ">!"
+		return pickWord() .. " " .. (need - #chosen) .. " more <" .. pickWhat() .. ">!"
 	end
 	return "Press <FUSE!>"
 end
@@ -371,12 +391,12 @@ local function renderTray(newIndex: number?)
 		hint.Text = pickWord() .. " a monster to fuse"
 	elseif not ready then
 		local left = need - #chosen
-		hint.Text = pickWord() .. " " .. left .. " more <font color=\"#6BF08F\">glowing</font> <font color=\"#FFCD32\">Lv." .. tostring(chosen[1]:GetAttribute("Lvl")) .. "</font> on your ship (" .. #chosen .. "/" .. need .. ")"
+		hint.Text = pickWord() .. " " .. left .. " more <font color=\"#6BF08F\">glowing</font> <font color=\"#FFCD32\">" .. pickWhat() .. "</font> on your ship (" .. #chosen .. "/" .. need .. ")"
 	else
 		hint.Text = "Ready! Press <font color=\"#6BF08F\">FUSE!</font>"
 	end
 	local res = resultLbl :: TextLabel
-	res.Text = if #chosen > 0 then "Lv." .. tostring((chosen[1]:GetAttribute("Lvl") :: number) + 1) .. "\n???" else "?"
+	res.Text = if #chosen > 0 then "Lv." .. tostring(resultLevel()) .. "\n???" else "?"
 	local go = goBtn :: TextButton
 	go.BackgroundColor3 = if ready then Color3.new(1, 1, 1) else Color3.fromRGB(150, 150, 150)
 	local g = go:FindFirstChildOfClass("UIGradient")
@@ -483,10 +503,10 @@ local function refreshMarks()
 	local left = need - #chosen
 	if left > 0 then
 		if partners < left then
-			tag = floatTag(chosen[1], "Need " .. need .. " Lv." .. tostring(lvl) .. " monsters!", C.Coral)
-			Hud.toast("Lv." .. tostring(lvl) .. " needs " .. need .. " monsters to fuse. Hatch " .. (left - partners) .. " more", C.Coral)
+			tag = floatTag(chosen[1], "Need " .. need .. " " .. pickWhat() .. "!", C.Coral)
+			Hud.toast(pickWhat() .. " needs " .. need .. " to fuse. Get " .. (left - partners) .. " more", C.Coral)
 		else
-			tag = floatTag(chosen[1], "Pick " .. left .. " more Lv." .. tostring(lvl) .. "!", C.Gold)
+			tag = floatTag(chosen[1], "Pick " .. left .. " more " .. pickWhat() .. "!", C.Gold)
 		end
 	end
 end
@@ -524,7 +544,7 @@ local function buildTray()
 	local go = UI.button({ Text = "FUSE!", Color = C.Muted, Size = UDim2.fromOffset(130, 76), Position = UDim2.fromOffset(548, 50), Parent = t }, function()
 		if busy or #chosen < needed() then
 			if #chosen < needed() then
-				Hud.toast(if #chosen == 0 then "Pick monsters of the same level" else "Lv." .. tostring(chosen[1]:GetAttribute("Lvl")) .. " needs " .. needed() .. " monsters", C.Coral)
+				Hud.toast(if #chosen == 0 then "Pick monsters of the same level" else pickWhat() .. " needs " .. needed() .. " to fuse", C.Coral)
 			end
 			return
 		end

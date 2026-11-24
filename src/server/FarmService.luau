@@ -1092,14 +1092,16 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 	end
 	if Stats.fuseKey(a.sp, a.lvl) ~= Stats.fuseKey(b.sp, b.lvl) then
 		if Stats.isDivine(a.sp) or Stats.isDivine(b.sp) then
-			return false, "Divine monsters only fuse with their own kind (same level)"
+			return false, "Divine monsters only fuse with their own kind"
 		end
 		return false, "Both monsters must be the same level"
 	end
-	if a.lvl >= Stats.maxLevel(a.sp) then
+	-- the child is one level above the highest monster going in (Divine pairs can differ in level)
+	local newLvl = Stats.fuseLevel({ a.lvl, b.lvl })
+	if newLvl > Stats.maxLevel(a.sp) then
 		return false, "Already max level"
 	end
-	if a.lvl + 1 > Stats.capFor(a.sp, data.bestDepth) then
+	if newLvl > Stats.capFor(a.sp, data.bestDepth) then
 		return false, "Beat the next boss to fuse higher! (max Lv." .. Stats.levelCap(data.bestDepth) .. ")"
 	end
 	local na, nb = nestOfUid(data, uidA), nestOfUid(data, uidB)
@@ -1135,7 +1137,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 	for _, m in fed do
 		table.insert(species, m.sp)
 	end
-	local outcomes = Stats.fuseOdds(species, a.lvl, luck)
+	local outcomes = Stats.fuseOdds(species, newLvl - 1, luck)
 	local r = rng:NextNumber()
 	local sp = outcomes[#outcomes].sp
 	for _, o in outcomes do
@@ -1157,7 +1159,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 	end
 	-- a perk (Deep Rod) is kept: one of the parents' perks, picked at random if both have one
 	local perk = if a.perk and b.perk then (if rng:NextNumber() < 0.5 then a.perk else b.perk) else a.perk or b.perk
-	local child = { sp = sp, lvl = a.lvl + 1, stars = Stats.stars(sp), v = v, x6 = x6 or rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk }
+	local child = { sp = sp, lvl = newLvl, stars = Stats.stars(sp), v = v, x6 = x6 or rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk }
 	data.monsters[uidA] = nil
 	data.monsters[uidB] = nil
 	-- the extra monsters are eaten too (their nests free up); a perk on one can carry over

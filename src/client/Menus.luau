@@ -83,9 +83,36 @@ local function creatureView(parent: GuiObject, id: string, size: UDim2, pos: UDi
 	local cam = Instance.new("Camera")
 	cam.FieldOfView = 30
 	local h = MonsterModels.height(rig)
-	local foot = MonsterModels.footDepth(rig)
-	local mid = (h - foot) / 2
-	cam.CFrame = CFrame.lookAt(Vector3.new(-5.5, mid + 2.2, -11), Vector3.new(0, mid, 0))
+	-- the lowest point of the model (above 0 for a hovering monster, e.g. a Divine dragon)
+	local low = math.huge
+	for k, cf in rig.localCf do
+		low = math.min(low, cf.Position.Y - rig.parts[k].Size.Y / 2)
+	end
+	local mid = (h + low) / 2
+	-- pull back far enough that the whole creature stays in frame while it sways (the idle loop below
+	-- turns it -10 degrees +- 0.4 rad), e.g. a Divine dragon's wings; never closer than the usual framing
+	local dir = Vector3.new(-5.5, 2.2, -11)
+	local axes = CFrame.lookAt(dir, Vector3.zero)
+	local right, up = axes.RightVector, axes.UpVector
+	local centre = Vector3.new(0, mid, 0)
+	local ext = 0
+	for _, sway in { -0.4, 0, 0.4 } do
+		local turn = CFrame.Angles(0, math.rad(-10) + sway, 0)
+		for k, cf in rig.localCf do
+			local c = turn * cf
+			local half = rig.parts[k].Size / 2
+			for _, sx in { -1, 1 } do
+				for _, sy in { -1, 1 } do
+					for _, sz in { -1, 1 } do
+						local p = c * Vector3.new(half.X * sx, half.Y * sy, half.Z * sz) - centre
+						ext = math.max(ext, math.abs(p:Dot(right)), math.abs(p:Dot(up)))
+					end
+				end
+			end
+		end
+	end
+	local dist = math.max(dir.Magnitude, ext * 1.08 / math.tan(math.rad(cam.FieldOfView / 2)))
+	cam.CFrame = CFrame.lookAt(centre + dir.Unit * dist, centre)
 	cam.Parent = vp
 	vp.CurrentCamera = cam
 	table.insert(viewports, { vp = vp, rig = rig, cf = CFrame.Angles(0, math.rad(-10), 0) })
