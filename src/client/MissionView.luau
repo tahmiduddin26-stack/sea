@@ -44,9 +44,10 @@ function MissionView.init(screen: ScreenGui)
 	local rows: { [number]: { frame: Frame, fill: Frame, count: TextLabel, title: TextLabel, reward: TextLabel, id: number, shown: number } } = {}
 	local expanded = Platform.mode() == "key"
 
-	-- Phones (touch mode): a compact board tucked under the currencies in the top-left, short
-	-- enough to stay clear of the thumbstick (bottom-left). PC / console: the roomy board on
-	-- the left edge with the reward line.
+	-- Phones (touch mode): a compact board at the bottom, just left of the Fuse heart (the money
+	-- has the left edge to itself, Hud.setMode). Its header sits at the bottom and the rows open
+	-- UPWARD, over the deck: clear of the Sell button, the thumbstick and the battle bar.
+	-- PC / console: the roomy board on the left edge with the reward line.
 	local compact = false
 	local lastOff = 0
 	local rowH, gap = ROW_H, GAP
@@ -57,20 +58,25 @@ function MissionView.init(screen: ScreenGui)
 		local H = if expanded then Config.MISSIONS.count * (rowH + gap) + 34 else 30
 		-- narrow so it doesn't run across the screen, with real gaps between the rows
 		holder.Size = UDim2.fromOffset(if compact then 230 else 268, H)
-		arrow.Text = if expanded then "▲" else "▼"
 		if compact then
-			holder.AnchorPoint = Vector2.new(0, 0)
+			-- opens upward: the arrow points the way the board will open
+			arrow.Text = if expanded then "▼" else "▲"
 			lastOff = Platform.topInset()
-			holder.Position = UDim2.fromOffset(14, lastOff + 58) -- under the coins / pearls row
+			holder.AnchorPoint = Vector2.new(1, 1)
+			holder.Position = UDim2.new(0.5, -80, 1, -10) -- bottom, left of the Fuse heart
+			header.Position = UDim2.new(0, 0, 1, -28)
 		else
+			arrow.Text = if expanded then "▲" else "▼"
 			holder.AnchorPoint = Vector2.new(0, 1)
 			holder.Position = UDim2.new(0, 14, 0.5, -34)
+			header.Position = UDim2.fromOffset(0, 0)
 		end
 	end
 	layout()
 
 	local function build(i: number, m: any)
-		local f = UI.panel({ Size = UDim2.new(1, 0, 0, rowH), Position = UDim2.fromOffset(0, 34 + (i - 1) * (rowH + gap)), Radius = 14, Parent = holder })
+		-- phones: rows stack from the top of the board down to the header at the bottom
+		local f = UI.panel({ Size = UDim2.new(1, 0, 0, rowH), Position = UDim2.fromOffset(0, (if compact then 0 else 34) + (i - 1) * (rowH + gap)), Radius = 14, Parent = holder })
 		local title = UI.label({ Text = label(m), Stroke = 0, TextColor3 = C.Ink, MaxText = if compact then 22 else 17, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -60, 0, if compact then 26 else 22), Position = UDim2.fromOffset(10, if compact then 3 else 3), Parent = f })
 		local count = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Deep, MaxText = if compact then 22 else 17, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.fromOffset(52, if compact then 26 else 22), Position = UDim2.new(1, -58, 0, 3), Parent = f })
 		-- the bar sits well below the words so the two never touch
@@ -97,7 +103,9 @@ function MissionView.init(screen: ScreenGui)
 			layout()
 		end
 		local list = snap.missions or {}
-		holder.Visible = snap.tutorial >= Config.TUTORIAL_DONE and #list > 0
+		-- on phones the board shares the bottom with the fuse tray: step aside while it is open
+		local Hud = require(script.Parent.Hud) :: any
+		holder.Visible = snap.tutorial >= Config.TUTORIAL_DONE and #list > 0 and not (compact and Hud.fuseOpen)
 		-- closed: just the header (rows are only built while open)
 		if not expanded then
 			for i, r in rows do
@@ -169,6 +177,8 @@ function MissionView.init(screen: ScreenGui)
 				else
 					refresh()
 				end
+			elseif compact then
+				refresh() -- (cheap) picks up the fuse tray opening / closing, which sends no data
 			end
 		end
 	end)

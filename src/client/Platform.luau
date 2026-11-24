@@ -118,7 +118,29 @@ function Platform.topInset(): number
 		return GuiService:GetGuiInset()
 	end)
 	local px = if ok and tl then tl.Y else 0
+	-- the newer top bar also reports its own rect; take whichever is taller
+	local ok2, bar = pcall(function()
+		return GuiService.TopbarInset
+	end)
+	if ok2 and bar then
+		px = math.max(px, bar.Max.Y)
+	end
 	return math.max(px / rootScale.Scale, 44) -- at least the usual 44-unit Roblox bar
+end
+
+-- Where Roblox's own top-left buttons (logo, menu, chat, mic) end, in design units from the left
+-- edge (0 off phones). Anything in the top strip must start to the right of this.
+function Platform.topbarLeft(): number
+	if mode ~= "touch" or not rootScale or rootScale.Scale <= 0 then
+		return 0
+	end
+	local ok, bar = pcall(function()
+		return GuiService.TopbarInset
+	end)
+	if ok and bar and bar.Min.X > 0 then
+		return bar.Min.X / rootScale.Scale
+	end
+	return 0
 end
 
 -- The UI's size in design units right now (menus shrink to fit it)
@@ -354,6 +376,18 @@ function Platform.init()
 	if Platform.onMode then
 		Platform.onMode(mode)
 	end
+	-- Roblox reports its top bar's height a moment after the game starts (and again if it changes):
+	-- re-run the phone layout then, or the top-left HUD sits under Roblox's own buttons
+	local function topbarChanged()
+		if mode == "touch" and Platform.onMode then
+			Platform.onMode(mode)
+		end
+	end
+	pcall(function()
+		GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(topbarChanged)
+	end)
+	task.delay(1, topbarChanged)
+	task.delay(4, topbarChanged)
 	refreshStickers()
 	if mode == "pad" then
 		Platform.showGuide()

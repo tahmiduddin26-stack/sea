@@ -423,8 +423,31 @@ local function popNumber(lbl: TextLabel, delta: number, color: Color3)
 	UI.tween(sc, 0.3, { Scale = 1 }, Enum.EasingStyle.Back)
 end
 
+-- Resize a currency chip (Hud.setMode: phones draw all three at one size, PC keeps coins biggest)
+local function sizeCurrency(amount: TextLabel, size: number, width: number)
+	local f = amount.Parent :: Frame
+	f:SetAttribute("Sz", size)
+	f.Size = UDim2.fromOffset(width, size)
+	local img = f:FindFirstChildOfClass("ImageLabel")
+	if img then
+		img.Size = UDim2.fromOffset(size, size)
+	end
+	amount.Size = UDim2.fromOffset(190, size * 0.78)
+	amount.Position = UDim2.new(0, size + 6, 0.11, 0)
+	local cap = amount:FindFirstChildOfClass("UITextSizeConstraint")
+	if cap then
+		cap.MaxTextSize = math.min(40, math.floor(size * 0.78))
+	end
+	local q = f:FindFirstChild("Info") :: GuiObject?
+	if q then
+		local fs = math.min(40, size * 0.78)
+		q.Position = UDim2.new(0, size + 6 + #amount.Text * 0.56 * fs + 8, 0.5, 0)
+	end
+end
+
 local function currency(y: number, icon: string, size: number, infoName: string): TextLabel
 	local f = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(260, size), Position = UDim2.new(0, 14, 1, y), Parent = root })
+	f:SetAttribute("Sz", size)
 	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = icon, Size = UDim2.fromOffset(size, size), Parent = f })
 	-- tap the chip (or its little "?") to learn what this currency is and where to get it
 	local hit = UI.new("TextButton", { BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1, 1), ZIndex = 5, Parent = f })
@@ -437,8 +460,9 @@ local function currency(y: number, icon: string, size: number, infoName: string)
 	-- keep the "?" snug against the number as it grows (788K, 1.2M ...)
 	-- (TextBounds is useless for scaled text, so the width is estimated from the digit count)
 	amount:GetPropertyChangedSignal("Text"):Connect(function()
-		local fs = math.min(40, size * 0.78)
-		q.Position = UDim2.new(0, size + 6 + #amount.Text * 0.56 * fs + 8, 0.5, 0)
+		local sz = (f:GetAttribute("Sz") or size) :: number
+		local fs = math.min(40, sz * 0.78)
+		q.Position = UDim2.new(0, sz + 6 + #amount.Text * 0.56 * fs + 8, 0.5, 0)
 	end)
 	return amount
 end
@@ -757,36 +781,47 @@ function Hud.init(screen: ScreenGui)
 		local sf = shellLbl.Parent :: Frame
 		if touch then
 			-- the HUD runs to the top edge on phones; only the top-left (Roblox's own menu and
-			-- chat buttons) is left clear. Coins and pearls sit side by side under those buttons,
-			-- the missions below them, and nothing reaches the thumbstick (bottom-left).
+			-- chat buttons) is left clear. The money is a column down the left edge under those
+			-- buttons (coins, pearls, shells), all three the same size; the Missions board lives at
+			-- the bottom (MissionView). Nothing here can run into the depth bar or the enemy health
+			-- bar during fights. Snug against the left edge of the safe area: past it is the iPhone
+			-- notch / Dynamic Island strip, which covers much of the left edge's height on many models.
 			local off = Platform.topInset()
-			cf.Size = UDim2.fromOffset(206, 56)
-			pf.Size = UDim2.fromOffset(150, 44)
-			cf.Position = UDim2.new(0, 14, 0, off + 2)
-			pf.Position = UDim2.new(0, 14 + 210, 0, off + 8)
-			sf.Size = UDim2.fromOffset(140, 40)
-			sf.Position = UDim2.new(0, 14 + 210 + 154, 0, off + 10)
+			local SZ = 40
+			sizeCurrency(coinLbl, SZ, 206)
+			sizeCurrency(pearlLbl, SZ, 206)
+			sizeCurrency(shellLbl, SZ, 206)
+			cf.Position = UDim2.new(0, 4, 0, off + 4)
+			pf.Position = UDim2.new(0, 4, 0, off + 4 + (SZ + 4))
+			sf.Position = UDim2.new(0, 4, 0, off + 4 + (SZ + 4) * 2)
+			-- the gear sits in the top-right corner, in line with FIGHT / Pick Team (the jump button
+			-- owns the bottom right); the spell / boost timers move one gear to its left
+			settingsBtn.AnchorPoint = Vector2.new(1, 0)
+			settingsBtn.Position = UDim2.new(1, -14, 0, 8)
+			if spellRow then
+				spellRow.Position = UDim2.new(1, -14 - 56 - 10, 0, 8)
+			end
 			-- the Starter Pack and the offer stay in a column down the right edge (the jump button
 			-- is small and sits lower), starting under the top-right row
-			-- the gear sits at the top of that column (the jump button owns the bottom right),
-			-- so the column starts one gear lower
-			settingsBtn.AnchorPoint = Vector2.new(1, 0)
-			settingsBtn.Position = UDim2.new(1, -14, 0, 70)
 			rightCol.AnchorPoint = Vector2.new(1, 0)
-			rightCol.Position = UDim2.new(1, -10, 0, 134)
+			rightCol.Position = UDim2.new(1, -10, 0, 92) -- its price chips poke 12 above the column: clear of the gear (ends y 63)
 			rightCol.Size = UDim2.fromOffset(140, 300)
 			rightLayout.FillDirection = Enum.FillDirection.Vertical
 		else
 			-- PC / console: the gear in the empty bottom-right corner
 			settingsBtn.AnchorPoint = Vector2.new(1, 1)
 			settingsBtn.Position = UDim2.new(1, -14, 1, -14)
-			cf.Size = UDim2.fromOffset(260, 56)
-			pf.Size = UDim2.fromOffset(260, 44)
+			if spellRow then
+				spellRow.Position = UDim2.new(1, -12, 0, 8)
+			end
+			-- PC keeps the coins biggest (bottom-left stack)
+			sizeCurrency(coinLbl, 56, 260)
+			sizeCurrency(pearlLbl, 44, 260)
+			sizeCurrency(shellLbl, 40, 260)
 			rightCol.Size = UDim2.fromOffset(140, 300)
 			rightLayout.FillDirection = Enum.FillDirection.Vertical
 			pf.Position = UDim2.new(0, 14, 1, -118)
 			cf.Position = UDim2.new(0, 14, 1, -68)
-			sf.Size = UDim2.fromOffset(260, 40)
 			sf.Position = UDim2.new(0, 14, 1, -162)
 			rightCol.AnchorPoint = Vector2.new(1, 0.5)
 			rightCol.Position = UDim2.new(1, -10, 0.5, -30)

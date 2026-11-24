@@ -59,6 +59,17 @@ function AdminPanel.init(screen: ScreenGui)
 		tab.Activated:Connect(function()
 			panel.Visible = not panel.Visible
 		end)
+		-- on phones the HUD reaches the top edge, where Roblox's own buttons sit at the left: keep the
+		-- tab (and its panel) just to the right of them
+		local Platform = require(script.Parent.Platform) :: any
+		task.spawn(function()
+			while tab.Parent do
+				local x = math.max(170, Platform.topbarLeft() + 6)
+				tab.Position = UDim2.new(0, x, 0, 8)
+				panel.Position = UDim2.new(0, x, 0, 54)
+				task.wait(1)
+			end
+		end)
 	end
 	if player:GetAttribute("Admin") then
 		build()
