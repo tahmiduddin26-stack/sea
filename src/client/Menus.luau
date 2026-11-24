@@ -607,16 +607,27 @@ function Menus.reveal(kind: string, p: any)
 			UI.pop(dmgSticker, 0.4)
 		Sound.play("Win", 0.6)
 	end)
-	local tap = UI.label({ Text = if Platform.mode() == "pad" then "Press the button to continue" elseif Platform.mode() == "key" then "Click to continue" else "Tap to continue", Size = UDim2.fromOffset(300, 30), Position = UDim2.new(0.5, 0, 0.965, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, TextTransparency = 1, Parent = f })
+	-- The first hatch of the tutorial leads straight into its fight: closing this card sends the new
+	-- monster out (the server moves the tutorial to step 5 right after the reveal fires, so the
+	-- snapshot can still say 4 here). Without this, players went back to fishing and never found FIGHT.
+	local tsnap = State.snapshot
+	local tutorialFight = kind == "hatch" and tsnap ~= nil and (tsnap.tutorial == 4 or tsnap.tutorial == 5)
+	local tapText = if Platform.mode() == "pad" then "Press the button to continue" elseif Platform.mode() == "key" then "Click to continue" else "Tap to continue"
+	if tutorialFight then
+		tapText = if Platform.mode() == "pad" then "Press the button to FIGHT" elseif Platform.mode() == "key" then "Click to FIGHT" else "Tap to FIGHT"
+	end
+	local tap = UI.label({ Text = tapText, Size = UDim2.fromOffset(300, 30), Position = UDim2.new(0.5, 0, 0.965, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, TextTransparency = 1, Parent = f })
 	task.delay(1.4, function()
 		tap.TextTransparency = 0
 	end)
 	local btn = UI.new("TextButton", { BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1, 1), ZIndex = 40, Parent = f })
 	local t0 = os.clock()
+	local closed = false
 	local function done()
-		if os.clock() - t0 < 1.2 then
+		if closed or os.clock() - t0 < 1.2 then
 			return
 		end
+		closed = true
 		conn:Disconnect()
 		State.revealing = false
 		Hud.refresh()
@@ -624,6 +635,20 @@ function Menus.reveal(kind: string, p: any)
 			open = nil
 		end
 		f:Destroy()
+		if tutorialFight then
+			Hud.press("Fight")
+		end
+	end
+	if tutorialFight then
+		-- a big FIGHT! button where the damage sticker's line ends, above everything (taps anywhere work too)
+		local fightCta = UI.button({ Text = "FIGHT!", Color = C.Coral, Size = UDim2.fromOffset(240, 64), Position = UDim2.new(0.5, 0, 0.9, 0), AnchorPoint = Vector2.new(0.5, 0.5), Visible = false, ZIndex = 41, Parent = f }, done)
+		dmgSticker.Position = UDim2.new(0.5, 0, 0.115 + 0.06, 0) -- move the sticker under the title out of the button's way
+		task.delay(1.2, function()
+			if fightCta.Parent then
+				fightCta.Visible = true
+				UI.pop(fightCta, 0.5)
+			end
+		end)
 	end
 	btn.Activated:Connect(done)
 	-- a controller needs no cursor here: A, B or X continues
@@ -636,6 +661,9 @@ function Menus.reveal(kind: string, p: any)
 		end
 	end)
 	task.delay(5, function()
+		if tutorialFight then
+			return -- the tutorial card waits for the player to choose FIGHT
+		end
 		pad:Disconnect()
 		done()
 	end)

@@ -604,6 +604,12 @@ local function haul(player: Player, kind: any)
 	if s.fishing then
 		return
 	end
+	-- Tutorial step 5 ("Try to beat the MINI BOSS"): the rod waits until that first fight. Players who
+	-- went back to fishing here got stuck on step 5 for good (HUD, missions and harbour stay locked).
+	if not deep and data.tutorial == 5 and next(data.monsters) ~= nil then
+		toast(player, "Press FIGHT! first: see what your new monster can do!", Color3.fromRGB(255, 110, 90))
+		return
+	end
 	if deep then
 		-- (no tutorial check: the rods only wait for their own unlock time, see below)
 		local PINK = Color3.fromRGB(255, 90, 170)

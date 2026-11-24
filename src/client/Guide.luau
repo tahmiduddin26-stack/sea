@@ -215,7 +215,10 @@ function Guide.init(screen: ScreenGui)
 		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open; it
 		-- ignores where the camera looks (you opened the tray, so you want the way shown)
 		local helper = Guide.helper
-		local quiet = isQuiet(helper ~= nil)
+		-- HUD targets (FIGHT, Fuse) point at a button, not the deck, so where the camera looks doesn't
+		-- matter: the FIGHT prompt used to vanish whenever the camera faced the arena
+		local hudStep = info ~= nil and (info.target == "fight" or info.target == "fuse")
+		local quiet = isQuiet(helper ~= nil or hudStep)
 		-- the Fuse prompt (tag + arrow) only makes sense when something CAN be fused right now
 		local noFuse = info ~= nil and info.target == "fuse" and not canFuseNow(snap)
 		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet and not noFuse
