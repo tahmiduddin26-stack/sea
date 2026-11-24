@@ -1104,7 +1104,16 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 		return false, "Lv." .. a.lvl .. " needs " .. need .. " monsters to fuse (you picked " .. (2 + #extras) .. ")"
 	end
 	local luck = FarmService.luckMult(player)
-	local outcomes = Stats.fuseOutcomes(a.sp, b.sp, a.lvl, luck)
+	-- every monster going in counts (Stats.fuseOdds): the result never hits softer than any of them
+	local fed = { a, b }
+	for _, x in extras do
+		table.insert(fed, x.m)
+	end
+	local species = {}
+	for _, m in fed do
+		table.insert(species, m.sp)
+	end
+	local outcomes = Stats.fuseOdds(species, a.lvl, luck)
 	local r = rng:NextNumber()
 	local sp = outcomes[#outcomes].sp
 	for _, o in outcomes do
@@ -1114,11 +1123,19 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 			break
 		end
 	end
+	-- the best finish (Golden / Rainbow) and a sixth star carry over from ANY monster fed in
 	local rank = { Normal = 1, Golden = 2, Rainbow = 3 }
-	local v = if (rank[a.v or "Normal"] or 1) >= (rank[b.v or "Normal"] or 1) then a.v else b.v
+	local v = a.v
+	local x6 = false
+	for _, m in fed do
+		if (rank[m.v or "Normal"] or 1) > (rank[v or "Normal"] or 1) then
+			v = m.v
+		end
+		x6 = x6 or m.x6 == true
+	end
 	-- a perk (Deep Rod) is kept: one of the parents' perks, picked at random if both have one
 	local perk = if a.perk and b.perk then (if rng:NextNumber() < 0.5 then a.perk else b.perk) else a.perk or b.perk
-	local child = { sp = sp, lvl = a.lvl + 1, stars = Stats.stars(sp), v = v, x6 = rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk }
+	local child = { sp = sp, lvl = a.lvl + 1, stars = Stats.stars(sp), v = v, x6 = x6 or rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk }
 	data.monsters[uidA] = nil
 	data.monsters[uidB] = nil
 	-- the extra monsters are eaten too (their nests free up); a perk on one can carry over

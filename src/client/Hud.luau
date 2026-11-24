@@ -865,8 +865,29 @@ function Hud.init(screen: ScreenGui)
 				local chip = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(20, 30, 60), BackgroundTransparency = 0.2, Size = UDim2.fromOffset(52, 56) }, { UI.corner(10), UI.stroke(2.5, C.Kelp) })
 				UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I.Team, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(0.5, 0, 0, 2), AnchorPoint = Vector2.new(0.5, 0), Parent = chip })
 				UI.label({ Text = "+" .. math.floor(friends * Config.FRIEND_BOOST * 100) .. "%", TextColor3 = C.Kelp, MaxText = 14, Size = UDim2.new(1, -4, 0, 16), Position = UDim2.fromOffset(2, 37), Parent = chip })
-				chip.LayoutOrder = -1
+				chip.LayoutOrder = -2
 				chip.Parent = spellRow
+			end
+			-- bought luck boosts (Fuse Luck / Insane Fuse Luck, x2 Luck 30m): icon, "x2" and a countdown,
+			-- with a gold edge so they read as the Robux boosts they are
+			local function boostChip(icon: string, mult: number, left: number)
+				local chip = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(20, 30, 60), BackgroundTransparency = 0.2, Size = UDim2.fromOffset(52, 56), LayoutOrder = -1 }, { UI.corner(10), UI.stroke(2.5, C.Gold) })
+				UI.new("ImageLabel", { BackgroundTransparency = 1, Image = icon, Size = UDim2.fromOffset(34, 34), Position = UDim2.new(0.5, 0, 0, 2), AnchorPoint = Vector2.new(0.5, 0), Parent = chip })
+				UI.label({ Text = "x" .. mult, TextColor3 = C.Gold, MaxText = 14, Size = UDim2.fromOffset(26, 16), Position = UDim2.new(1, -2, 0, 0), AnchorPoint = Vector2.new(1, 0), ZIndex = 2, Parent = chip })
+				UI.label({ Text = Format.time(left), MaxText = 14, Size = UDim2.new(1, -4, 0, 16), Position = UDim2.fromOffset(2, 37), Parent = chip })
+				chip.Parent = spellRow
+			end
+			if snap then
+				local now = State.now()
+				local fuseLeft = (snap.luckUntil or 0) - now
+				if fuseLeft > 0 then
+					local m = snap.luckMult or 2
+					boostChip(if m >= Config.INSANE_LUCK_MULT then Config.STORE_ICONS.InsaneLuck else Config.STORE_ICONS.FuseLuck, m, fuseLeft)
+				end
+				local luck30Left = (snap.luck30Until or 0) - now
+				if luck30Left > 0 then
+					boostChip(Config.STORE_ICONS.Luck30, 2, luck30Left)
+				end
 			end
 			if snap and snap.spellUntil then
 				for _, sp in Config.SPELLS do

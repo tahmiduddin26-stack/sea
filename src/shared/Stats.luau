@@ -413,6 +413,64 @@ function Stats.fuseOutcomes(spA: string, spB: string, lvl: number, luckMult: num
 	return out
 end
 
+-- How hard a species hits at a level, before its finish (Golden / Rainbow) and sixth star
+local function speciesDps(sp: string, lvl: number): number
+	return Stats.dps(sp, lvl)
+end
+
+-- The fuse odds for EVERY monster going in (a Lv3+ fuse eats 3-4), so the result is never weaker
+-- than what went in:
+--   * the odds come from the two strongest species picked (not just the first two),
+--   * when nothing upgrades, the child keeps the STRONGER parent's species (not a 50/50),
+--   * any result that would hit softer at the new level than the strongest monster fed in hits now
+--     becomes that strongest species instead.
+-- The child also keeps the best finish and a sixth star from any of them (FarmService.fuse), so its
+-- damage is always above every monster it was made from. Client odds rows use this too.
+function Stats.fuseOdds(species: { string }, lvl: number, luckMult: number): { Outcome }
+	local sorted = table.clone(species)
+	table.sort(sorted, function(x, y)
+		return speciesDps(x, lvl) > speciesDps(y, lvl)
+	end)
+	local top = sorted[1]
+	local second = sorted[2] or top
+	local raw = Stats.fuseOutcomes(top, second, lvl, luckMult)
+	local floor = speciesDps(top, lvl)
+	local out: { Outcome } = {}
+	local function add(sp: string, chance: number)
+		for _, o in out do
+			if o.sp == sp then
+				o.chance += chance
+				return
+			end
+		end
+		table.insert(out, { sp = sp, chance = chance })
+	end
+	for _, o in raw do
+		local sp = o.sp
+		if sp == second and second ~= top then
+			sp = top -- no upgrade: keep the stronger parent
+		elseif speciesDps(sp, lvl + 1) < floor then
+			sp = top -- would hit softer than the strongest monster fed in
+		end
+		add(sp, o.chance)
+	end
+	-- with a lot of luck the upgrade chances can add up to more than 100%: scale them back so the
+	-- odds shown are true and every outcome keeps its share of the roll
+	local total = 0
+	for _, o in out do
+		total += o.chance
+	end
+	if total > 1 then
+		for _, o in out do
+			o.chance /= total
+		end
+	end
+	table.sort(out, function(x, y)
+		return x.chance > y.chance
+	end)
+	return out
+end
+
 
 -- Coins per minute a run around this depth earns (coin packs + offline use it)
 function Stats.coinsPerMinute(bestDepth: number): number

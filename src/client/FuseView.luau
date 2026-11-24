@@ -307,7 +307,12 @@ local function updateOdds()
 	local right = oddsHeadRight :: TextLabel
 	right.Text = if luck > 1 then "Fuse luck x" .. math.floor(luck * 10 + 0.5) / 10 else ""
 	local lvl = chosen[1]:GetAttribute("Lvl") :: number
-	local outs = Stats.fuseOutcomes(chosen[1]:GetAttribute("Sp") :: string, chosen[2]:GetAttribute("Sp") :: string, lvl, luck)
+	-- every monster in the tray counts, same as the server's roll (Stats.fuseOdds)
+	local species = {}
+	for _, p in chosen do
+		table.insert(species, p:GetAttribute("Sp") :: string)
+	end
+	local outs = Stats.fuseOdds(species, lvl, luck)
 	for i, o in outs do
 		if i > 5 then
 			break

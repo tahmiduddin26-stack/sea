@@ -285,7 +285,7 @@ function Menus.fuse()
 		if #picked == 2 then
 			local a, b = snap.monsters[picked[1]], snap.monsters[picked[2]]
 			local luck = if (snap.luckUntil or 0) > State.now() then snap.luckMult else 1
-			for _, o in Stats.fuseOutcomes(a.sp, b.sp, a.lvl, luck) do
+			for _, o in Stats.fuseOdds({ a.sp, b.sp }, a.lvl, luck) do
 				local card = UI.panel({ Size = UDim2.fromOffset(92, 130), Color = Color3.fromRGB(230, 240, 255), Parent = outcomes })
 				local found = snap.index[o.sp] == true
 				creatureView(card, o.sp, UDim2.new(1, 0, 0, 90), nil, not found)
