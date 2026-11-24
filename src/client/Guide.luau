@@ -131,14 +131,15 @@ local function canFuseNow(snap: any): boolean
 	if not snap or not snap.monsters then
 		return false
 	end
-	local byLevel: { [number]: number } = {}
+	local byKey: { [string]: number } = {}
 	for _, m in snap.monsters do
 		local l = m.lvl :: number
-		byLevel[l] = (byLevel[l] or 0) + 1
-	end
-	for l, n in byLevel do
-		if l < Config.MAX_LEVEL and n >= Stats.fuseNeeded(l) then
-			return true
+		if l < Stats.maxLevel(m.sp) then
+			local k = Stats.fuseKey(m.sp, l)
+			byKey[k] = (byKey[k] or 0) + 1
+			if byKey[k] >= Stats.fuseNeeded(l, m.sp) then
+				return true
+			end
 		end
 	end
 	return false

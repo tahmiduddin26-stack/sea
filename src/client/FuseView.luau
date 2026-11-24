@@ -140,11 +140,15 @@ local function creatureView(parent: GuiObject, sp: string, size: UDim2, silhouet
 end
 
 -- how many monsters this fuse takes (Stats.fuseNeeded of the first pick's level; 2 before a pick)
+local function keyOf(pad: BasePart): string
+	return Stats.fuseKey(pad:GetAttribute("Sp") :: string?, (pad:GetAttribute("Lvl") or 1) :: number)
+end
+
 local function needed(): number
 	if #chosen == 0 then
 		return 2
 	end
-	return Stats.fuseNeeded(chosen[1]:GetAttribute("Lvl") :: number)
+	return Stats.fuseNeeded(chosen[1]:GetAttribute("Lvl") :: number, chosen[1]:GetAttribute("Sp") :: string?)
 end
 
 ---------------------------------------------------------------------------
@@ -184,24 +188,25 @@ local function helperPad(): BasePart?
 		if #chosen >= needed() then
 			return nil
 		end
-		local lvl = chosen[1]:GetAttribute("Lvl")
+		local key = keyOf(chosen[1])
 		local same = {}
 		for _, p in pads do
-			if p:GetAttribute("Lvl") == lvl then
+			if keyOf(p) == key then
 				table.insert(same, p)
 			end
 		end
 		return nearestPad(same)
 	end
-	local byLvl: { [number]: { BasePart } } = {}
+	local byKey: { [string]: { BasePart } } = {}
 	for _, p in pads do
-		local l = (p:GetAttribute("Lvl") or 1) :: number
-		byLvl[l] = byLvl[l] or {}
-		table.insert(byLvl[l], p)
+		local k = keyOf(p)
+		byKey[k] = byKey[k] or {}
+		table.insert(byKey[k], p)
 	end
 	local ok = {}
-	for l, list in byLvl do
-		if #list >= Stats.fuseNeeded(l) then
+	for _, list in byKey do
+		local first = list[1]
+		if #list >= Stats.fuseNeeded((first:GetAttribute("Lvl") or 1) :: number, first:GetAttribute("Sp") :: string?) then
 			for _, p in list do
 				table.insert(ok, p)
 			end
@@ -428,24 +433,26 @@ local function refreshMarks()
 			return
 		end
 		local snap = State.snapshot
-		local cap = Stats.levelCap(if snap then snap.bestDepth else 0)
-		local counts: { [number]: number } = {}
+		local best = if snap then snap.bestDepth else 0
+		local counts: { [string]: number } = {}
 		local mons: { BasePart } = {}
 		for _, n in myNests() do
 			if n:GetAttribute("State") == "mon" then
-				local l = (n:GetAttribute("Lvl") or 1) :: number
-				counts[l] = (counts[l] or 0) + 1
+				local k = keyOf(n)
+				counts[k] = (counts[k] or 0) + 1
 				table.insert(mons, n)
 			end
 		end
 		for _, n in mons do
 			local l = (n:GetAttribute("Lvl") or 1) :: number
-			local can = l < Config.MAX_LEVEL and l + 1 <= cap and (counts[l] or 0) >= Stats.fuseNeeded(l)
+			local sp = n:GetAttribute("Sp") :: string?
+			local can = l < Stats.maxLevel(sp) and l + 1 <= Stats.capFor(sp, best) and (counts[keyOf(n)] or 0) >= Stats.fuseNeeded(l, sp)
 			ShipView.marks[n] = if can then "ready" else "dim"
 		end
 		return
 	end
 	local lvl = chosen[1]:GetAttribute("Lvl")
+	local key = keyOf(chosen[1])
 	local need = needed()
 	for _, c in chosen do
 		ShipView.marks[c] = "picked"
@@ -453,7 +460,7 @@ local function refreshMarks()
 	local partners = 0
 	for _, n in myNests() do
 		if not table.find(chosen, n) and n:GetAttribute("State") == "mon" then
-			if #chosen < need and n:GetAttribute("Lvl") == lvl then
+			if #chosen < need and keyOf(n) == key then
 				ShipView.marks[n] = "ok"
 				partners += 1
 				-- a bouncing green "TAP!" so it's obvious which monsters you can pick next
@@ -753,8 +760,12 @@ local function toggle(pad: BasePart)
 		Hud.toast("All the slots are full. Press FUSE!", C.Gold)
 		return
 	end
-	if #chosen >= 1 and pad:GetAttribute("Lvl") ~= chosen[1]:GetAttribute("Lvl") then
-		Hud.toast("Pick a monster of the same level", C.Coral)
+	if #chosen >= 1 and keyOf(pad) ~= keyOf(chosen[1]) then
+		if Stats.isDivine(pad:GetAttribute("Sp") :: string?) or Stats.isDivine(chosen[1]:GetAttribute("Sp") :: string?) then
+			Hud.toast("Divine monsters only fuse with their own kind", C.Coral)
+		else
+			Hud.toast("Pick a monster of the same level", C.Coral)
+		end
 		return
 	end
 	table.insert(chosen, pad)

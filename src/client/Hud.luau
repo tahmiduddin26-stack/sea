@@ -628,12 +628,13 @@ function Hud.refresh()
 	-- the heart is replaced by the fuse tray while the tray is open
 	fuseBtn.Visible = snap.tutorial >= 10 and not Hud.inBattle and not Hud.fuseOpen
 	-- the ring pulses when some level has enough monsters to fuse (Stats.fuseNeeded)
-	local byLvl: { [number]: number } = {}
+	local byKey: { [string]: number } = {}
 	local canFuse = false
 	for _, m in snap.monsters do
-		if m.lvl < Config.MAX_LEVEL then
-			byLvl[m.lvl] = (byLvl[m.lvl] or 0) + 1
-			if byLvl[m.lvl] >= Stats.fuseNeeded(m.lvl) then
+		if m.lvl < Stats.maxLevel(m.sp) then
+			local k = Stats.fuseKey(m.sp, m.lvl)
+			byKey[k] = (byKey[k] or 0) + 1
+			if byKey[k] >= Stats.fuseNeeded(m.lvl, m.sp) then
 				canFuse = true
 			end
 		end

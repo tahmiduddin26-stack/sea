@@ -7,8 +7,8 @@ local Config = {}
 Config.GAME_NAME = "Merge Sea Monsters"
 Config.DATASTORE_NAME = "TideTamers_v1"
 Config.AUTOSAVE_INTERVAL = 90
--- Studio-only admin controls (AdminService re-checks RunService:IsStudio()): every member of
--- ADMIN_GROUP_ID (FLNK LTD, the group that owns the place), plus anyone listed in ADMIN_IDS
+-- Admin controls (AdminService) and the ADMIN tab: ONLY the accounts in ADMIN_IDS, in Studio and in
+-- live servers. ADMIN_GROUP_ID no longer grants anything.
 Config.ADMIN_GROUP_ID = 865496476 -- FLNK LTD
 Config.ADMIN_IDS = { 11140921447, 11110589684 } :: { number } -- TuckerFLNK, 11110589684 = Sylar9719
 
@@ -135,6 +135,10 @@ Config.ABYSS_ROD = {
 	perZone = 0.55,
 	pedestal = Vector3.new(8, 0, 92),
 }
+-- The Divine Tide Sovereign: the rarest catch in the game, Abyss Rod only. Chance per cast by the
+-- zone the hook stops in (about 1 in 500 casts overall; the Heart of the Trench is best). Luck does
+-- not change it.
+Config.DIVINE = { sp = "TideSovereign", chance = 1 / 700, zoneChance = { Heart = 1 / 120, LeviathanRest = 1 / 300 } }
 Config.ABYSS_ZONE_HEIGHT = 30
 Config.ABYSS_ZONES = {}
 for _, z in Config.DEEP_ZONES do
@@ -203,7 +207,7 @@ Config.FUSE_FACTOR = 0.9 -- (unused: fusing is instant now)
 Config.FUSE_SECONDS = 2 -- how long a fuse takes: only the swoop and heart burst, no waiting
 -- Timers also grow with RARITY: x this for a 1..5 star egg / fuse (a Mythic takes 8x a Common of
 -- the same level). Timers are wall-clock (os.time), so they keep running while you are offline.
-Config.TIMER_STAR_MULT = { 1, 1.6, 2.6, 4.5, 8 }
+Config.TIMER_STAR_MULT = { 1, 1.6, 2.6, 4.5, 8, 10 }
 Config.TIMER_MAX_SECONDS = 6 * 3600 -- no single timer is longer than 6 hours
 -- A new player's first TIMER_FAST_MINUTES of play are all fast: egg / fuse timers keep their short curve
 -- (HATCH_CURVE.min). After that the shortest timer rises smoothly over TIMER_RAMP_MINUTES up to
@@ -326,6 +330,8 @@ Config.ROLES = {
 	tank = { hp = 1.45, atk = 0.75, rate = 0.9 },
 	fast = { hp = 0.85, atk = 0.7, rate = 1.6 },
 	brute = { hp = 0.8, atk = 1.45, rate = 0.85 },
+	-- the Divine sovereigns: tougher than a tank AND harder-hitting than a brute
+	sovereign = { hp = 1.6, atk = 1.6, rate = 1.0 },
 }
 
 -- stars = rarity of the species (shown as the star row, like the reference game):
@@ -371,6 +377,12 @@ Config.MONSTERS = {
 	StormEmperor = { name = "Storm Emperor", elements = { "Storm", "Tide" }, role = "fast", stars = 5, secret = true },
 	CoralTitan = { name = "Coral Titan", elements = { "Coral", "Storm" }, role = "tank", stars = 5, secret = true },
 	TideSeraph = { name = "Tide Seraph", elements = { "Tide", "Coral" }, role = "balanced", stars = 5, secret = true },
+	-- 6 stars: Divine. The Tide Sovereign only comes from the Abyss Rod (Config.DIVINE). Divine
+	-- monsters only fuse with their own species: two Tide Sovereigns make an Eternal Sovereign,
+	-- two Eternal Sovereigns make a stronger one. They level past MAX_LEVEL, up to maxLevel,
+	-- ignoring the boss level cap. `power` multiplies every stat on top of the star bonus.
+	TideSovereign = { name = "Tide Sovereign", elements = { "Tide" }, role = "sovereign", stars = 6, secret = true, divine = true, maxLevel = 40, evolvesTo = "EternalSovereign" },
+	EternalSovereign = { name = "Eternal Sovereign", elements = { "Tide" }, role = "sovereign", stars = 6, secret = true, divine = true, maxLevel = 40, power = 1.6 },
 }
 -- Index / display order
 Config.MONSTER_ORDER = {
@@ -381,6 +393,7 @@ Config.MONSTER_ORDER = {
 	"Kelpking", "TempestWhale", "AbyssShark", "Voltclaw", "Bonelord", "Nightray",
 	"Tidalord", "ReefColossus", "Stormwyrm", "VoidSerpent", "Leviathan", "PearlDragon",
 	"KrakenKing", "StormEmperor", "CoralTitan", "TideSeraph",
+	"TideSovereign", "EternalSovereign",
 }
 -- Each element's line: 1* -> 2* -> 3* -> 4*
 Config.TIER_OF = {
@@ -421,6 +434,7 @@ Config.RARITY = {
 	{ name = "Epic", color = Color3.fromRGB(190, 110, 255) },
 	{ name = "Legendary", color = Color3.fromRGB(255, 200, 40) },
 	{ name = "Mythic", color = Color3.fromRGB(255, 80, 140) },
+	{ name = "Divine", color = Color3.fromRGB(110, 230, 255) },
 }
 -- Each element's signature move (fires when the energy bar fills). Simple and readable.
 Config.MOVES = {
@@ -441,7 +455,7 @@ Config.BASE_HP = 120
 Config.BASE_ATK = 5
 Config.BASE_ATTACK_INTERVAL = 1.1 -- seconds between attacks at rate 1
 Config.LEVEL_STAT_GROWTH = 1.6 -- every stat x this per level
-Config.STAR_MULT = { 1, 1.25, 1.6, 2.1, 3.0 }
+Config.STAR_MULT = { 1, 1.25, 1.6, 2.1, 3.0, 4.5 }
 Config.MAX_LEVEL = 32
 Config.SIZE_MAX_BONUS = 0.25 -- a monster at MAX_LEVEL looks this much bigger than at Lv1 (grows evenly with each level)
 Config.ABILITY_HITS = 4 -- normal hits to fill the energy bar
@@ -454,7 +468,7 @@ Config.EGG_LEVEL_WEIGHTS = { 80, 17, 3 } -- Lv1/2/3 from the winch
 Config.EGG_PRICE_BASE = 350 * Config.COIN_SCALE
 Config.EGG_PRICE_LEVEL_GROWTH = 2.0
 Config.EGG_LEVEL_PER_STAGE = 1 -- winch eggs gain a level for every stage you've reached
-Config.EGG_PRICE_STAR = { 1, 1.8, 3.5, 8, 20 }
+Config.EGG_PRICE_STAR = { 1, 1.8, 3.5, 8, 20, 50 }
 Config.EGG_PRICE_ELEMENT = { Tide = 1, Coral = 1.25, Storm = 1.6, Abyss = 2.2 }
 Config.EGG_PRICE_JITTER = 0.15
 
@@ -462,8 +476,8 @@ Config.EGG_PRICE_JITTER = 0.15
 -- species instead, tiny chance of a secret at Lv5+.
 Config.FUSE_PARENT_CHANCE = 0.30 -- split between the two parents' species
 Config.FUSE_SECRET_CHANCE = 0.02
--- Any fuse can very rarely come out with a 6th star (`x6` on the monster). It only adds a tiny
--- stat bonus: a showpiece, not a power jump.
+-- Any fuse can very rarely come out with a sixth star (`x6` on the monster, shown as a sparkle
+-- badge next to its stars: not the same as the Divine 6-star rarity). A tiny stat bonus: a showpiece.
 Config.SIXTH_STAR_CHANCE = 0.005
 Config.SIXTH_STAR_MULT = 1.01
 Config.FUSE_SECRET_MIN_LEVEL = 5

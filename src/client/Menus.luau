@@ -274,7 +274,7 @@ function Menus.fuse()
 			if uid then
 				local m = snap.monsters[uid]
 				creatureView(s, m.sp, UDim2.fromScale(1, 0.8))
-				UI.label({ Name = "Info", Text = "Lv." .. m.lvl .. " " .. UI.stars(Stats.shownStars(m.sp, m.x6)), Size = UDim2.new(1, 0, 0.2, 0), Position = UDim2.fromScale(0, 0.8), TextColor3 = C.Gold, Parent = s })
+				UI.label({ Name = "Info", Text = "Lv." .. m.lvl .. " " .. UI.stars(Stats.shownStars(m.sp, m.x6), m.x6), Size = UDim2.new(1, 0, 0.2, 0), Position = UDim2.fromScale(0, 0.8), TextColor3 = C.Gold, Parent = s })
 			end
 		end
 		for _, ch in outcomes:GetChildren() do
@@ -335,7 +335,7 @@ function Menus.fuse()
 		end)
 		creatureView(card, e.m.sp, UDim2.new(1, 0, 0, 84))
 		UI.label({ Text = "Lv." .. e.m.lvl, Size = UDim2.new(1, 0, 0, 20), Position = UDim2.fromOffset(0, 82), Parent = card })
-		UI.label({ Text = UI.stars(Stats.shownStars(e.m.sp, e.m.x6)), TextColor3 = C.Gold, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.fromOffset(0, 102), Parent = card })
+		UI.label({ Text = UI.stars(Stats.shownStars(e.m.sp, e.m.x6), e.m.x6), TextColor3 = C.Gold, Size = UDim2.new(1, 0, 0, 14), Position = UDim2.fromOffset(0, 102), Parent = card })
 		cards[e.uid] = card
 	end
 	if #list < 2 then
@@ -445,11 +445,11 @@ function Menus.index(tab: number?)
 	local tabs = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 38), Parent = body })
 	UI.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = tabs })
 	local cur = tab or 0
-	local names = { "All", "Common", "Rare", "Epic", "Legendary", "Mythic" }
+	local names = { "All", "Common", "Rare", "Epic", "Legendary", "Mythic", "Divine" }
 	for i, n in names do
 		local idx = i - 1
 		local col = if idx == 0 then C.Sea else Config.RARITY[idx].color
-		local b = UI.button({ Text = n, Color = col, Size = UDim2.fromOffset(118, 38), Parent = tabs }, function()
+		local b = UI.button({ Text = n, Color = col, Size = UDim2.fromOffset(104, 38), Parent = tabs }, function()
 			Menus.index(idx)
 		end)
 		if idx ~= cur then
@@ -586,9 +586,9 @@ function Menus.reveal(kind: string, p: any)
 		end
 		name.Text = (if def then def.name else p.sp) .. ' <font color="#FFCD32">Lv.' .. p.lvl .. "</font>"
 		local st = Stats.shownStars(p.sp, p.x6)
-		local rarity = Config.RARITY[math.min(st, #Config.RARITY)]
-		local rarityName = if st > #Config.RARITY then "SIX STAR" else string.upper(rarity.name)
-		stars.Text = UI.stars(st) .. '  <font color="#' .. rarity.color:ToHex() .. '">' .. rarityName .. "</font>"
+		local rarity = Config.RARITY[math.clamp(st, 1, #Config.RARITY)]
+		local rarityName = string.upper(rarity.name) .. (if p.x6 then " + SIXTH STAR" else "")
+		stars.Text = UI.stars(st, p.x6) .. '  <font color="#' .. rarity.color:ToHex() .. '">' .. rarityName .. "</font>"
 		if st >= 3 then
 			Hud.splash(rarityName .. "!", rarity.color)
 		end

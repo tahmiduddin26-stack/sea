@@ -24,16 +24,43 @@ function Stats.variant(id: string?): any
 	return Config.VARIANTS[1]
 end
 
--- Stars to show on a monster: its species rarity, or 6 for the very rare sixth-star fuse
-function Stats.shownStars(sp: string, sixth: boolean?): number
-	return if sixth then 6 else Stats.stars(sp)
+-- Stars to show on a monster: its species rarity (1-6, 6 = Divine). The very rare sixth-star fuse
+-- bonus (x6) is shown as a separate sparkle badge, so it never looks like the Divine rarity.
+function Stats.shownStars(sp: string, _sixth: boolean?): number
+	return Stats.stars(sp)
+end
+
+-- Divine species (Config.MONSTERS[..].divine): Abyss Rod only, fuse only with their own species
+function Stats.isDivine(sp: string?): boolean
+	local def = sp and Config.MONSTERS[sp]
+	return def ~= nil and def.divine == true
+end
+
+-- The highest level this species can ever reach
+function Stats.maxLevel(sp: string?): number
+	local def = sp and Config.MONSTERS[sp]
+	return if def and def.maxLevel then def.maxLevel else Config.MAX_LEVEL
+end
+
+-- The highest level this species can be fused up to right now: Divine monsters ignore the boss cap
+function Stats.capFor(sp: string?, bestDepth: number): number
+	if Stats.isDivine(sp) then
+		return Stats.maxLevel(sp)
+	end
+	return Stats.levelCap(bestDepth)
+end
+
+-- Monsters can fuse together only if their keys match: same level, and a Divine monster only with
+-- its own species
+function Stats.fuseKey(sp: string?, lvl: number): string
+	return if Stats.isDivine(sp) then (sp :: string) .. ":" .. lvl else "L" .. lvl
 end
 
 function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string?, sixth: boolean?): MonsterStats
 	local def = Config.MONSTERS[sp]
 	local role = Config.ROLES[def and def.role or "balanced"]
 	local grow = Config.LEVEL_STAT_GROWTH ^ (lvl - 1)
-	local star = Config.STAR_MULT[math.clamp(Stats.stars(sp), 1, 5)] * Stats.variant(variant).mult * (if sixth then Config.SIXTH_STAR_MULT else 1)
+	local star = Config.STAR_MULT[math.clamp(Stats.stars(sp), 1, #Config.STAR_MULT)] * (def and def.power or 1) * Stats.variant(variant).mult * (if sixth then Config.SIXTH_STAR_MULT else 1)
 	local k = Config.NUMBER_SCALE -- inflation, matched in Stats.enemy
 	return {
 		hp = math.floor(Config.BASE_HP * role.hp * grow * star * k),
@@ -263,8 +290,11 @@ end
 
 -- Highest level a monster can be fused up to: 3 + the stages you have cleared (bosses beaten)
 -- How many monsters of level `lvl` a fuse takes: Lv1 and Lv2 need 2, then it's the level itself
--- (Lv3 needs 3, Lv4 needs 4, Lv5 needs 5 -> one Lv6, and so on).
-function Stats.fuseNeeded(lvl: number): number
+-- (Lv3 needs 3, Lv4 needs 4, Lv5 needs 5 -> one Lv6, and so on). Divine monsters always need 2.
+function Stats.fuseNeeded(lvl: number, sp: string?): number
+	if Stats.isDivine(sp) then
+		return 2
+	end
 	return math.clamp(lvl, 2, Config.FUSE_NEEDED_MAX)
 end
 
@@ -364,6 +394,10 @@ function Stats.fuseOutcomes(spA: string, spB: string, lvl: number, luckMult: num
 		table.insert(out, { sp = sp, chance = chance })
 	end
 	local a, b = Config.MONSTERS[spA], Config.MONSTERS[spB]
+	-- Divine: two of the same species always make its evolution, or (no evolution left) itself
+	if a.divine or b.divine then
+		return { { sp = if spA == spB then (a.evolvesTo or spA) else spA, chance = 1 } }
+	end
 	local ea, eb = a.elements[1], b.elements[1]
 	local top = math.max(a.stars, b.stars)
 	local good = 0 -- total weight given to upgrades

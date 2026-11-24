@@ -77,6 +77,9 @@ local function eggType(sp: string): string
 	if not def then
 		return "Mystery"
 	end
+	if def.divine then
+		return "Divine"
+	end
 	local names = {}
 	for _, el in def.elements do
 		table.insert(names, Config.ELEMENTS[el].name)
@@ -88,7 +91,7 @@ local function nameTag(slot: Slot, sp: string, lvl: number, stars: number, heigh
 	local def = Config.MONSTERS[sp]
 	local gui = tag(slot.anchor, UDim2.fromOffset(170, 92), Vector3.new(0, height + 1.6, 0))
 	local col = MonsterModels.elementColor(sp)
-	UI.label({ Text = UI.stars(stars), Size = UDim2.new(1, 0, 0.22, 0), TextColor3 = C.Gold, Parent = gui })
+	UI.label({ Text = UI.stars(stars, slot.anchor:GetAttribute("Sixth") == true), Size = UDim2.new(1, 0, 0.22, 0), TextColor3 = if stars >= 6 then Config.RARITY[6].color else C.Gold, Parent = gui })
 	UI.label({ Text = variantPrefix(v) .. (if def then def.name else sp) .. ' <font color="#FFCD32">Lv.' .. lvl .. "</font>", Size = UDim2.new(1, 0, 0.34, 0), Position = UDim2.fromScale(0, 0.22), Parent = gui })
 	-- damage sticker: how hard it hits per second
 	local sticker = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 8, Size = UDim2.new(0.62, 0, 0.24, 0), Position = UDim2.fromScale(0.5, 0.57), AnchorPoint = Vector2.new(0.5, 0), Parent = gui })
@@ -157,11 +160,81 @@ local function nestSig(pad: BasePart): string
 		tostring(pad:GetAttribute("Sp")),
 		tostring(pad:GetAttribute("Lvl")),
 		tostring(pad:GetAttribute("Stars")),
+		tostring(pad:GetAttribute("Sixth")),
 		tostring(pad:GetAttribute("Price")),
 		tostring(pad:GetAttribute("Variant")),
 		tostring(pad:GetAttribute("Perk")),
 		tostring(pad:GetAttribute("RestUntil")),
 	}, "|")
+end
+
+-- A Divine monster (or its egg) is far too big for a normal nest: while one sits there, the nest
+-- grows into a royal nest twice the size (12 x 12 studs: still clear of the next nest, 18 away).
+-- Client-only looks: the real pad (prompts, attributes) stays as it is, just hidden underneath,
+-- and comes back the moment the Divine monster leaves.
+local ROYAL_BLUE, ROYAL_PALE = Color3.fromRGB(60, 110, 230), Color3.fromRGB(190, 230, 255)
+local ROYAL_GOLD, ROYAL_GLOW = Color3.fromRGB(255, 205, 60), Color3.fromRGB(150, 240, 255)
+local function royalNest(slot: Slot, on: boolean)
+	local pad = slot.anchor
+	local s = slot :: any
+	if on == (s.royal ~= nil) then
+		return
+	end
+	local hide = if on then 1 else 0
+	pad.LocalTransparencyModifier = hide
+	for _, d in pad:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.LocalTransparencyModifier = hide
+		end
+	end
+	if not on then
+		s.royal:Destroy()
+		s.royal = nil
+		return
+	end
+	local m = Instance.new("Model")
+	m.Name = "RoyalNest"
+	local function part(size: Vector3, cf: CFrame, color: Color3, mat: Enum.Material?, shape: Enum.PartType?): Part
+		local p = Instance.new("Part")
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.TopSurface = Enum.SurfaceType.Smooth
+		p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Size = size
+		p.CFrame = cf
+		p.Color = color
+		p.Material = mat or Enum.Material.SmoothPlastic
+		if shape then
+			p.Shape = shape
+		end
+		p.Parent = m
+		return p
+	end
+	local base = pad.CFrame
+	local top = pad.Size.Y / 2
+	part(Vector3.new(12, pad.Size.Y, 12), base, Color3.fromRGB(245, 222, 175))
+	-- a faint glowing pool in the middle
+	local pool = part(Vector3.new(0.06, 10, 10), base * CFrame.new(0, top + 0.03, 0) * CFrame.Angles(0, 0, math.rad(90)), ROYAL_GLOW, Enum.Material.Neon, Enum.PartType.Cylinder)
+	pool.Transparency = 0.7
+	-- a ring of twelve big blue-and-pale shells with gold caps, glowing gems on every third one
+	for i = 0, 11 do
+		local cf = base * CFrame.Angles(0, i / 12 * math.pi * 2, 0)
+		part(Vector3.new(3.2, 1.6, 1.3), cf * CFrame.new(0, top + 0.8, 5.6), if i % 2 == 0 then ROYAL_BLUE else ROYAL_PALE)
+		part(Vector3.new(3.3, 0.22, 1.4), cf * CFrame.new(0, top + 1.7, 5.6), ROYAL_GOLD)
+		if i % 3 == 0 then
+			part(Vector3.new(0.5, 0.5, 0.5), cf * CFrame.new(0, top + 2.1, 5.6) * CFrame.Angles(math.rad(45), 0, math.rad(45)), ROYAL_GLOW, Enum.Material.Neon)
+		end
+	end
+	local light = Instance.new("PointLight")
+	light.Color = ROYAL_GLOW
+	light.Range = 14
+	light.Brightness = 1.2
+	light.Shadows = false
+	light.Parent = pool
+	m.Parent = folder
+	s.royal = m
 end
 
 local function buildNest(slot: Slot)
@@ -172,6 +245,7 @@ local function buildNest(slot: Slot)
 	local lvl = (pad:GetAttribute("Lvl") or 1) :: number
 	local stars = (pad:GetAttribute("Stars") or 1) :: number
 	slot.kind = tostring(state)
+	royalNest(slot, Stats.isDivine(sp) and (state == "mon" or state == "egg" or state == "fuse"))
 	if state == "mon" and sp then
 		local rig = MonsterModels.build(sp, NEST_SCALE * Stats.sizeMult(lvl)) -- bigger with every level
 		if rig then

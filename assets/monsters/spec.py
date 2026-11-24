@@ -256,6 +256,176 @@ def sea_dragon(c, body, belly, accent, horn=None, glow=None, crest="horns", wing
 
 
 
+
+# ---------------------------------------------------------------------------
+# 6 STAR DIVINE: the Tide Sovereign (Abyss Rod only) and the Eternal Sovereign (two Tide
+# Sovereigns fused). Its own build, nothing like the other dragons: a crouching beast on four
+# wide-splayed clawed legs, a deep chest with a long plated belly running up an S-curved neck to a
+# crowned head with an open, fanged jaw and glowing eyes, a spiked tail curling up behind, and
+# giant bat wings sweeping up and out.
+# ---------------------------------------------------------------------------
+def sovereign(c, size, evolved=False):
+    k = K(c, size)
+    if evolved:
+        body, plate, dark, horn = (24, 28, 82), (120, 80, 200), (14, 16, 50), (255, 200, 120)
+        glow, mem, mem2, crownc, spike = (255, 150, 60), (60, 30, 110), (255, 90, 40), (255, 120, 40), (255, 110, 40)
+    else:
+        body, plate, dark, horn = (35, 95, 230), (120, 190, 255), (22, 60, 170), (215, 235, 255)
+        glow, mem, mem2, crownc, spike = (190, 245, 255), (110, 175, 255), (70, 130, 240), (255, 205, 60), (25, 70, 200)
+    cm = "n" if evolved else "p"
+    first_piece = len(c.pieces)
+    # it never touches down: the body bobs up on every downstroke of the wings (phase -pi/2 = highest
+    # while the wings sweep down through level)
+    c.bones[0].update(amp=0.22, speed=1, phase=-math.pi / 2,
+                      swim=dict(anim="move", axis="Y", amp=0.3, speed=2, phase=-math.pi / 2))
+    # body: a deep barrel with the chest raised at the front, the belly plate running up the chest
+    k.box("Body", (2.0, 1.5, 2.5), (0, 0.9, 0.45), body)
+    k.box("Body", (1.8, 1.9, 1.1), (0, 1.55, -0.65), body, rot=(-18, 0, 0))
+    k.box("Body", (1.2, 0.3, 2.2), (0, 0.17, 0.4), plate)
+    for i in range(4):
+        k.box("Body", (1.15 - i * 0.06, 0.42, 0.14), (0, 0.85 + i * 0.42, -1.12 - i * 0.14), plate, rot=(-18, 0, 0))
+    if evolved:
+        for (x, y, r) in ((-0.4, 1.2, 30), (0.35, 1.8, -25)):
+            k.box("Body", (0.08, 0.55, 0.06), (x, y, -1.3), glow, rot=(-18, 0, r), mat="n")
+    # spine blades
+    for i, z in enumerate((-0.6, -0.1, 0.4, 0.9, 1.4)):
+        h = 0.7 - abs(i - 2) * 0.1
+        k.box("Body", (0.2, h, 0.45), (0, 1.75 + h / 2 - 0.1 - i * 0.08, z), spike, rot=(-25, 0, 0))
+    # S-curved neck in two bones, belly plates up the front, blades down the back
+    k.bone("Neck1", (0, 2.2, -0.9), anim="rot", axis="X", amp=3, speed=1,
+           swim=dict(anim="rot", axis="X", amp=7, speed=2, phase=0))
+    k.box("Neck1", (1.0, 1.15, 0.95), (0, 2.65, -1.0), body, rot=(-15, 0, 0))
+    k.box("Neck1", (0.7, 1.0, 0.1), (0, 2.62, -1.5), plate, rot=(-15, 0, 0))
+    k.box("Neck1", (0.16, 0.5, 0.4), (0, 3.05, -0.55), spike, rot=(-30, 0, 0))
+    k.bone("Neck2", (0, 3.1, -1.1), parent="Neck1", anim="rot", axis="X", amp=3, speed=1, phase=-0.6,
+           swim=dict(anim="rot", axis="X", amp=7, speed=2, phase=-0.6))
+    k.box("Neck2", (0.9, 1.0, 0.85), (0, 3.5, -1.05), body)
+    k.box("Neck2", (0.62, 0.9, 0.1), (0, 3.5, -1.5), plate)
+    k.box("Neck2", (0.15, 0.45, 0.4), (0, 3.9, -0.7), spike, rot=(-35, 0, 0))
+    # head: long snout, open fanged jaw, glowing eyes under a scowl, cheek frills, horns, crown
+    k.bone("Head", (0, 3.95, -1.1), parent="Neck2", anim="rot", axis="X", amp=4, speed=1, phase=-1.2,
+           swim=dict(anim="rot", axis="X", amp=9, speed=2, phase=-1.2))
+    k.box("Head", (1.25, 1.0, 1.2), (0, 4.35, -1.35), body)
+    k.box("Head", (0.95, 0.55, 1.05), (0, 4.32, -2.35), body)
+    k.box("Head", (0.85, 0.35, 0.75), (0, 3.92, -2.15), (40, 10, 30))
+    for x in (-0.33, -0.11, 0.11, 0.33):
+        k.box("Head", (0.13, 0.42, 0.13), (x, 3.9, -2.72), WHITE)
+    for sx in (-1, 1):
+        k.box("Head", (0.12, 0.1, 0.06), (sx * 0.22, 4.5, -2.88), (20, 20, 30))
+        k.box("Head", (0.36, 0.22, 0.06), (sx * 0.4, 4.62, -1.97), glow, mat="n")
+        k.box("Head", (0.52, 0.13, 0.12), (sx * 0.4, 4.79, -1.99), (16, 18, 40), rot=(0, 0, sx * 22))
+        k.box("Head", (0.12, 0.6, 0.65), (sx * 0.68, 4.35, -1.1), spike, rot=(0, sx * 25, 0))
+        for j in range(3):
+            k.box("Head", (0.12, 0.42, 0.12), (sx * (0.72 + j * 0.08), 4.0 + j * 0.25, -0.75 + j * 0.1), spike,
+                  rot=(0, 0, -sx * (40 + j * 10)))
+        k.box("Head", (0.2, 0.75, 0.2), (sx * 0.42, 5.05, -0.75), horn, rot=(-45, 0, -sx * 18))
+    k.bone("Jaw", (0, 4.0, -1.6), parent="Head", anim="rot", axis="X", amp=4, speed=1,
+           swim=dict(anim="rot", axis="X", amp=16, speed=4, phase=0))
+    k.box("Jaw", (0.85, 0.3, 1.05), (0, 3.55, -2.2), plate, rot=(18, 0, 0))
+    for x in (-0.3, 0.3):
+        k.box("Jaw", (0.12, 0.36, 0.12), (x, 3.78, -2.6), WHITE)
+    k.box("Head", (1.05, 0.2, 0.9), (0, 4.95, -1.3), crownc, mat=cm)
+    for i, x in enumerate((-0.42, -0.21, 0.0, 0.21, 0.42)):
+        h = 0.62 if i == 2 else (0.5 if i in (1, 3) else 0.4)
+        k.box("Head", (0.18, h, 0.18), (x, 5.05 + h / 2, -1.7), crownc, mat=cm)
+        if evolved:
+            k.box("Head", (0.13, 0.3, 0.13), (x, 5.15 + h, -1.7), (255, 230, 120), mat="n")
+    k.box("Head", (0.24, 0.24, 0.08), (0, 4.95, -1.78), glow, rot=(0, 0, 45), mat="n")
+    if evolved:
+        k.box("Head", (0.18, 0.18, 0.45), (0, 4.45, -3.05), glow, mat="n")
+    # four wide-splayed clawed legs: front legs bent outward, big haunches behind
+    for sx, t in SIDES:
+        ph = 0 if sx < 0 else math.pi
+        n = "LegF" + t
+        k.bone(n, (sx * 0.95, 1.2, -0.6), anim="rot", axis="X", amp=5, speed=1, phase=ph,
+               swim=dict(anim="rot", axis="X", amp=16, speed=2, phase=ph))
+        k.box(n, (0.62, 1.15, 0.65), (sx * 1.25, 0.75, -0.75), body, rot=(0, 0, sx * 22))
+        k.box(n, (0.58, 0.8, 0.6), (sx * 1.5, 0.05, -0.95), body)
+        k.box(n, (0.85, 0.3, 0.95), (sx * 1.55, -0.42, -1.15), dark)
+        for cx in (-0.25, 0.0, 0.25):
+            k.box(n, (0.13, 0.16, 0.3), (sx * 1.55 + cx, -0.48, -1.7), WHITE)
+        n = "LegB" + t
+        k.bone(n, (sx * 1.0, 1.0, 1.0), anim="rot", axis="X", amp=5, speed=1, phase=ph + math.pi,
+               swim=dict(anim="rot", axis="X", amp=16, speed=2, phase=ph + math.pi))
+        k.box(n, (0.9, 1.25, 1.25), (sx * 1.3, 0.62, 1.0), body)
+        k.box(n, (0.56, 0.75, 0.6), (sx * 1.4, -0.05, 0.6), body)
+        k.box(n, (0.9, 0.3, 1.1), (sx * 1.45, -0.42, 0.3), dark)
+        for cx in (-0.25, 0.0, 0.25):
+            k.box(n, (0.13, 0.16, 0.3), (sx * 1.45 + cx, -0.48, -0.3), WHITE)
+    # the tail curls up behind, spiked all the way
+    tail = [((0, 0.9, 1.6), (0.9, 0.8, 0.95), (0, 0.95, 2.0), 0), ((0, 1.0, 2.4), (0.7, 0.65, 0.85), (0, 1.2, 2.75), -15),
+            ((0, 1.35, 3.1), (0.55, 0.5, 0.8), (0, 1.7, 3.35), -40), ((0, 2.0, 3.55), (0.4, 0.4, 0.7), (0, 2.4, 3.65), -65)]
+    prev = "Body"
+    for i, (piv, sz, pos, rx) in enumerate(tail):
+        n = "Tail%d" % (i + 1)
+        k.bone(n, piv, parent=prev, anim="rot", axis="Y", amp=8, speed=1, phase=-i * 0.8)
+        k.box(n, sz, pos, body, rot=(rx, 0, 0))
+        k.box(n, (0.14, 0.45, 0.35), (0, pos[1] + sz[1] / 2 + 0.12, pos[2] + 0.1), spike, rot=(rx + 30, 0, 0))
+        if evolved:
+            k.box(n, (0.18, 0.25, 0.2), (0, pos[1] + sz[1] / 2 + 0.38, pos[2] + 0.2), glow, mat="n")
+        prev = n
+    k.box("Tail4", (0.5, 0.12, 0.6), (0, 2.85, 3.7), spike, rot=(-65, 45, 0))
+    # giant bat wings, one bone a side so the whole wing flaps as a piece. Drawn in the wing's plane
+    # (x out from the body, y up): a thick stepped arm from the shoulder up to the wrist and on out to
+    # a clawed tip, three finger bones fanning down from the wrist, and the membrane filled in voxel
+    # rows between them, its trailing edge scalloped up between the finger tips.
+    S, W, T = (0.8, 2.0), (3.3, 4.3), (6.7, 3.3)
+    F = [(5.9, 1.5), (4.5, 0.55), (2.9, 0.45)]
+    B = (1.0, 1.1)
+    edge = [S, W, T, (6.0, 2.55), F[0], (5.05, 1.4), F[1], (3.65, 0.95), F[2], (2.0, 1.1), B]
+    zm = 0.38
+    rows = []
+    ys = [y for _, y in edge]
+    y = min(ys) + 0.15
+    while y < max(ys):
+        xs = []
+        for i in range(len(edge)):
+            (x1, y1), (x2, y2) = edge[i], edge[(i + 1) % len(edge)]
+            if (y1 <= y < y2) or (y2 <= y < y1):
+                xs.append(x1 + (y - y1) / (y2 - y1) * (x2 - x1))
+        xs.sort()
+        for j in range(0, len(xs) - 1, 2):
+            if xs[j + 1] - xs[j] > 0.12:
+                rows.append((xs[j], xs[j + 1], y))
+        y += 0.3
+
+    def spar(bone, p0, p1, thick, col, sx):
+        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+        ln = math.hypot(dx, dy)
+        ang = math.degrees(math.atan2(dy, dx))
+        k.box(bone, (ln + thick * 0.6, thick, thick), (sx * (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, 0.25), col,
+              rot=(0, 0, sx * ang))
+
+    for sx, t in SIDES:
+        n = "Wing" + t
+        k.bone(n, (sx * S[0], S[1], 0.2), anim="rot", axis="Z", amp=16 * sx, speed=1,
+               swim=dict(anim="rot", axis="Z", amp=24 * sx, speed=2, phase=0))
+        for i, (x1, x2, yy) in enumerate(rows):
+            col = mem if i % 2 == 0 else lighten(mem, 0.12)
+            k.box(n, (x2 - x1, 0.32, 0.1), (sx * (x1 + x2) / 2, yy, zm), col)
+        spar(n, S, W, 0.42, body, sx)
+        spar(n, W, T, 0.34, body, sx)
+        for f in F:
+            spar(n, W, f, 0.16, dark, sx)
+        k.box(n, (0.5, 0.5, 0.5), (sx * W[0], W[1], 0.25), dark, rot=(0, 0, 45))
+        k.box(n, (0.2, 0.7, 0.2), (sx * (T[0] + 0.2), T[1] + 0.25, 0.25), horn, rot=(0, 0, sx * 70))
+        k.box(n, (0.16, 0.45, 0.16), (sx * (W[0] - 0.05), W[1] + 0.4, 0.25), horn, rot=(0, 0, sx * -20))
+        if evolved:
+            for f in F:
+                k.box(n, (0.2, 0.2, 0.2), (sx * f[0], f[1], zm), glow, mat="n")
+            spar(n, W, T, 0.12, glow, sx)
+    # hover: lift every piece and pivot so its lowest claw floats HOVER units above its origin (the
+    # game stands a monster with its lowest piece on the nest / sea, so this keeps it in the air)
+    HOVER = 2.2
+    lift = HOVER * size
+    for pc in c.pieces[first_piece:]:
+        x, y, z = pc["pos"]
+        pc["pos"] = (x, y + lift, z)
+    for b in c.bones[1:]:
+        x, y, z = b["pivot"]
+        b["pivot"] = (x, y + lift, z)
+
+
 # ---------------------------------------------------------------------------
 # Creature kits. Every element line is a different kind of sea creature, so a
 # deck full of monsters reads as a zoo, not a row of dragons. Each kit works in
@@ -1379,6 +1549,13 @@ sea_dragon(c, (255, 110, 150), (255, 235, 240), (255, 230, 60), glow=(255, 190, 
 c = creature("TideSeraph", "Tide Seraph")
 sea_dragon(c, (235, 250, 255), (180, 230, 255), (90, 200, 255), glow=(200, 245, 255), crest="crown", wing="glow",
            tail_end="orb", size=1.5, stars=5, whiskers=True, snout=1.1)
+
+# --- 6 star Divine: Abyss Rod only, and they only fuse with their own kind -------------
+c = creature("TideSovereign", "Tide Sovereign")
+sovereign(c, 1.05)
+
+c = creature("EternalSovereign", "Eternal Sovereign")
+sovereign(c, 1.2, evolved=True)
 
 # ===========================================================================
 # ENEMIES

@@ -159,6 +159,7 @@ function FarmService.syncNest(player: Player, i: number)
 	pad:SetAttribute("Sp", nil)
 	pad:SetAttribute("Lvl", nil)
 	pad:SetAttribute("Stars", nil)
+	pad:SetAttribute("Sixth", nil)
 	pad:SetAttribute("ReadyAt", nil)
 	pad:SetAttribute("InBattle", nil)
 	pad:SetAttribute("Variant", nil)
@@ -220,6 +221,7 @@ function FarmService.syncNest(player: Player, i: number)
 			pad:SetAttribute("Variant", m.v)
 			pad:SetAttribute("Lvl", m.lvl)
 			pad:SetAttribute("Stars", Stats.shownStars(m.sp, m.x6))
+			pad:SetAttribute("Sixth", if m.x6 then true else nil)
 			pad:SetAttribute("Perk", m.perk) -- Deep Rod perk (shown on the name tag)
 			-- fainted in a fight: it rests until this os.time (the name tag counts it down)
 			pad:SetAttribute("RestUntil", if (m.restUntil or 0) > os.time() then m.restUntil else nil)
@@ -237,6 +239,7 @@ function FarmService.syncNest(player: Player, i: number)
 	pad:SetAttribute("Variant", item.v)
 	pad:SetAttribute("Lvl", item.lvl)
 	pad:SetAttribute("Stars", Stats.shownStars(item.sp, item.x6))
+	pad:SetAttribute("Sixth", if item.x6 then true else nil)
 	pad:SetAttribute("ReadyAt", nest.readyAt)
 	local left = nest.readyAt - os.time()
 	if left <= 0 then
@@ -354,7 +357,7 @@ end
 
 local function clearShip(ship: WorldBuilder.Ship)
 	for _, pad in ship.nests do
-		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "ReadyAt", "InBattle", "Price", "Variant", "RestUntil" } do
+		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "Sixth", "ReadyAt", "InBattle", "Price", "Variant", "RestUntil" } do
 			pad:SetAttribute(a, nil)
 		end
 		(pad:FindFirstChild("NestPrompt") :: ProximityPrompt):SetAttribute("Live", false)
@@ -759,7 +762,17 @@ local function haul(player: Player, kind: any)
 			-- The Abyss Rod: luckier still, its own perks, and Legendary / Mythic eggs at the bottom.
 			local z = ZONES[zone]
 			local e: any = nil
-			if abyss and z.mythic and rng:NextNumber() < z.mythic then
+			-- the rarest catch in the game: the Divine Tide Sovereign (Config.DIVINE, luck can't touch it)
+			local divineChance = Config.DIVINE.zoneChance[z.id] or Config.DIVINE.chance
+			if abyss and rng:NextNumber() < divineChance then
+				e = rareAbyssEgg(player, nil, true)
+				if e then
+					e.sp = Config.DIVINE.sp
+					e.stars = Stats.stars(e.sp)
+					Analytics.event(player, "DivineCatch", 1, { zone = z.id })
+				end
+			end
+			if not e and abyss and z.mythic and rng:NextNumber() < z.mythic then
 				e = rareAbyssEgg(player, nil, true)
 			end
 			if not e and abyss and z.legend and rng:NextNumber() < z.legend then
@@ -1077,13 +1090,16 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 	if not a or not b then
 		return false, "Pick two monsters"
 	end
-	if a.lvl ~= b.lvl then
+	if Stats.fuseKey(a.sp, a.lvl) ~= Stats.fuseKey(b.sp, b.lvl) then
+		if Stats.isDivine(a.sp) or Stats.isDivine(b.sp) then
+			return false, "Divine monsters only fuse with their own kind (same level)"
+		end
 		return false, "Both monsters must be the same level"
 	end
-	if a.lvl >= Config.MAX_LEVEL then
+	if a.lvl >= Stats.maxLevel(a.sp) then
 		return false, "Already max level"
 	end
-	if a.lvl + 1 > Stats.levelCap(data.bestDepth) then
+	if a.lvl + 1 > Stats.capFor(a.sp, data.bestDepth) then
 		return false, "Beat the next boss to fuse higher! (max Lv." .. Stats.levelCap(data.bestDepth) .. ")"
 	end
 	local na, nb = nestOfUid(data, uidA), nestOfUid(data, uidB)
@@ -1091,7 +1107,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 		return false, "Pick two monsters"
 	end
 	-- Lv3+ needs more of the same level: check the extras before anything is used up
-	local need = Stats.fuseNeeded(a.lvl)
+	local need = Stats.fuseNeeded(a.lvl, a.sp)
 	local extras: { { uid: string, m: any, nest: number } } = {}
 	local seen = { [uidA] = true, [uidB] = true }
 	for _, u in extra or {} do
@@ -1100,7 +1116,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 		end
 		local m = typeof(u) == "string" and data.monsters[u]
 		local n = m and nestOfUid(data, u)
-		if not m or not n or seen[u] or m.lvl ~= a.lvl then
+		if not m or not n or seen[u] or Stats.fuseKey(m.sp, m.lvl) ~= Stats.fuseKey(a.sp, a.lvl) then
 			return false, "All the monsters must be Lv." .. a.lvl
 		end
 		seen[u] = true

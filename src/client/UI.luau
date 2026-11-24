@@ -249,9 +249,10 @@ function UI.keyword(text: string): string
 	return (string.gsub(text, "<(.-)>", '<font color="#FFCD32">%1</font>'))
 end
 
--- Star row as text
-function UI.stars(n: number): string
-	return string.rep("★", n) .. string.rep("☆", math.max(0, 5 - n))
+-- Star row as text (6 = Divine: six full stars). sixth = the rare sixth-star fuse bonus, shown as a
+-- sparkle after the row so it never looks like the Divine rarity.
+function UI.stars(n: number, sixth: boolean?): string
+	return string.rep("★", n) .. string.rep("☆", math.max(0, 5 - n)) .. (if sixth then " ✦" else "")
 end
 
 return UI

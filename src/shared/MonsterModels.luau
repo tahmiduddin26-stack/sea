@@ -321,7 +321,7 @@ function MonsterModels.addAura(rig: Rig, stars: number)
 	if stars < 3 then
 		return
 	end
-	local rarity = Config.RARITY[math.clamp(stars, 1, 5)]
+	local rarity = Config.RARITY[math.clamp(stars, 1, #Config.RARITY)]
 	local att = Instance.new("Attachment")
 	att.Name = "Aura"
 	att.Position = Vector3.new(0, 0.5 * rig.scale, 0)
@@ -333,7 +333,7 @@ function MonsterModels.addAura(rig: Rig, stars: number)
 	pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5 * rig.scale), NumberSequenceKeypoint.new(1, 0) })
 	pe.Transparency = NumberSequence.new(0.1, 1)
 	pe.Lifetime = NumberRange.new(0.8, 1.4)
-	pe.Rate = if stars >= 5 then 24 elseif stars >= 4 then 14 else 7
+	pe.Rate = if stars >= 6 then 36 elseif stars >= 5 then 24 elseif stars >= 4 then 14 else 7
 	pe.Speed = NumberRange.new(1.5, 3)
 	pe.SpreadAngle = Vector2.new(180, 180)
 	pe.Shape = Enum.ParticleEmitterShape.Sphere
@@ -402,6 +402,7 @@ local EGG_FX = {
 	Storm = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 12, life = 0.3, speed = 3.5, accel = Vector3.zero, size = 0.24, light = 1 },
 	Abyss = { tex = "rbxasset://textures/particles/smoke_main.dds", rate = 4, life = 1.8, speed = 0.3, accel = Vector3.new(0, 0.8, 0), size = 0.5, light = 0.4 },
 	Mystery = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 3, life = 1.4, speed = 0.5, accel = Vector3.new(0, 1, 0), size = 0.2, light = 1 },
+	Divine = { tex = "rbxasset://textures/particles/sparkles_main.dds", rate = 22, life = 1.6, speed = 1.2, accel = Vector3.new(0, 2, 0), size = 0.32, light = 1 },
 }
 local RAINBOW_SEQ = ColorSequence.new({
 	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 90, 90)),
@@ -519,6 +520,51 @@ function MonsterModels.buildEgg(sp: string, scale: number, mystery: boolean?, va
 		add(Vector3.new(0.22, 0.22, 0.22), CFrame.new(0, 1.24, 0) * CFrame.Angles(0, math.rad(45), math.rad(45)), crack, "n")
 		aura(crack)
 		eggFx(shell, "Mystery", crack, scale, nil)
+		model.WorldPivot = CFrame.identity
+		return model
+	end
+
+	if def and def.divine then
+		-- the Divine egg: a royal blue metal shell, gold bands, a gold crown with a glowing gem, glowing
+		-- cracks of light, a gold ring and a storm of sparkles. Unmistakable on the pedestal.
+		local gold, light = Color3.fromRGB(255, 205, 60), Color3.fromRGB(170, 240, 255)
+		shell.Color = Color3.fromRGB(30, 65, 200)
+		shell.Material = Enum.Material.Metal
+		shell.Reflectance = 0.25
+		for _, y in { -0.45, 0.6 } do
+			for i = 0, 15 do
+				onShell(i / 16 * math.pi * 2, y, Vector3.new(0.34, 0.1, 0.06), gold, "m")
+			end
+		end
+		for i = 0, 7 do
+			onShell(i / 8 * math.pi * 2 + 0.2, -0.45, Vector3.new(0.12, 0.12, 0.06), light, "n", 0.02, 45)
+		end
+		-- cracks of light across the middle
+		for i = 0, 9 do
+			local a = i / 10 * math.pi * 2
+			onShell(a, if i % 2 == 0 then 0.2 else 0.02, Vector3.new(0.3, 0.06, 0.05), light, "n", 0, if i % 2 == 0 then -35 else 35)
+		end
+		-- the crown: a gold band near the top, five spikes with gem tips, a big gem on the front
+		local cy = 0.95
+		for i = 0, 11 do
+			onShell(i / 12 * math.pi * 2, cy, Vector3.new(0.2, 0.16, 0.08), gold, "m", 0.02)
+		end
+		for i = 0, 4 do
+			local a = i / 5 * math.pi * 2
+			local r = eggRadius(cy) + 0.03
+			local base = Vector3.new(math.sin(a) * r, cy + 0.2, -math.cos(a) * r)
+			add(Vector3.new(0.12, 0.4, 0.12), CFrame.new(base) * CFrame.Angles(math.cos(a) * 0.25, 0, -math.sin(a) * 0.25), gold, "m")
+			add(Vector3.new(0.1, 0.1, 0.1), CFrame.new(base + Vector3.new(0, 0.24, 0)) * CFrame.Angles(0, 0, math.rad(45)), light, "n")
+		end
+		onShell(0, 0.3, Vector3.new(0.3, 0.3, 0.06), light, "n", 0.03, 45)
+		onShell(0, 0.3, Vector3.new(0.4, 0.4, 0.05), gold, "m", 0.01, 45)
+		aura(gold)
+		eggFx(shell, "Divine", light, scale, variant)
+		local l = shell:FindFirstChild("EggGlow") :: PointLight?
+		if l then
+			l.Range = 12 * scale
+			l.Brightness = 2.5
+		end
 		model.WorldPivot = CFrame.identity
 		return model
 	end

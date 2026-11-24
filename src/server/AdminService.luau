@@ -1,13 +1,13 @@
 --!strict
--- Admin controls. Members of the FLNK LTD group (Config.ADMIN_GROUP_ID) and the accounts in
--- Config.ADMIN_IDS, and ONLY in Roblox Studio: in a published server isAdmin is always false,
--- so none of this can ever run for a real player.
+-- Admin controls: ONLY the accounts listed in Config.ADMIN_IDS, in Studio and in live servers alike.
+-- Nobody else ever gets the panel or can run a command (the server checks the UserId every time).
 -- The client's Admin panel (client/AdminPanel) sends { cmd = "...", n = number? } through the
 -- Action remote ("Admin" handler in ShopService).
 
 local RunService = game:GetService("RunService")
 
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Config)
+local Stats = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Stats)
 
 local DataService = require(script.Parent.DataService)
 local FarmService = require(script.Parent.FarmService)
@@ -15,29 +15,12 @@ local BattleService = require(script.Parent.BattleService)
 
 local AdminService = {}
 
--- group membership is a web call, so it is looked up once per player and remembered
-local inGroup: { [Player]: boolean } = {}
-
-local function isGroupMember(player: Player): boolean
-	local known = inGroup[player]
-	if known ~= nil then
-		return known
-	end
-	local ok, member = pcall(function()
-		return player:IsInGroup(Config.ADMIN_GROUP_ID)
-	end)
-	if not ok then
-		return false -- don't remember a failed lookup: the next check tries again
-	end
-	inGroup[player] = member == true
-	return member == true
+local function isListed(player: Player): boolean
+	return player.UserId > 0 and table.find(Config.ADMIN_IDS, player.UserId) ~= nil
 end
 
 function AdminService.isAdmin(player: Player): boolean
-	if not RunService:IsStudio() then
-		return false
-	end
-	return table.find(Config.ADMIN_IDS, player.UserId) ~= nil or isGroupMember(player)
+	return isListed(player)
 end
 
 local function refresh(player: Player)
@@ -115,6 +98,19 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 		FarmService.devMonster(player, STARTERS[math.random(#STARTERS)], lvl, 1)
 		refresh(player)
 		return true, "Lv" .. lvl .. " monster added"
+	elseif cmd == "Sovereigns" then
+		-- testing the Divine dragon: two Tide Sovereigns of level n in free nests (enough to fuse)
+		local lvl = math.clamp(n, 1, Stats.maxLevel("TideSovereign"))
+		for _ = 1, 2 do
+			FarmService.devMonster(player, "TideSovereign", lvl, Stats.stars("TideSovereign"))
+		end
+		refresh(player)
+		return true, "Two Lv" .. lvl .. " Tide Sovereigns added (if you had free nests)"
+	elseif cmd == "DivineEgg" then
+		-- the Divine egg as it comes off the Abyss Rod, straight into a free nest, ready to open
+		local ok = FarmService.giveEgg(player, { sp = "TideSovereign", lvl = 1, stars = Stats.stars("TideSovereign") }, 5)
+		refresh(player)
+		return ok, if ok then "Divine egg placed in a nest (opens in 5 s)" else "No free nest"
 	elseif cmd == "SkipTutorial" then
 		data.tutorial = Config.TUTORIAL_DONE
 	elseif cmd == "FinishTimers" then
@@ -167,54 +163,17 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 	return true, "Done: " .. cmd
 end
 
--- Decide whether this player gets the admin panel (the "Admin" attribute). The group check is a
--- web call that can fail or time out; a failed lookup used to leave a group member without the
--- panel for the whole session, so it now retries in the background until Roblox answers.
-local GROUP_RETRIES = { 2, 4, 8, 15, 30 } -- seconds between attempts after a failed lookup
+-- Only the listed accounts get the admin panel (the "Admin" attribute that shows the ADMIN tab)
 local function grantIfAdmin(player: Player)
-	if not RunService:IsStudio() then
-		return
-	end
-	if table.find(Config.ADMIN_IDS, player.UserId) ~= nil then
+	if isListed(player) then
 		player:SetAttribute("Admin", true)
-		return
+		print("[Admin] admin panel for", player.Name, if RunService:IsStudio() then "(Studio)" else "(LIVE server)")
 	end
-	if player.UserId <= 0 then
-		-- Studio's "Start Server + Players" test gives players made-up negative ids: not in the
-		-- group, and not in ADMIN_IDS
-		print("[Admin] no admin panel for", player.Name, "(Studio test player, id " .. player.UserId .. ")")
-		return
-	end
-	for attempt = 0, #GROUP_RETRIES do
-		if attempt > 0 then
-			task.wait(GROUP_RETRIES[attempt])
-		end
-		if not player.Parent then
-			return
-		end
-		local ok, member = pcall(function()
-			return player:IsInGroup(Config.ADMIN_GROUP_ID)
-		end)
-		if ok then
-			inGroup[player] = member == true
-			if member then
-				player:SetAttribute("Admin", true)
-			else
-				print("[Admin] no admin panel for", player.Name, "(not in the FLNK LTD group or Config.ADMIN_IDS)")
-			end
-			return
-		end
-		warn("[Admin] group check failed for", player.Name, "(try " .. (attempt + 1) .. "):", member)
-	end
-	warn("[Admin] gave up checking the group for", player.Name, "- rejoin to try again")
 end
 
 function AdminService.init()
 	DataService.Loaded:Connect(function(player)
 		task.spawn(grantIfAdmin, player)
-	end)
-	game:GetService("Players").PlayerRemoving:Connect(function(player)
-		inGroup[player] = nil
 	end)
 end
 
