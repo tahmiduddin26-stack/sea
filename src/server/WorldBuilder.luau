@@ -336,11 +336,9 @@ local function buildHub(world: Folder)
 			end
 		end
 	end
-	-- three palms in front of the outer vendors, and a ring near the shore that keeps clear of
-	-- the docks (every 60 deg), the vendors (30 + 60k) and the striped towers (diagonals)
-	for i, az in { 90, 210, 330 } do
-		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 38 * TOWN_K), 100 + i)
-	end
+	-- a ring of palms near the shore that keeps clear of the docks (every 60 deg), the vendors
+	-- (30 + 60k) and the striped towers (diagonals). (There used to be three more in the middle of the
+	-- town, right in front of the outer vendors: they hid the Tide Festival, so they are gone.)
 	for i, az in { 14, 74, 106, 166, 194, 254, 286, 346 } do
 		palm(c * CFrame.Angles(0, math.rad(az), 0) * CFrame.new(0, 5, 58 * TOWN_K), 200 + i)
 	end
@@ -351,11 +349,14 @@ local function buildHub(world: Folder)
 	-- face the lighthouse (+Z of the frame). The town is 25% roomier than v1 (TOWN_SCALE).
 	---------------------------------------------------------------------------
 	-- `radius` is in the old (HUB_RADIUS 78) layout; TOWN_K spreads every vendor out with the island
+	-- The inner ring turns 12 deg one way and the outer ring 10 deg the other, so a vendor is never
+	-- straight behind another one (the Dockyard used to hide the Tide Festival, the Museum the Crate...)
 	local function slot(angDeg: number, radius: number): CFrame
-		return c * CFrame.Angles(0, math.rad(angDeg), 0) * CFrame.new(0, 5, -radius * TOWN_K)
+		local shift = if radius < 45 then -12 else 10
+		return c * CFrame.Angles(0, math.rad(angDeg + shift), 0) * CFrame.new(0, 5, -radius * TOWN_K)
 	end
 	-- the invisible anchor carries the prompt and the floating name
-	local function vendorTag(m: Model, f: CFrame, title: string, sub: string, color: Color3, signY: number, promptName: string, action: string)
+	local function vendorTag(m: Model, f: CFrame, title: string, sub: string, color: Color3, signY: number, promptName: string, action: string): BillboardGui
 		local anchor = box(m, f, Vector3.new(12, 5, 8), Vector3.new(0, 2.5, 3), Color3.new(1, 1, 1), nil, { Transparency = 1, CanCollide = false, Name = "Anchor" })
 		local bb = label(anchor, title, UDim2.fromOffset(320, 56), Vector3.new(0, signY, 0), color)
 		bb.MaxDistance = 260
@@ -378,6 +379,7 @@ local function buildHub(world: Folder)
 		local pp = prompt(anchor, action, title, 0, 14)
 		pp.Name = promptName
 		m:SetAttribute("Stand", m.Name)
+		return bb
 	end
 	local function newVendor(name: string): Model
 		local m = Instance.new("Model")
@@ -614,6 +616,7 @@ local function buildHub(world: Folder)
 		vendorTag(m, f, "Power Shrine", "Spin Tide Powers", O, 17, "PowerPrompt", "Open")
 	end
 
+	local DOCK_SCALE = 0.68
 	-- Dockyard (inner, blue): the ship's store. A pier shed with a ship's wheel, an anchor, paint
 	-- cans and a model ship on the counter. Egg Luck, Fast Reel, the Shipwright and the Ship
 	-- Workshop are bought here (client Menus.dockyard) instead of from boards on the deck.
@@ -695,7 +698,10 @@ local function buildHub(world: Folder)
 			local lamp = ball(m, f, Vector3.new(1.5, 1.5, 1.5), Vector3.new(x, 9.2, 6.8), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
 			glow(m, lamp, Color3.fromRGB(255, 200, 120), 12, 0.8)
 		end
-		vendorTag(m, f, "Dockyard", "Ship upgrades", BLUE, 19, "DockyardPrompt", "Open")
+		-- the Dockyard was the biggest building in town: shrink it (about 2/3), then hang the sign on it
+		m.WorldPivot = f
+		m:ScaleTo(DOCK_SCALE)
+		vendorTag(m, f, "Dockyard", "Ship upgrades", BLUE, 19 * DOCK_SCALE, "DockyardPrompt", "Open")
 	end
 
 	-- the Deepest Divers leaderboard: a big wooden board on two posts (outer ring)
@@ -765,7 +771,7 @@ local function buildHub(world: Folder)
 		stand("PowerShrine", slot(330, 30), Vector3.new(0, 2, 5.2), 0, { name = "Shrine Keeper", anim = "hover", shirt = Color3.fromRGB(235, 150, 45), hat = "hood", hatColor = Color3.fromRGB(200, 110, 30), skin = Color3.fromRGB(176, 120, 80) }, 7)
 		-- the Shipwright: behind the counter (z -1.5 keeps the forward-held arms clear of it) on the
 		-- pier deck (top y = 1); the roof is 11 up so the cap fits under it
-		stand("Dockyard", slot(150, 30), Vector3.new(0, 1, -1.5), 0, { name = "Shipwright", anim = "present", shirt = Color3.fromRGB(70, 150, 255), pants = Color3.fromRGB(40, 56, 100), hat = "cap", hatColor = Color3.fromRGB(35, 70, 130), beard = Color3.fromRGB(120, 78, 44), skin = Color3.fromRGB(224, 172, 120) }, 10)
+		stand("Dockyard", slot(150, 30), Vector3.new(0, 1, -1.5) * DOCK_SCALE, 0, { name = "Shipwright", scale = DOCK_SCALE, anim = "present", shirt = Color3.fromRGB(70, 150, 255), pants = Color3.fromRGB(40, 56, 100), hat = "cap", hatColor = Color3.fromRGB(35, 70, 130), beard = Color3.fromRGB(120, 78, 44), skin = Color3.fromRGB(224, 172, 120) }, 10)
 		stand("Spellbook", slot(90, 30), Vector3.new(-6.2, 0, 3.4), -25, { name = "Wizard", anim = "read", shirt = Color3.fromRGB(110, 50, 170), hat = "wizard", hatColor = Color3.fromRGB(90, 44, 150), beard = Color3.fromRGB(240, 240, 245), prop = "scroll" }, 8)
 
 		-- the Guide, at the lighthouse door
@@ -774,7 +780,39 @@ local function buildHub(world: Folder)
 		gm.Parent = hub
 		local gf = c * CFrame.new(0, 5, 5)
 		Npc.build(gm, c * CFrame.new(0, 5.6, 8.2) * CFrame.Angles(0, math.pi, 0), { name = "Captain Coral", anim = "wave", shirt = Color3.fromRGB(40, 80, 170), pants = Color3.fromRGB(240, 240, 245), hat = "captain", hatColor = Color3.fromRGB(245, 245, 250), beard = Color3.fromRGB(235, 235, 240), scale = 1.3, skin = Color3.fromRGB(224, 172, 120) }, 9)
-		vendorTag(gm, gf, "Captain Coral", "Ask me how to play!", Color3.fromRGB(255, 220, 90), 8.5, "GuidePrompt", "Talk")
+		-- the name used to sink into the lighthouse behind him and hide behind his big sleeve: hang it
+		-- higher and draw it on top of everything
+		local guideTag = vendorTag(gm, gf, "Captain Coral", "Ask me how to play!", Color3.fromRGB(255, 220, 90), 14, "GuidePrompt", "Talk")
+		guideTag.AlwaysOnTop = true
+
+		-- the two new games (UI mini games, see client/MiniGames): they sit on the two free inner spots
+		-- Coral Cards: a card table under a striped awning
+		do
+			local f = slot(30, 30)
+			local m = newVendor("CardsStand")
+			local CORAL = Color3.fromRGB(255, 120, 140)
+			box(m, f, Vector3.new(14, 1, 11), Vector3.new(0, 0.5, 0), WOOD_LIGHT, Enum.Material.Wood)
+			box(m, f, Vector3.new(9, 0.7, 5), Vector3.new(0, 3.1, 1.5), WOOD)
+			for _, x in { -4, 4 } do
+				box(m, f, Vector3.new(0.9, 2.6, 0.9), Vector3.new(x, 1.8, 3.4), WOOD_DARK)
+				box(m, f, Vector3.new(0.9, 2.6, 0.9), Vector3.new(x, 1.8, -0.4), WOOD_DARK)
+			end
+			-- six cards fanned along the table, every one a different colour
+			local cols = { Color3.fromRGB(255, 120, 140), Color3.fromRGB(255, 205, 60), Color3.fromRGB(90, 200, 255), Color3.fromRGB(120, 220, 140), Color3.fromRGB(190, 130, 255), Color3.fromRGB(255, 160, 80) }
+			for i = 1, 6 do
+				box(m, f * CFrame.Angles(math.rad(-20), 0, math.rad((i - 3.5) * 5)), Vector3.new(1.5, 2.1, 0.15), Vector3.new((i - 3.5) * 1.45, 4.4, 1.2), cols[i])
+				box(m, f * CFrame.Angles(math.rad(-20), 0, math.rad((i - 3.5) * 5)), Vector3.new(0.8, 1.2, 0.18), Vector3.new((i - 3.5) * 1.45, 4.4, 1.12), Color3.fromRGB(255, 255, 255))
+			end
+			-- striped awning: two back posts and a roof in coral and white
+			for _, x in { -6, 6 } do
+				box(m, f, Vector3.new(0.9, 10, 0.9), Vector3.new(x, 5.5, -4.2), WOOD_DARK)
+			end
+			for i = 0, 6 do
+				box(m, f, Vector3.new(2, 0.5, 9.5), Vector3.new(-6 + i * 2, 10.6, -1), if i % 2 == 0 then CORAL else Color3.fromRGB(255, 245, 240))
+			end
+			vendorTag(m, f, "Coral Cards", "Match the pairs!", CORAL, 14, "CardsPrompt", "Play")
+			stand("CardsStand", f, Vector3.new(0, 1, -2.2), 0, { name = "Card Dealer", anim = "present", shirt = CORAL, pants = Color3.fromRGB(70, 60, 110), hat = "cap", hatColor = Color3.fromRGB(255, 245, 240) }, 11)
+		end
 	end
 
 
@@ -1500,6 +1538,22 @@ local function buildShip(world: Folder, index: number): Ship
 		paintBoard(tb, "MANAGE YOUR TEAM", "Pick who fights", Color3.fromRGB(255, 240, 90))
 		local tp = prompt(tb, "Open", "Your Team", 0, 10)
 		tp.Name = "TeamPrompt"
+	end
+	-- Cannon Gallery: a gun platform on each rail. The Blender cannon on it is drawn and aimed by the
+	-- clients (CannonView); the live crates it shoots at belong to the server (CrateService).
+	for side, gp in Config.CANNON_GAME_POS do
+		-- a timber gun mount built up against the rail, its top level with the rail top; the gun
+		-- (client) sits on it with the barrel out over the water
+		local sx = math.sign(gp.X)
+		local top = Config.CANNON_GAME_Y
+		local gf = cf * CFrame.new(gp.X - sx * 1.5, deck + 0.4, gp.Z)
+		local plat = box(model, gf, Vector3.new(6, top - 0.4, 7), Vector3.new(0, (top - 0.4) / 2, 0), Color3.fromRGB(110, 70, 42), Enum.Material.Wood, { Name = "CannonGame" .. side })
+		plat:SetAttribute("Side", side)
+		box(model, gf, Vector3.new(6.4, 0.3, 7.4), Vector3.new(0, top - 0.4 + 0.1, 0), Color3.fromRGB(255, 170, 80), Enum.Material.Neon, { CanCollide = false })
+		local sign = label(plat, "CANNON", UDim2.fromOffset(180, 40), Vector3.new(0, 8, 0), Color3.fromRGB(255, 170, 80))
+		sign.Name = "CannonSign"
+		local cp = prompt(plat, "Get In", "Cannon", 0, 10)
+		cp.Name = "CannonGamePrompt"
 	end
 	-- Robux sign on the starboard side of the winch
 	do

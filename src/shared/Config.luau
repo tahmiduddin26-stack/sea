@@ -40,6 +40,10 @@ Config.WATER = { transparency = 0.9, color = Color3.fromRGB(16, 120, 196), refle
 -- Invisible wall ring (radius from the harbour centre) that keeps swimmers in the play area. The
 -- farthest thing in the world (a ship's stern plus its arena / trench off the side) is about 345 out.
 Config.SWIM_RADIUS = 410 -- wide enough for the Abyss Rod's cast and shaft astern of each ship
+-- Swimming: you may swim for SWIM_SECONDS (a counter shows on screen), then you are taken back to your ship.
+-- "In the water" = the character is in the Swimming state, or its root part is below SWIM_Y (a dive).
+Config.SWIM_SECONDS = 5
+Config.SWIM_Y = -1.5
 
 -- Nest slots on a ship (local to the ship: +X = starboard, -Z = bow towards the harbour).
 -- The first START_NESTS are free; the rest are bought (and stay hidden until the tutorial
@@ -656,6 +660,56 @@ Config.LUCK_SECONDS = 900
 Config.LUCK30_SECONDS = 1800 -- the x2 Luck 30m product
 Config.VIP_COIN_BONUS = 0.25
 Config.COIN_PACK_MINUTES = { CoinsSmall = 6, CoinsBig = 30 } -- = this many minutes of battle coins
+
+-- Harbour mini games (client/MiniGames.luau + server/MiniGameService.luau). A perfect run pays `minutes` of
+-- battle coins at your best depth (Stats.coinsPerMinute, the same scale as the coin packs) and `pearls`;
+-- worse runs pay a share of that. One play per `cooldown` seconds per game, so battling still pays better.
+-- minSeconds = the shortest a real run can take (anything faster is refused).
+Config.MINIGAMES = {
+	cards = { name = "Coral Cards", minutes = 3, pearls = 8, cooldown = 720, minSeconds = 8 }, -- 720s = 5 plays/hour cap
+}
+-- the pair count Coral Cards uses, shared so the server can check a result is possible
+Config.CARDS_PAIRS = 6 -- a perfect game = this many moves
+
+-- Cannon Gallery: a gun on each side of every ship (ship space; clear of the Workshop cannons, boards
+-- and chest). Get in, aim in first person, and shoot the LIVE crates that drop around the map for the
+-- whole server (server/CrateService, client/CannonView + CrateView, shared/Ballistics).
+-- The guns sit ON the rail (the rail runs along x = +-33.5, its top 3.4 above the deck), so the barrel
+-- pokes out over the water like a ship's broadside gun.
+Config.CANNON_GAME_POS = { Port = Vector3.new(-32, 0, -8), Starboard = Vector3.new(32, 0, -2) }
+Config.CANNON_GAME_Y = 3.4 -- the gun's base above the deck: level with the rail top
+Config.LIVE_CRATES = {
+	count = 5, -- crates per drop
+	every = 1800, -- seconds between drops (the drop replaces any crates nobody broke)
+	firstDrop = 30, -- seconds after the server starts
+	warn = 30, -- "Crate drop in 0:30!" shows this long before a drop
+	minutes = 2, -- a crate pays this many minutes of battle coins at your best depth (Stats.coinsPerMinute)
+	-- where crates float: this far out from a ship's side (studs), along its middle
+	outMin = 45,
+	outMax = 140,
+	alongMax = 60,
+	-- the cannon: ball launch speed (studs/s) and gravity (studs/s^2): a real arc, but forgiving
+	speed = 100,
+	gravity = 42, -- with the barrel tipped up the ball lobs high so you can watch it fly
+	yaw = 70, -- degrees each way from straight out
+	pitchMin = -20, -- aim down at crates close to the ship
+	pitchMax = 45,
+	reload = 1.0, -- seconds between shots (the server allows a little less for lag)
+	hitPad = 6, -- studs of slack around a crate for a hit (generous: crates bob)
+	ammo = 15, -- cannonballs a player has ...
+	ammoEvery = 600, -- ... refilled to full this many seconds after they start using them
+	kinds = {
+		{ id = "Crate", name = "Crate", hp = 1, weight = 70, pay = 1, pearls = 0, size = Vector3.new(6, 6, 6), color = Color3.fromRGB(150, 100, 55) },
+		{ id = "Barrel", name = "Barrel", hp = 2, weight = 25, pay = 1.5, pearls = 2, size = Vector3.new(6, 5, 5), color = Color3.fromRGB(190, 60, 50) },
+		{ id = "Gold", name = "Golden Chest", hp = 3, weight = 5, pay = 3, pearls = 10, size = Vector3.new(5, 5, 5), color = Color3.fromRGB(255, 205, 60) },
+	},
+}
+-- A townsperson says hello when you walk up: the sound each stand's NPC makes (quiet ones that don't duck the music)
+Config.NPC_SOUNDS = {
+	TreasureShop = "Coin", EggShopStand = "Place", EventStand = "ZoneChime", CrateStand = "Super", BundleStand = "Buy",
+	Museum = "Click", PowerShrine = "Cast", Dockyard = "Winch", Spellbook = "Cast", GuideStand = "ZoneChime",
+	CardsStand = "Place",
+}
 
 -- Rotating offer slot on the right of the HUD (cycles every OFFER_ROTATE seconds)
 Config.OFFER_ROTATION = { "DoubleCoins", "Luck30", "FuseLuck", "FastFuse", "DoubleLuck", "FastBattle", "InsaneLuck" }

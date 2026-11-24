@@ -67,6 +67,7 @@ local function window(title: string, size: Vector2, color: Color3?): (Frame, Fra
 	end
 	return f, body
 end
+Menus.openWindow = window -- (the mini games in MiniGames.luau open their windows the same way)
 
 -- A creature in a ViewportFrame, idling
 local viewports: { { vp: ViewportFrame, rig: MonsterModels.Rig, cf: CFrame } } = {}

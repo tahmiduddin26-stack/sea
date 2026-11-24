@@ -260,6 +260,12 @@ function Stats.coinPack(name: string, bestDepth: number): number
 	return math.max(coins, if name == "CoinsSmall" then 5000 * Config.COIN_SCALE else 25000 * Config.COIN_SCALE)
 end
 
+-- What a harbour mini game pays for a run of this quality (0..1): `minutes` of battle income at your best depth
+function Stats.miniGameCoins(game: string, bestDepth: number, quality: number): number
+	local g = Config.MINIGAMES[game]
+	return if g then math.floor(Stats.coinsPerMinute(bestDepth) * g.minutes * quality) else 0
+end
+
 -- Floor 3 costs Config.FLOOR3.minutes of battle income at the stage it unlocks
 function Stats.floor3Price(): number
 	return math.floor(Stats.coinsPerMinute(Config.FLOOR3.depth) * Config.FLOOR3.minutes / 50) * 50

@@ -17,6 +17,8 @@ local WorldBuilder = require(script.Parent.WorldBuilder)
 local ExtrasService = require(script.Parent.ExtrasService)
 local AdminService = require(script.Parent.AdminService)
 local Analytics = require(script.Parent.Analytics)
+local MiniGameService = require(script.Parent.MiniGameService)
+local CrateService = require(script.Parent.CrateService)
 
 local ShopService = {}
 
@@ -233,6 +235,23 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 	end,
 	Admin = function(player, arg)
 		return AdminService.run(player, arg)
+	end,
+	-- harbour mini games: ask to play (returns the shuffle seed), then report the result for the reward
+	MiniStart = function(player, arg)
+		return MiniGameService.start(player, arg)
+	end,
+	MiniFinish = function(player, arg)
+		return MiniGameService.finish(player, arg)
+	end,
+	-- Cannon Gallery: get in / out of a ship's gallery cannon, and fire at the live crates
+	CannonEnter = function(player, arg)
+		return CrateService.enter(player, arg)
+	end,
+	CannonLeave = function(player)
+		return CrateService.leave(player)
+	end,
+	CannonFire = function(player, arg)
+		return CrateService.fire(player, arg)
 	end,
 	Fight = function(player)
 		return BattleService.fight(player)

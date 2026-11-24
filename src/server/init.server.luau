@@ -29,6 +29,7 @@ ShopService.init()
 MonetizationService.init()
 require(script.AdminService).init()
 require(script.MissionService).init()
+require(script.CrateService).init()
 
 local function spawnPlayer(player: Player)
 	if not player.Parent then
@@ -72,15 +73,30 @@ end)
 
 DataService.init()
 
--- fell in the sea? back to the deck
+-- Swimming: you can swim for Config.SWIM_SECONDS. The moment you are in the water the player's
+-- "SwimEndsAt" attribute (server time) says when time is up, the client counts it down on screen, and at
+-- zero you are taken back to your ship. Getting out of the water (a ladder, the dock) cancels it.
 task.spawn(function()
 	while true do
-		task.wait(1)
+		task.wait(0.2)
+		local now = workspace:GetServerTimeNow()
 		for _, p in Players:GetPlayers() do
 			local char = p.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-			if root and root.Position.Y < -6 then
-				FarmService.spawnAtShip(p)
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			-- a floating swimmer's root sits just under the waves (about -0.5), so go by the Swimming state;
+			-- being well below the surface counts too (a dive)
+			local inWater = root ~= nil and hum ~= nil and hum.Health > 0 and (hum:GetState() == Enum.HumanoidStateType.Swimming or root.Position.Y < Config.SWIM_Y)
+			local endsAt = p:GetAttribute("SwimEndsAt") :: number?
+			if inWater then
+				if not endsAt then
+					p:SetAttribute("SwimEndsAt", now + Config.SWIM_SECONDS)
+				elseif now >= endsAt then
+					p:SetAttribute("SwimEndsAt", nil)
+					FarmService.spawnAtShip(p)
+				end
+			elseif endsAt then
+				p:SetAttribute("SwimEndsAt", nil)
 			end
 		end
 	end

@@ -16,6 +16,7 @@ local EVENTS = {
 	"IntroSeen", -- C->S intro cinematic finished (or skipped)
 	"Offline", -- S->C (seconds, coins) earned while away
 	"Track", -- C->S (kind, name) analytics: a vendor menu opened, an offer seen / prompted
+	"Crates", -- S->all live crates + cannon shots (server/CrateService)
 }
 local FUNCTIONS = {
 	"Action", -- C->S (name, arg) -> ok, message. Fight, Retreat, Speed, Fuse, Skip, Upgrade, BuyNest, Code, UnlockFloor

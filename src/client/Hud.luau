@@ -256,7 +256,9 @@ end
 -- on a plank sign, a wax seal in the spell's rarity colour stamps down and bubbles drift up. Then
 -- the scroll rolls up and flies to the buff row at the top right. Drawn on the screen itself
 -- (above every menu), so it plays right over the Spellbook.
-function Hud.spellCast(id: string)
+-- `banner` (optional) = a gold title over the scroll, used when a spell card DROPS ("NEW SPELL!"): the same
+-- scroll then shows the rarity instead of the cast time.
+function Hud.spellCast(id: string, banner: string?)
 	local sp = spellDef(id)
 	if not sp or not screenRoot then
 		return
@@ -297,7 +299,11 @@ function Hud.spellCast(id: string)
 	-- the name hangs on a plank sign
 	UI.plank({ Text = sp.name, Color = C.Plank, MaxText = 28, TextColor = C.Brass, Size = UDim2.fromOffset(300, 44), Position = UDim2.new(0.5, 0, 0, 148), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
 	UI.label({ Text = sp.desc, Stroke = 0, TextColor3 = C.Ink, MaxText = 24, Size = UDim2.fromOffset(W - 40, 30), Position = UDim2.new(0.5, 0, 0, 204), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
-	UI.label({ Text = "for " .. sp.minutes .. " min", Stroke = 0, TextColor3 = C.Deep, MaxText = 20, Size = UDim2.fromOffset(W - 40, 24), Position = UDim2.new(0.5, 0, 0, 238), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
+	UI.label({ Text = if banner then string.upper(r.name) else ("for " .. sp.minutes .. " min"), Stroke = 0, TextColor3 = if banner then col else C.Deep, MaxText = 20, Size = UDim2.fromOffset(W - 40, 24), Position = UDim2.new(0.5, 0, 0, 238), AnchorPoint = Vector2.new(0.5, 0), ZIndex = Z + 2, Parent = paper })
+	if banner then
+		UI.label({ Text = banner, TextColor3 = C.Gold, MaxText = 34, Size = UDim2.fromOffset(W, 40), Position = UDim2.new(0.5, 0, 0, -2), AnchorPoint = Vector2.new(0.5, 1), ZIndex = Z + 6, Parent = scroll })
+		Sound.play(if sp.rarity >= 3 then "Win" else "Coin", 0.7)
+	end
 	-- the wax seal: rarity colour, its stars pressed in, stamped on after the scroll is open
 	local seal = UI.new("Frame", { BackgroundColor3 = col:Lerp(Color3.new(0, 0, 0), 0.15), Size = UDim2.fromOffset(62, 62), Position = UDim2.new(1, -52, 1, -46), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 3, Visible = false, Parent = paper }, { UI.corner(62), UI.stroke(3) })
 	UI.label({ Text = string.rep("★", sp.rarity), TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.65), Stroke = 1.5, MaxText = 20, Size = UDim2.fromScale(0.8, 0.5), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = Z + 4, Parent = seal })
@@ -348,36 +354,10 @@ function Hud.spellCast(id: string)
 	end)
 end
 
--- A spell card drops: it pops up big in the middle, then shrinks away to the top right
+-- A spell card drops: the same unrolling scroll as casting (parchment, rollers, brass porthole, plank
+-- name sign, rarity wax seal), titled "NEW SPELL!", then it rolls up and flies to the top right
 function Hud.spellDrop(id: string)
-	local sp = spellDef(id)
-	if not sp or not root then
-		return
-	end
-	local r = Config.RARITY[sp.rarity]
-	local card = UI.panel({ Size = UDim2.fromOffset(190, 230), Position = UDim2.fromScale(0.5, 0.42), AnchorPoint = Vector2.new(0.5, 0.5), Color = Color3.fromRGB(255, 248, 230), ZIndex = 25, Parent = root })
-	local st = card:FindFirstChildOfClass("UIStroke")
-	if st then
-		st.Color = r.color
-		st.Thickness = 6
-	end
-	UI.label({ Text = "NEW SPELL!", TextColor3 = C.Gold, MaxText = 26, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, -38), ZIndex = 26, Parent = card })
-	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I[sp.icon], Size = UDim2.fromOffset(110, 110), Position = UDim2.new(0.5, 0, 0, 12), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 26, Parent = card })
-	UI.label({ Text = sp.name, TextColor3 = r.color, MaxText = 24, Size = UDim2.new(1, -12, 0, 30), Position = UDim2.fromOffset(6, 128), ZIndex = 26, Parent = card })
-	UI.label({ Text = string.upper(r.name), TextColor3 = r.color, Stroke = 0, MaxText = 16, Size = UDim2.new(1, 0, 0, 20), Position = UDim2.fromOffset(0, 160), ZIndex = 26, Parent = card })
-	UI.label({ Text = sp.desc, Stroke = 0, TextColor3 = C.Ink, MaxText = 16, Size = UDim2.new(1, -12, 0, 22), Position = UDim2.fromOffset(6, 186), ZIndex = 26, Parent = card })
-	UI.pop(card, 0.3)
-	local Sound = require(script.Parent.Sound) :: any
-	Sound.play(if sp.rarity >= 3 then "Win" else "Coin", 0.7)
-	task.delay(1.6, function()
-		local sc = card:FindFirstChildOfClass("UIScale")
-		if sc then
-			UI.tween(sc, 0.4, { Scale = 0.2 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		end
-		UI.tween(card, 0.4, { Position = UDim2.new(1, -60, 0, 40) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		task.wait(0.42)
-		card:Destroy()
-	end)
+	Hud.spellCast(id, "NEW SPELL!")
 end
 
 -- Coin icons burst from a world point and fly into the coin counter

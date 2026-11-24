@@ -51,6 +51,8 @@ local oddsPanel: Frame? = nil -- "Fuse chances" plank above the tray, shown whil
 local oddsRow: Frame? = nil
 local oddsHeadRight: TextLabel? = nil
 local fuseNow: () -> () = function() end -- set below, once the fuse itself is defined
+local autoNow: () -> () = function() end -- the Auto Fuse button's action (set below, same reason)
+local autoBtn: TextButton? = nil
 local fuseVfx: (Vector3, Color3, Color3, number) -> () -- defined with the fuse itself
 local flash: (Vector3, number) -> ()
 
@@ -553,6 +555,15 @@ local function buildTray()
 		end)
 	end)
 	goBtn = go
+	-- Auto Fuse sits right above FUSE!: one tap picks the best group of monsters and fuses them
+	autoBtn = UI.button({ Text = "Auto Fuse", Color = C.Sea, Size = UDim2.fromOffset(130, 36), Position = UDim2.fromOffset(548, 8), Parent = t }, function()
+		if busy then
+			return
+		end
+		task.spawn(function()
+			autoNow()
+		end)
+	end)
 	-- the chances plank sits on top of the tray (a child of it, so it opens / closes with it)
 	local odds = UI.panel({ Color = C.Plank, Radius = 18, Size = UDim2.fromOffset(620, 134), Position = UDim2.new(0.5, 0, 0, -8), AnchorPoint = Vector2.new(0.5, 1), Visible = false, Parent = t })
 	UI.rivet(odds, UDim2.new(0, 12, 0, 12))
@@ -583,6 +594,10 @@ function FuseView.openTray()
 	chosen = {}
 	clearMarks()
 	t.Visible = true
+	-- Auto Fuse is for after the tutorial (the tutorial teaches picking by hand)
+	if autoBtn then
+		autoBtn.Visible = State.snapshot ~= nil and State.snapshot.tutorial >= Config.TUTORIAL_DONE
+	end
 	refreshMarks() -- fusable monsters in full colour, the others see-through
 	-- the tray takes the heart button's place at the bottom of the screen
 	Hud.fuseOpen = true
@@ -762,6 +777,53 @@ fuseNow = function()
 		return
 	end
 	fuse(table.clone(chosen))
+end
+
+-- Auto Fuse: look through your monsters for the highest level that has enough of the same kind to fuse
+-- (and is allowed: not past the species' max or the level cap), take the weakest ones of that group so
+-- your best stay, and fuse them exactly like a hand-picked fuse.
+autoNow = function()
+	if busy then
+		return
+	end
+	local snap = State.snapshot
+	local bestDepth = if snap then snap.bestDepth or 0 else 0
+	local groups: { [string]: { BasePart } } = {}
+	for _, n in myNests() do
+		if n:GetAttribute("State") == "mon" and n:GetAttribute("Uid") ~= nil then
+			local key = keyOf(n)
+			groups[key] = groups[key] or {}
+			table.insert(groups[key], n)
+		end
+	end
+	local bestList: { BasePart }? = nil
+	local bestLvl = -1
+	for _, list in groups do
+		local first = list[1]
+		local sp = first:GetAttribute("Sp") :: string
+		local lvl = (first:GetAttribute("Lvl") or 1) :: number
+		local need = Stats.fuseNeeded(lvl, sp)
+		if #list >= need and lvl + 1 <= Stats.maxLevel(sp) and lvl + 1 <= Stats.capFor(sp, bestDepth) and lvl > bestLvl then
+			bestLvl = lvl
+			bestList = list
+		end
+	end
+	if not bestList then
+		Hud.toast("Nothing to fuse yet: you need 2 monsters of the same level", C.Coral)
+		return
+	end
+	local first = bestList[1]
+	local need = Stats.fuseNeeded((first:GetAttribute("Lvl") or 1) :: number, first:GetAttribute("Sp") :: string)
+	table.sort(bestList, function(x, y)
+		local px = Stats.power(x:GetAttribute("Sp") :: string, (x:GetAttribute("Lvl") or 1) :: number, nil, x:GetAttribute("Variant") :: string?)
+		local py = Stats.power(y:GetAttribute("Sp") :: string, (y:GetAttribute("Lvl") or 1) :: number, nil, y:GetAttribute("Variant") :: string?)
+		return px < py
+	end)
+	local picked = {}
+	for i = 1, need do
+		picked[i] = bestList[i]
+	end
+	fuse(picked)
 end
 
 ---------------------------------------------------------------------------

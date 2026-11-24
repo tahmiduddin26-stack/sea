@@ -279,7 +279,7 @@ end
 ---------------------------------------------------------------------------
 -- Client reports (only what the server can't see: menus opened, prompts shown)
 ---------------------------------------------------------------------------
-local VENDORS = { Shop = true, Event = true, Spellbook = true, Index = true, Powers = true, Gifts = true, Team = true, EggShop = true, Crate = true, Guide = true, Workshop = true, Dockyard = true }
+local VENDORS = { Cards = true, Cannon = true, Shop = true, Event = true, Spellbook = true, Index = true, Powers = true, Gifts = true, Team = true, EggShop = true, Crate = true, Guide = true, Workshop = true, Dockyard = true }
 local lastTrack: { [Player]: number } = {}
 
 local function onTrack(player: Player, kind: any, name: any)

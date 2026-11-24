@@ -19,6 +19,7 @@ local ShipView = require(script.ShipView)
 local BattleView = require(script.BattleView)
 local Guide = require(script.Guide)
 local NpcView = require(script.NpcView)
+local MiniGames = require(script.MiniGames)
 local Platform = require(script.Platform)
 local PadStickers = require(script.PadStickers)
 
@@ -56,6 +57,9 @@ Guide.init(screen)
 NpcView.init()
 require(script.AdminPanel).init(screen)
 require(script.MissionView).init(screen)
+require(script.SwimTimer).init(screen)
+require(script.CrateView).init(screen)
+local CannonView = require(script.CannonView)
 
 -- HUD buttons
 local busy = false
@@ -104,7 +108,7 @@ end)
 
 -- world prompts that open menus or Robux prompts (the server never needs to see these)
 local ProximityPromptService = game:GetService("ProximityPromptService")
-local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", DockyardPrompt = "Dockyard" }
+local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", DockyardPrompt = "Dockyard", CardsPrompt = "Cards", CannonGamePrompt = "Cannon" }
 -- a prompt on screen owns the X button (its default gamepad key), so X-to-fight waits
 local shownPrompts = 0
 ProximityPromptService.PromptShown:Connect(function()
@@ -141,6 +145,10 @@ ProximityPromptService.PromptTriggered:Connect(function(pp: ProximityPrompt, who
 		Menus.dockyard()
 	elseif pp.Name == "GuidePrompt" then
 		Menus.guide()
+	elseif pp.Name == "CardsPrompt" then
+		MiniGames.cards()
+	elseif pp.Name == "CannonGamePrompt" then -- (not "CannonPrompt": that is the Workshop cannon's Load Cannonball prompt)
+		CannonView.enter((pp.Parent :: Instance):GetAttribute("Side") :: string)
 	elseif pp.Name == "BundlePrompt" then
 		Menus.prompt("Product", "ElementBundle")
 	elseif pp.Name == "RobuxPrompt" then
