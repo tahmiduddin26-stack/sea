@@ -46,6 +46,33 @@ button) built once in `client/UI.luau`, so every menu picks it up and stays cons
 - [x] 5.2 Spell icons rendered in Blender (`assets/icons/build_spell_icons.py`) and uploaded to the group; the Pearls
       icon was still in moderation when uploaded, so check it shows in game.
 
+## First five minutes playtest
+
+Fresh-profile Studio run with keyboard and mouse, reviewed from the perspective of players ages 9–15. The run covered the intro, two hatches, the first fight, the first fuse, and a second fight. The starter lost at Depth 1. After fusing, the next fight beat three enemies and reached Depth 2.
+
+| What could confuse a new player | Change |
+| --- | --- |
+| The crate countdown covered the fishing instruction and advertised an unrelated activity. | Hold crate announcements until the tutorial ends. Show that the hook is bringing up an egg during the cast. |
+| Turning toward the arena made the guide vanish. TAKE also used coins without saying so in the guide. | Keep the guide visible from any angle on deck and show the price in the TAKE instruction. |
+| The nest showed a paid Hatch Now prompt while the tutorial wanted the player to wait. | Show the countdown and name the OPEN action. Hide the paid shortcut during the tutorial. |
+| The first goal said to beat a mini-boss. The starter lost at Depth 1, and the result gave no specific next action. | Explain that monsters fight automatically, hold the first arena view longer, and show Go Fish on the first result. Keep Fight out of the way until the first fuse is complete. |
+| After the fuse and next battle, the player could see their team resting but had no suggested action. | Tell the player they can fish while the team rests. Give a clear next goal when the fuse reveal ends. |
+
+## Next onboarding simplification pass
+
+1. Give players one next action after the first fuse. Point to Fight first, then offer “Fish while your monster rests” after the result. Check that players recover from a loss without help.
+2. Keep the first harbour trip focused. Lead new players to Captain Coral and let them choose one destination. Suggested choices are the Egg Shop, the Dockyard, and Crab Cove.
+3. Introduce extra systems when they become useful. Explain spells when the first card drops, team slots when the team fills up, and flag design when the player visits the mast.
+4. Playtest on a phone with new players ages 9–12 and 13–15. Give them five minutes with no coaching. Note any pause over ten seconds, wrong button presses, and whether they can explain how to get another egg or improve their team.
+
+## Fusion balance check
+
+Fusion now preserves at least the parents’ combined regular-hit DPS, sustained DPS including energy attacks, and total HP. The floor uses the actual parents, including their finishes, permanent Powers, and earlier fusion bonuses. Natural stats can still exceed it. The displayed DPS is a neutral sustained average. Enemy matchups, perks, and combat buffs can change what happens in a fight.
+
+The audit checked 36 species and 20,378 fusion outcomes across sampled level bands, including 2-, 3-, and 4-parent inputs, Divine pairs, Golden and Rainbow finishes, and previously fused parents. Three regular level-3 Splashfins combine for 31,200 sustained DPS. A natural level-4 Splashfin gives 16,640, while this fusion now gives 31,200.
+
+Boss and mob HP stayed at their existing values. In a neutral damage-only estimate with six common fusions at the available level cap, bosses at stages 2, 10, and 20 take roughly 13, 22, and 44 seconds respectively. That estimate assumes every fighter stays alive and does not replace late-game playtesting.
+
 ## Notes
 - Edit `src/` only with the Edit tool (sed/perl crash Rojo).
 - Nothing in this pass changes balance except 3.5 (if the price review says so).

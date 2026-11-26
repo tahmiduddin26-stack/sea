@@ -68,6 +68,12 @@ function ExtrasService.spin(player: Player, uid: any): (boolean, any)
 	end
 	local p = rollPower()
 	m.power = p.id
+	for key, nest in data.nests do
+		if nest.kind == "mon" and nest.uid == uid then
+			FarmService.syncNest(player, tonumber(key) :: number)
+			break
+		end
+	end
 	Analytics.event(player, "PowerSpin", 1, { power = p.id })
 	Analytics.vendor(player, "Powers", 2)
 	DataService.changed(player)

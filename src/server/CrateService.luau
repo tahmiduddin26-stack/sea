@@ -198,6 +198,7 @@ local function leave(player: Player)
 end
 
 function CrateService.enter(player: Player, side: any): (boolean, string?)
+	if player:GetAttribute("InCrabCove") then return false, "Leave Crab Cove first!" end
 	local sess = DataService.session(player)
 	if typeof(side) ~= "string" or not Config.CANNON_GAME_POS[side] or not sess then
 		return false, nil

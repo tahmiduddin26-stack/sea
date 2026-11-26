@@ -247,7 +247,7 @@ local function helperText(): string
 	elseif #chosen < need then
 		return pickWord() .. " " .. (need - #chosen) .. " more <" .. pickWhat() .. ">!"
 	end
-	return "Press <FUSE!>"
+	return "Press <FUSE!> to keep their combined damage."
 end
 
 local function startHelper()
@@ -787,7 +787,10 @@ autoNow = function()
 		return
 	end
 	local snap = State.snapshot
-	local bestDepth = if snap then snap.bestDepth or 0 else 0
+	if not snap then
+		return
+	end
+	local bestDepth = snap.bestDepth or 0
 	local groups: { [string]: { BasePart } } = {}
 	for _, n in myNests() do
 		if n:GetAttribute("State") == "mon" and n:GetAttribute("Uid") ~= nil then
@@ -815,8 +818,8 @@ autoNow = function()
 	local first = bestList[1]
 	local need = Stats.fuseNeeded((first:GetAttribute("Lvl") or 1) :: number, first:GetAttribute("Sp") :: string)
 	table.sort(bestList, function(x, y)
-		local px = Stats.power(x:GetAttribute("Sp") :: string, (x:GetAttribute("Lvl") or 1) :: number, nil, x:GetAttribute("Variant") :: string?)
-		local py = Stats.power(y:GetAttribute("Sp") :: string, (y:GetAttribute("Lvl") or 1) :: number, nil, y:GetAttribute("Variant") :: string?)
+		local px = Stats.power(x:GetAttribute("Sp") :: string, (x:GetAttribute("Lvl") or 1) :: number, nil, x:GetAttribute("Variant") :: string?, x:GetAttribute("Sixth") == true, snap.monsters[x:GetAttribute("Uid") :: string])
+		local py = Stats.power(y:GetAttribute("Sp") :: string, (y:GetAttribute("Lvl") or 1) :: number, nil, y:GetAttribute("Variant") :: string?, y:GetAttribute("Sixth") == true, snap.monsters[y:GetAttribute("Uid") :: string])
 		return px < py
 	end)
 	local picked = {}

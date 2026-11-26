@@ -21,6 +21,8 @@ local MonsterModels = require(Shared.MonsterModels)
 
 local UI = require(script.Parent.UI)
 local Sound = require(script.Parent.Sound)
+local State = require(script.Parent.State)
+local Menus = require(script.Parent.Menus)
 
 local CrateView = {}
 
@@ -316,6 +318,9 @@ end
 -- the little feed + drop countdown (top centre, under the HUD's top bar)
 ---------------------------------------------------------------------------
 local function post(text: string, color: Color3?)
+	if State.cinematic or not State.snapshot or State.snapshot.tutorial < Config.TUTORIAL_DONE then
+		return
+	end
 	local f = feed
 	if not f then
 		return
@@ -389,7 +394,7 @@ function CrateView.init(root: ScreenGui)
 			end
 			post(tostring(b) .. " smashed a " .. (KIND_NAME[c] or "crate") .. "!", if c == "Gold" then C.Gold else C.White)
 		elseif kind == "drop" then
-			if (a :: number) > 0 then
+			if (a :: number) > 0 and State.snapshot and State.snapshot.tutorial >= Config.TUTORIAL_DONE and not State.cinematic then
 				post(tostring(a) .. " crates dropped in the sea! Get in a cannon!", C.Gold)
 				Sound.play("ZoneChime", 0.6)
 			end
@@ -398,6 +403,8 @@ function CrateView.init(root: ScreenGui)
 
 	RunService.RenderStepped:Connect(function(dt)
 		local t = os.clock()
+		local menuOpen = Menus.isOpen()
+		holder.Visible = not menuOpen
 		-- crates bob and rock (client-side only; the server's position is the rest pose)
 		for cp, info in tagged do
 			if cp.Transparency < 1 then
@@ -416,7 +423,8 @@ function CrateView.init(root: ScreenGui)
 		local cd = countdown
 		if cd then
 			local left = if at then at - workspace:GetServerTimeNow() else math.huge
-			cd.Visible = left > 0 and left <= L.warn
+			cd.Visible = State.snapshot ~= nil and State.snapshot.tutorial >= Config.TUTORIAL_DONE
+				and not State.cinematic and not menuOpen and left > 0 and left <= L.warn
 			if cd.Visible then
 				cd.Text = "Crate drop in " .. Format.time(math.ceil(left)) .. "!"
 			end

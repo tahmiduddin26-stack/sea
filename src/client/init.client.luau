@@ -146,20 +146,17 @@ ProximityPromptService.PromptTriggered:Connect(function(pp: ProximityPrompt, who
 	elseif pp.Name == "GuidePrompt" then
 		Menus.guide()
 	elseif pp.Name == "CardsPrompt" then
-		MiniGames.cards()
+		MiniGames.cove()
 	elseif pp.Name == "CannonGamePrompt" then -- (not "CannonPrompt": that is the Workshop cannon's Load Cannonball prompt)
 		CannonView.enter((pp.Parent :: Instance):GetAttribute("Side") :: string)
 	elseif pp.Name == "BundlePrompt" then
 		Menus.prompt("Product", "ElementBundle")
 	elseif pp.Name == "RobuxPrompt" then
 		Menus.prompt("Product", pp:GetAttribute("Product") :: string)
+	elseif pp.Name == "FlagPrompt" then
+		local ship = pp:FindFirstAncestorOfClass("Model")
+		if ship and ship:GetAttribute("Owner") == player.UserId then Menus.shipFlag() end
 	end
-end)
-Hud.on("Starter", function()
-	Menus.prompt("Product", "StarterPack")
-end)
-Hud.on("Offer", function()
-	Menus.promptOffer(Hud.offerName())
 end)
 -- controller shortcuts (with on-screen hints while a pad is used)
 local Gamepad = require(script.Gamepad)
@@ -221,6 +218,14 @@ Sound.music("Music")
 -- first visit: wait for the character on the ship, then roll the intro. Also plays again the
 -- moment introSeen goes back to false (admin "Reset to new" / "Play intro"), without a rejoin.
 local introQueued = false
+local likesShown = false
+local function showLikesMilestone()
+	if not likesShown then
+		likesShown = true
+		Hud.toast("Admin Abuse at 100 Likes!", C.Gold)
+	end
+end
+
 local function maybeIntro()
 	local s = State.snapshot
 	if introQueued or not s or s.introSeen then
@@ -232,6 +237,7 @@ local function maybeIntro()
 		char:WaitForChild("HumanoidRootPart", 10)
 		task.wait(1.2)
 		Cinema.intro()
+		showLikesMilestone()
 		-- allow another replay once the server has marked this one seen
 		task.wait(2)
 		introQueued = false
@@ -239,6 +245,20 @@ local function maybeIntro()
 end
 maybeIntro()
 State.Changed:Connect(maybeIntro)
+
+-- Give returning players' join notifications time to clear before showing the milestone.
+if snap.introSeen then
+	task.defer(function()
+		local quietSince = os.clock()
+		while os.clock() - quietSince < 3 do
+			task.wait(0.25)
+			if introQueued or State.cinematic or State.revealing or Hud.inBattle or Menus.isOpen() or not player.Character or Hud.hasToasts() then
+				quietSince = os.clock()
+			end
+		end
+		showLikesMilestone()
+	end)
+end
 
 -- VIP Captains get a gold [VIP] tag in chat
 pcall(function()

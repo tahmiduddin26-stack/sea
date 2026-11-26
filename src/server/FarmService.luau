@@ -5,10 +5,13 @@
 -- so every client can draw the monsters, and drives the tutorial steps.
 
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Cove = require(Shared.CrabCove)
+local FishingDive = require(Shared.FishingDive)
 local Stats = require(Shared.Stats)
 local Format = require(Shared.Format)
 local Remotes = require(Shared.Remotes)
@@ -160,6 +163,9 @@ function FarmService.syncNest(player: Player, i: number)
 	pad:SetAttribute("Lvl", nil)
 	pad:SetAttribute("Stars", nil)
 	pad:SetAttribute("Sixth", nil)
+	pad:SetAttribute("FusionDps", nil)
+	pad:SetAttribute("FusionHp", nil)
+	pad:SetAttribute("PowerId", nil)
 	pad:SetAttribute("ReadyAt", nil)
 	pad:SetAttribute("InBattle", nil)
 	pad:SetAttribute("Variant", nil)
@@ -222,6 +228,9 @@ function FarmService.syncNest(player: Player, i: number)
 			pad:SetAttribute("Lvl", m.lvl)
 			pad:SetAttribute("Stars", Stats.shownStars(m.sp, m.x6))
 			pad:SetAttribute("Sixth", if m.x6 then true else nil)
+			pad:SetAttribute("FusionDps", if m.fusion then m.fusion.dps else nil)
+			pad:SetAttribute("FusionHp", if m.fusion then m.fusion.hp else nil)
+			pad:SetAttribute("PowerId", m.power)
 			pad:SetAttribute("Perk", m.perk) -- Deep Rod perk (shown on the name tag)
 			-- fainted in a fight: it rests until this os.time (the name tag counts it down)
 			pad:SetAttribute("RestUntil", if (m.restUntil or 0) > os.time() then m.restUntil else nil)
@@ -251,7 +260,7 @@ function FarmService.syncNest(player: Player, i: number)
 		prompt.ObjectText = "R$" .. Config.PRODUCTS.SkipTimer.price .. " · 5 min"
 		prompt.HoldDuration = 0.4
 		-- a fuse only lasts a couple of seconds: no Hatch Now offer, just let it finish
-		prompt:SetAttribute("Live", nest.kind ~= "fuse")
+		prompt:SetAttribute("Live", nest.kind ~= "fuse" and not FarmService.inTutorial(player))
 	end
 end
 
@@ -266,6 +275,7 @@ function FarmService.syncAll(player: Player)
 	FarmService.syncPedestals(player)
 	WorldBuilder.applyShipTier(ship, DataService.get(player).shipTier or 0)
 	WorldBuilder.applyPaint(ship, DataService.get(player).paint)
+	WorldBuilder.applyFlag(ship, DataService.get(player).shipFlag)
 	WorldBuilder.applyFittings(ship, DataService.get(player).fittings)
 	ship.quarterBarrier.CanCollide = (DataService.get(player).floor or 1) < 2
 	ship.quarterBarrier.Transparency = if ship.quarterBarrier.CanCollide then 0.5 else 1
@@ -357,7 +367,7 @@ end
 
 local function clearShip(ship: WorldBuilder.Ship)
 	for _, pad in ship.nests do
-		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "Sixth", "ReadyAt", "InBattle", "Price", "Variant", "RestUntil" } do
+		for _, a in { "Owner", "State", "Uid", "Sp", "Lvl", "Stars", "Sixth", "FusionDps", "FusionHp", "PowerId", "ReadyAt", "InBattle", "Price", "Variant", "RestUntil" } do
 			pad:SetAttribute(a, nil)
 		end
 		(pad:FindFirstChild("NestPrompt") :: ProximityPrompt):SetAttribute("Live", false)
@@ -377,6 +387,7 @@ local function clearShip(ship: WorldBuilder.Ship)
 	ship.model:SetAttribute("Owner", nil)
 	WorldBuilder.applyShipTier(ship, 0)
 	WorldBuilder.applyPaint(ship, nil)
+	WorldBuilder.applyFlag(ship, nil)
 	WorldBuilder.applyFittings(ship, nil)
 	updateSign(nil, ship)
 end
@@ -465,8 +476,8 @@ function FarmService.timerFloor(player: Player): number
 	return Stats.timerFloor(DataService.playSeconds(player))
 end
 
-function FarmService.rollVariant(player: Player): string
-	local luck = FarmService.rollLuck(player)
+function FarmService.rollVariant(player: Player, diveLuck: number?): string
+	local luck = FarmService.rollLuck(player) * (diveLuck or 1)
 	local weights = {}
 	local ids = {}
 	for i, v in Config.VARIANTS do
@@ -477,7 +488,7 @@ function FarmService.rollVariant(player: Player): string
 end
 
 -- forceEl: the zone's element; hybrid: the Abyss zone (a random 2-star hybrid or better)
-function FarmService.rollEgg(player: Player, forceEl: string?, hybrid: boolean?, luckMult: number?)
+function FarmService.rollEgg(player: Player, forceEl: string?, hybrid: boolean?, luckMult: number?, diveLuck: number?)
 	local data = DataService.get(player)
 	local els, ews = {}, {}
 	for el, w in Config.ELEMENT_WEIGHTS do
@@ -487,20 +498,22 @@ function FarmService.rollEgg(player: Player, forceEl: string?, hybrid: boolean?,
 	local el = forceEl or pickWeighted(els, ews)
 	if hybrid then
 		local hs = {}
-		for h, up in Config.HYBRID_UP do
+		for h in Config.HYBRID_UP do
 			table.insert(hs, h)
-			table.insert(hs, h)
-			table.insert(hs, up) -- a 1-in-3 shot at the 3-star evolution
 		end
 		local sp = hs[rng:NextInteger(1, #hs)]
+		local boost = diveLuck or 1
+		if rng:NextNumber() < boost / (2 + boost) then
+			sp = Config.HYBRID_UP[sp] -- 1 in 3 at neutral steering luck
+		end
 		local stars = Stats.stars(sp)
 		local lvl = math.min(Stats.levelCap(data.bestDepth), pickWeighted({ 1, 2, 3 }, Config.EGG_LEVEL_WEIGHTS) + math.max(0, Stats.stageOf(math.max(1, data.bestDepth)) - 1) * Config.EGG_LEVEL_PER_STAGE)
-		local v = FarmService.rollVariant(player)
+		local v = FarmService.rollVariant(player, diveLuck)
 		local price = Stats.eggPrice(sp, lvl, stars, rng:NextNumber()) * (if v == "Rainbow" then 6 elseif v == "Golden" then 2.5 else 1)
 		return { sp = sp, lvl = lvl, stars = stars, v = v, price = math.floor(price) }
 	end
 	-- rarity: luck moves weight from Common up to Rare / Epic of that element's line
-	local luck = FarmService.rollLuck(player) * (luckMult or 1)
+	local luck = FarmService.rollLuck(player) * (luckMult or 1) * (diveLuck or 1)
 	local sw = table.clone(Config.STAR_WEIGHTS)
 	for k = 2, #sw do
 		sw[k] *= luck ^ (k - 1)
@@ -511,7 +524,7 @@ function FarmService.rollEgg(player: Player, forceEl: string?, hybrid: boolean?,
 	local lvl = pickWeighted({ 1, 2, 3 }, Config.EGG_LEVEL_WEIGHTS)
 	lvl += math.max(0, Stats.stageOf(math.max(1, data.bestDepth)) - 1) * Config.EGG_LEVEL_PER_STAGE
 	lvl = math.min(lvl, Stats.levelCap(data.bestDepth))
-	local v = FarmService.rollVariant(player)
+	local v = FarmService.rollVariant(player, diveLuck)
 	local price = Stats.eggPrice(sp, lvl, stars, rng:NextNumber()) * (if v == "Rainbow" then 6 elseif v == "Golden" then 2.5 else 1)
 	return { sp = sp, lvl = lvl, stars = stars, v = v, price = math.floor(price) }
 end
@@ -573,7 +586,7 @@ function FarmService.syncAbyssRod(player: Player)
 end
 
 -- A Legendary or Mythic egg from the Abyss Rod's bottom zones (element = the zone's, or any)
-local function rareAbyssEgg(player: Player, el: string?, mythic: boolean): any
+local function rareAbyssEgg(player: Player, el: string?, mythic: boolean, diveLuck: number?): any
 	local data = DataService.get(player)
 	local pool = {}
 	for id, def in Config.MONSTERS do
@@ -588,7 +601,35 @@ local function rareAbyssEgg(player: Player, el: string?, mythic: boolean): any
 	local sp = pool[rng:NextInteger(1, #pool)]
 	local lvl = pickWeighted({ 1, 2, 3 }, Config.EGG_LEVEL_WEIGHTS) + math.max(0, Stats.stageOf(math.max(1, data.bestDepth)) - 1) * Config.EGG_LEVEL_PER_STAGE
 	lvl = math.min(lvl, Stats.levelCap(data.bestDepth))
-	return { sp = sp, lvl = lvl, stars = Stats.stars(sp), v = FarmService.rollVariant(player), price = 0 }
+	return { sp = sp, lvl = lvl, stars = Stats.stars(sp), v = FarmService.rollVariant(player, diveLuck), price = 0 }
+end
+
+type ActiveDive = {
+	start: number,
+	down: number,
+	firstSide: number,
+	steering: FishingDive.Steering,
+	gate: number,
+	luck: number,
+}
+local dives: { [Player]: ActiveDive } = {}
+-- Let input sent just before a gate reach the server before checking the crossing.
+local INPUT_GRACE = 0.12
+local MAX_DIVE_LUCK = 1.4
+
+local function advanceDive(player: Player, dive: ActiveDive, progress: number)
+	for i = dive.gate + 1, #FishingDive.GATES do
+		local at = FishingDive.GATES[i].at
+		if progress < at then
+			break
+		end
+		local x = FishingDive.move(dive.steering, at, dive.down)
+		local mult = FishingDive.multiplier(dive.firstSide, i, x)
+		dive.gate = i
+		dive.luck *= mult
+		Remotes.event("FishingDive"):FireClient(player, dive.start, i, mult, dive.luck)
+	end
+	FishingDive.move(dive.steering, progress, dive.down)
 end
 
 -- kind: nil = Egg Rod, true / "deep" = Deep Rod, "abyss" = Abyss Rod
@@ -675,45 +716,32 @@ local function haul(player: Player, kind: any)
 	s.lastRoll = os.clock()
 	local ZONES = info.zones
 	local rodLuck = if abyss then Config.ABYSS_ROD.luck else Config.DEEP_ROD.luck
-	-- roll the zone the hook stops in (Egg Luck makes the deep zones likelier)
 	local scripted = if deep then nil else Config.TUTORIAL_EGGS[data.tutorial]
-	local zone = 1
-	if deep then
-		local luck = FarmService.rollLuck(player) * rodLuck
-		local ids, ws = {}, {}
-		for k, z in ZONES do
-			table.insert(ids, k)
-			table.insert(ws, z.weight * luck ^ ((k - 1) / 3))
-		end
-		zone = pickWeighted(ids, ws)
-	elseif scripted then
-		local el = Config.MONSTERS[scripted.sp].elements[1]
-		for k, z in Config.FISH_ZONES do
-			if z.element == el then
-				zone = k
-			end
-		end
-	else
-		local luck = FarmService.rollLuck(player)
-		local ids, ws = {}, {}
-		for k, z in Config.FISH_ZONES do
-			table.insert(ids, k)
-			table.insert(ws, z.weight * luck ^ ((k - 1) / 2))
-		end
-		zone = pickWeighted(ids, ws)
-	end
-	-- Fast Reel: every pedestal level (upgrade, pass or spell) makes the whole cast 8% quicker
+	-- The rod always reaches the seabed. Fast Reel speeds up the whole cast.
 	local reel = 1 - 0.08 * (FarmService.pedestalCount(player) - 1)
-	local time = (Config.FISH_BASE + zone * info.perZone) * math.max(0.6, reel)
-	-- the rod casts and dives: the pedestals empty now and the catch lands on them when the
-	-- line comes up (every client plays the same dive from "haul")
+	local time = (Config.FISH_BASE + #ZONES * info.perZone) * math.max(0.6, reel)
 	s.fishing = true
 	MissionService.record(player, "fish", 1)
-	Analytics.event(player, "RodCast", 1, { rod = info.kind or "egg", zone = zone }) -- also the Loop funnel's "fished an egg"
-	-- the Deep Rod has its own pedestal (the last one), so the two rods never clear each other's eggs
-	-- one egg per cast: the hook pulls a single egg out of a rock nest on the sea floor
-	local count = 1
-	Remotes.event("Battle"):FireAllClients(player.UserId, "haul", { count = count, zone = zone, time = time, deep = deep, rod = info.kind, slot = mySlot })
+	Analytics.event(player, "RodCast", 1, { rod = info.kind or "egg", zone = #ZONES })
+	local dive: ActiveDive = {
+		start = workspace:GetServerTimeNow(),
+		down = FishingDive.downTime(time),
+		firstSide = if rng:NextInteger(0, 1) == 0 then -1 else 1,
+		steering = FishingDive.steering(),
+		gate = 0,
+		luck = 1,
+	}
+	dives[player] = dive
+	local cast: FishingDive.Cast = { time = time, rod = info.kind, slot = mySlot, start = dive.start, firstSide = dive.firstSide, practice = scripted ~= nil }
+	Remotes.event("Battle"):FireAllClients(player.UserId, "haul", cast)
+	for _, gate in FishingDive.GATES do
+		local at = gate.at
+		task.delay(FishingDive.CAST + dive.down * at + INPUT_GRACE, function()
+			if dives[player] == dive then
+				advanceDive(player, dive, at)
+			end
+		end)
+	end
 	if abyss then
 		DataService.changed(player) -- the cooldown starts now (abyssRodAt)
 		FarmService.syncAbyssRod(player)
@@ -748,16 +776,26 @@ local function haul(player: Player, kind: any)
 			end)
 		end
 	end
-	task.delay(time, function()
-		s.fishing = false
-		if not DataService.get(player) or DataService.session(player) ~= s then
+	local new: any = nil
+	task.delay(FishingDive.CAST + dive.down, function()
+		if dives[player] ~= dive or DataService.session(player) ~= s then
 			return
 		end
-		scripted = if deep then nil else Config.TUTORIAL_EGGS[data.tutorial]
-		local new: any
+		advanceDive(player, dive, 1)
+		dives[player] = nil
 		if scripted then
 			new = table.clone(scripted)
-		elseif deep then
+			return
+		end
+		local catchLuck = math.min(MAX_DIVE_LUCK, dive.luck)
+		local luck = FarmService.rollLuck(player) * (if deep then rodLuck else 1)
+		local ids, weights = {}, {}
+		for k, z in ZONES do
+			table.insert(ids, k)
+			table.insert(weights, z.weight * luck ^ ((k - 1) / (if deep then 3 else 2)))
+		end
+		local zone = pickWeighted(ids, weights)
+		if deep then
 			-- the Deep Rod: 50% luckier, always free, and the deeper the zone the likelier a perk.
 			-- The Abyss Rod: luckier still, its own perks, and Legendary / Mythic eggs at the bottom.
 			local z = ZONES[zone]
@@ -772,13 +810,13 @@ local function haul(player: Player, kind: any)
 					Analytics.event(player, "DivineCatch", 1, { zone = z.id })
 				end
 			end
-			if not e and abyss and z.mythic and rng:NextNumber() < z.mythic then
-				e = rareAbyssEgg(player, nil, true)
+			if not e and abyss and z.mythic and rng:NextNumber() < z.mythic * catchLuck then
+				e = rareAbyssEgg(player, nil, true, catchLuck)
 			end
-			if not e and abyss and z.legend and rng:NextNumber() < z.legend then
-				e = rareAbyssEgg(player, z.element, false)
+			if not e and abyss and z.legend and rng:NextNumber() < z.legend * catchLuck then
+				e = rareAbyssEgg(player, z.element, false, catchLuck)
 			end
-			e = e or FarmService.rollEgg(player, z.element, z.element == nil, rodLuck)
+			e = e or FarmService.rollEgg(player, z.element, z.element == nil, rodLuck, catchLuck)
 			local order = if abyss then Config.ABYSS_PERK_ORDER else Config.PERK_ORDER
 			if rng:NextNumber() < z.perk then
 				e.perk = order[rng:NextInteger(1, #order)]
@@ -789,8 +827,14 @@ local function haul(player: Player, kind: any)
 			-- one egg per cast, and a single catch is always free (same as before: the "never every
 			-- egg on one cast" rule meant a lone egg never became a Treasure Egg)
 			local el = Config.FISH_ZONES[zone].element
-			new = FarmService.rollEgg(player, el, el == nil)
+			new = FarmService.rollEgg(player, el, el == nil, nil, catchLuck)
 			new.price = 0
+		end
+	end)
+	task.delay(time, function()
+		s.fishing = false
+		if not new or not DataService.get(player) or DataService.session(player) ~= s then
+			return
 		end
 		-- lands on the pedestal picked at cast time; earlier untaken eggs stay where they are
 		new.price = new.price or 0 -- tutorial eggs come without a price
@@ -799,6 +843,7 @@ local function haul(player: Player, kind: any)
 		if data.tutorial < Config.TUTORIAL_DONE then
 			new.lvl = 1
 		end
+		new.saleId = HttpService:GenerateGUID(false)
 		s.pedestalEggs[mySlot] = new
 		FarmService.syncPedestals(player)
 		DataService.changed(player)
@@ -812,6 +857,7 @@ local function setCarrying(player: Player, egg: any)
 	local s = DataService.session(player)
 	s.carrying = egg
 	if egg then
+		egg.saleId = HttpService:GenerateGUID(false)
 		player:SetAttribute("Carrying", egg.sp .. ":" .. egg.lvl .. ":" .. egg.stars .. ":" .. (egg.v or "Normal"))
 	else
 		player:SetAttribute("Carrying", nil)
@@ -830,7 +876,7 @@ local function buyEgg(player: Player, i: number)
 		if c and i <= FarmService.pedestalCount(player) and data.tutorial >= Config.TUTORIAL_DONE then
 			local paid = c.paid or 0
 			data.coins += paid -- what you paid comes back, and the egg costs the same again if you retake it
-			s.pedestalEggs[i] = { sp = c.sp, lvl = c.lvl, stars = c.stars, v = c.v, perk = c.perk, price = paid }
+			s.pedestalEggs[i] = { sp = c.sp, lvl = c.lvl, stars = c.stars, v = c.v, perk = c.perk, price = paid, saleId = HttpService:GenerateGUID(false) }
 			setCarrying(player, nil)
 			FarmService.syncPedestals(player)
 			toast(player, "Egg put back", Color3.fromRGB(120, 230, 170))
@@ -856,12 +902,34 @@ local function buyEgg(player: Player, i: number)
 	FarmService.tutorial(player, 13)
 end
 
+function FarmService.grantCoveHatchBoost(player: Player): number
+	local data = DataService.get(player)
+	local now = os.time()
+	local expires = now + Cove.hatchBoostSeconds
+	-- Existing deadlines already include the old boost. Apply only the newly covered time.
+	local alreadyCoveredUntil = math.max(now, data.coveHatchUntil or 0)
+	data.coveHatchUntil = expires
+	for key, nest in data.nests do
+		if nest.kind == "egg" and nest.readyAt > alreadyCoveredUntil then
+			local remaining = nest.readyAt - alreadyCoveredUntil
+			nest.readyAt = alreadyCoveredUntil + Cove.boostedHatchDuration(remaining, expires - alreadyCoveredUntil)
+			FarmService.syncNest(player, tonumber(key) :: number)
+		end
+	end
+	DataService.changed(player)
+	return expires
+end
+
 -- Put a ready egg/child straight into a free nest (boss drops, products). false if full.
 function FarmService.giveEgg(player: Player, egg: any, hatchSeconds: number?): boolean
 	local data = DataService.get(player)
 	for i = 1, #Config.NEST_SLOTS do
 		if FarmService.ownsNest(data, i) and not data.nests[tostring(i)] then
-			data.nests[tostring(i)] = { kind = "egg", egg = egg, readyAt = os.time() + (hatchSeconds or 0) }
+			local now = os.time()
+			local secs = Cove.boostedHatchDuration(hatchSeconds or 0, (data.coveHatchUntil or 0) - now)
+			local storedEgg = table.clone(egg)
+			storedEgg.saleId = HttpService:GenerateGUID(false)
+			data.nests[tostring(i)] = { kind = "egg", egg = storedEgg, readyAt = now + secs }
 			FarmService.syncNest(player, i)
 			DataService.changed(player)
 			return true
@@ -886,9 +954,15 @@ local function placeEgg(player: Player, i: number)
 		return
 	end
 	local c = s.carrying
-	local egg = { sp = c.sp, lvl = c.lvl, stars = c.stars, v = c.v, perk = c.perk } -- (no "paid": that is only for Put Back)
+	local egg = { sp = c.sp, lvl = c.lvl, stars = c.stars, v = c.v, perk = c.perk, saleId = HttpService:GenerateGUID(false) }
 	local secs = math.max(2, math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player)))
-	data.nests[tostring(i)] = { kind = "egg", egg = egg, readyAt = os.time() + secs }
+	local now = os.time()
+	local boostedSecs = Cove.boostedHatchDuration(secs, (data.coveHatchUntil or 0) - now)
+	data.nests[tostring(i)] = { kind = "egg", egg = egg, readyAt = now + boostedSecs }
+	if secs > 300 and not s.coveHint then
+		s.coveHint = true
+		toast(player, "Return 5 eggs in Crab Cove for " .. Cove.hatchRewardText .. "!", Color3.fromRGB(70, 210, 110))
+	end
 	setCarrying(player, nil)
 	FarmService.syncNest(player, i)
 	FarmService.tutorial(player, 3)
@@ -900,7 +974,7 @@ local function newMonster(player: Player, item: any): string
 	local data = DataService.get(player)
 	local uid = tostring(data.nextUid)
 	data.nextUid += 1
-	data.monsters[uid] = { sp = item.sp, lvl = item.lvl, stars = item.stars, v = item.v, x6 = item.x6, perk = item.perk }
+	data.monsters[uid] = { sp = item.sp, lvl = item.lvl, stars = item.stars, v = item.v, x6 = item.x6, perk = item.perk, fusion = item.fusion }
 	-- the buyable nests appear the moment you own NEST_REVEAL_MONSTERS monsters
 	task.defer(function()
 		for n = Config.START_NESTS + 1, #Config.NEST_SLOTS do
@@ -1041,6 +1115,51 @@ local function nestOfUid(data: any, uid: string): number?
 	return nil
 end
 
+function FarmService.sellEgg(player: Player, saleId: any): (boolean, string?)
+	local data = DataService.get(player)
+	local session = DataService.session(player)
+	if typeof(saleId) ~= "string" or not data or not session then return false, "Pick an egg" end
+	if session.inBattle then return false, "Wait for the battle to end" end
+	if FarmService.inTutorial(player) then return false, "Finish the tutorial first" end
+	local egg = session.carrying
+	local syncPedestals = false
+	if egg and egg.saleId == saleId then
+		setCarrying(player, nil)
+	else
+		egg = nil
+		for key, nest in data.nests do
+			if nest.kind == "egg" and nest.egg.saleId == saleId then
+				egg = nest.egg
+				data.nests[key] = nil
+				FarmService.syncNest(player, tonumber(key) :: number)
+				break
+			end
+		end
+	end
+	if not egg then
+		for slot, candidate in session.pedestalEggs do
+			if candidate.saleId == saleId then
+				if (candidate.price or 0) > 0 then
+					return false, "Take that egg before selling it"
+				end
+				egg = candidate
+				session.pedestalEggs[slot] = nil
+				syncPedestals = true
+				break
+			end
+		end
+	end
+	if not egg then return false, "That egg is no longer available" end
+	local price = Stats.sellPrice(egg.sp, egg.lvl, egg.v, data.bestDepth)
+	data.coins += price
+	if syncPedestals then
+		FarmService.syncPedestals(player)
+	end
+	Analytics.tag(player, "Gameplay", "SellEgg")
+	DataService.changed(player)
+	return true, "Sold egg for " .. Format.abbrev(price) .. " coins"
+end
+
 -- Sell a hatched monster that is standing in one of your nests
 function FarmService.sellMonster(player: Player, uid: any): (boolean, string?)
 	local data = DataService.get(player)
@@ -1159,7 +1278,7 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 	end
 	-- a perk (Deep Rod) is kept: one of the parents' perks, picked at random if both have one
 	local perk = if a.perk and b.perk then (if rng:NextNumber() < 0.5 then a.perk else b.perk) else a.perk or b.perk
-	local child = { sp = sp, lvl = newLvl, stars = Stats.stars(sp), v = v, x6 = x6 or rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk }
+	local child = { sp = sp, lvl = newLvl, stars = Stats.stars(sp), v = v, x6 = x6 or rng:NextNumber() < Config.SIXTH_STAR_CHANCE, perk = perk, fusion = Stats.fusionFloor(fed) }
 	data.monsters[uidA] = nil
 	data.monsters[uidB] = nil
 	-- the extra monsters are eaten too (their nests free up); a perk on one can carry over
@@ -1170,14 +1289,16 @@ function FarmService.fuse(player: Player, uidA: any, uidB: any, extra: { any }?)
 			child.perk = x.m.perk
 		end
 	end
-	-- nobody fused away stays on the battle team
+	-- A child takes the first slot that one of its parents held on a manually picked team.
+	local teamSlot: number? = nil
 	for i = #data.team, 1, -1 do
 		if seen[data.team[i]] then
+			teamSlot = i
 			table.remove(data.team, i)
 		end
 	end
 	local secs = Config.FUSE_SECONDS -- instant: only the swoop animation, no speed boost needed
-	data.nests[tostring(na)] = { kind = "fuse", child = child, readyAt = os.time() + secs, from = { a.sp, b.sp } }
+	data.nests[tostring(na)] = { kind = "fuse", child = child, readyAt = os.time() + secs, from = { a.sp, b.sp }, teamSlot = teamSlot }
 	data.nests[tostring(nb)] = nil
 	data.totalFuses += 1
 	Analytics.event(player, "Fuse", child.lvl, { species = child.sp, stars = Stats.shownStars(child.sp, child.x6) })
@@ -1198,9 +1319,12 @@ local function finishFuse(player: Player, i: number)
 	local nest = data.nests[tostring(i)]
 	local uid = newMonster(player, nest.child)
 	data.nests[tostring(i)] = { kind = "mon", uid = uid }
+	if nest.teamSlot and #data.team < data.teamSlots then
+		table.insert(data.team, math.min(nest.teamSlot, #data.team + 1), uid)
+	end
 	FarmService.syncNest(player, i)
 	DataService.changed(player)
-	Remotes.event("Reveal"):FireClient(player, "fuse", { sp = nest.child.sp, lvl = nest.child.lvl, stars = nest.child.stars, x6 = nest.child.x6, perk = nest.child.perk, nest = i })
+	Remotes.event("Reveal"):FireClient(player, "fuse", { sp = nest.child.sp, lvl = nest.child.lvl, stars = nest.child.stars, v = nest.child.v, x6 = nest.child.x6, perk = nest.child.perk, fusion = nest.child.fusion, nest = i })
 	FarmService.tutorial(player, 11)
 end
 
@@ -1223,7 +1347,7 @@ function FarmService.restLeft(player: Player): number
 end
 
 -- forBattle: leave out monsters that are resting after a defeat
-function FarmService.team(player: Player, forBattle: boolean?): { { uid: string, sp: string, lvl: number, stars: number, nest: number } }
+function FarmService.team(player: Player, forBattle: boolean?): { { uid: string, sp: string, lvl: number, stars: number, nest: number, v: string?, x6: boolean?, perk: string?, power: string?, fusion: { hp: number, dps: number }? } }
 	local data = DataService.get(player)
 	local out = {}
 	local now = os.time()
@@ -1231,7 +1355,7 @@ function FarmService.team(player: Player, forBattle: boolean?): { { uid: string,
 		if nest.kind == "mon" then
 			local m = data.monsters[nest.uid]
 			if m and not (forBattle and (m.restUntil or 0) > now) then
-				table.insert(out, { uid = nest.uid, sp = m.sp, lvl = m.lvl, stars = m.stars, v = m.v, x6 = m.x6, perk = m.perk, nest = tonumber(k) :: number })
+				table.insert(out, { uid = nest.uid, sp = m.sp, lvl = m.lvl, stars = m.stars, v = m.v, x6 = m.x6, perk = m.perk, power = m.power, fusion = m.fusion, nest = tonumber(k) :: number })
 			end
 		end
 	end
@@ -1251,7 +1375,7 @@ function FarmService.team(player: Player, forBattle: boolean?): { { uid: string,
 	-- no chosen fighter is awake (none picked, or they are all sleeping): send the strongest awake monsters
 	if #team == 0 then
 		table.sort(out, function(x, y)
-			return Stats.power(x.sp, x.lvl, x.stars, x.v, x.x6) > Stats.power(y.sp, y.lvl, y.stars, y.v, y.x6)
+			return Stats.power(x.sp, x.lvl, x.stars, x.v, x.x6, x) > Stats.power(y.sp, y.lvl, y.stars, y.v, y.x6, y)
 		end)
 		for _, m in out do
 			if #team >= data.teamSlots then
@@ -1282,6 +1406,11 @@ function FarmService.setTeam(player: Player, uids: any): (boolean, string?)
 		end
 	end
 	data.team = list
+	for _, nest in data.nests do
+		if nest.kind == "fuse" then
+			nest.teamSlot = nil
+		end
+	end
 	DataService.changed(player)
 	return true, nil
 end
@@ -1289,7 +1418,7 @@ end
 function FarmService.teamPower(player: Player): number
 	local p = 0
 	for _, m in FarmService.team(player) do
-		p += Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6)
+		p += Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6, m)
 	end
 	return p
 end
@@ -1310,6 +1439,18 @@ local function ownsShipOf(player: Player, inst: Instance): (WorldBuilder.Ship?, 
 end
 
 function FarmService.init()
+	Remotes.event("FishingDive").OnServerEvent:Connect(function(player, start, direction)
+		local dive = dives[player]
+		if not dive or start ~= dive.start or (direction ~= -1 and direction ~= 0 and direction ~= 1) or direction == dive.steering.direction then
+			return
+		end
+		local progress = (workspace:GetServerTimeNow() - dive.start - FishingDive.CAST - INPUT_GRACE) / dive.down
+		if progress < -0.15 or progress >= FishingDive.CENTER then
+			return
+		end
+		advanceDive(player, dive, progress)
+		dive.steering.direction = direction
+	end)
 	for _, ship in WorldBuilder.ships do
 		clearShip(ship);
 		(ship.winch:FindFirstChild("WinchPrompt") :: ProximityPrompt).Triggered:Connect(function(player)
@@ -1375,6 +1516,7 @@ function FarmService.init()
 		DataService.changed(player)
 	end)
 	DataService.Leaving:Connect(function(player)
+		dives[player] = nil
 		local s = DataService.session(player)
 		-- a carried egg goes back into a free nest so it's never lost
 		if s and s.carrying then

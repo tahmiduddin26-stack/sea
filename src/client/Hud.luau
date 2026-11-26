@@ -1,7 +1,7 @@
 --!strict
 -- The always-on HUD, laid out like the reference game so it reads instantly:
 --   left column   big 3D icons with labels + red badges: Shop, Event, Index, Team (n/cap), Gifts
---   right column  Starter Pack (creature art) + one rotating Robux offer, each with a price chip
+--   right column  Boosts opens the Robux shop
 --   top centre    FIGHT + swords "Team Power: N" when idle; the Depth bar (15 dots, skull
 --                 mini-boss, crowned boss), enemy name + HP, boss timer, speed + Retreat in a fight
 --   top banner    one tutorial line with a gold key word (Guide drives it)
@@ -57,11 +57,6 @@ local sellBtn: ImageButton
 local banner: Frame
 local bannerLbl: TextLabel
 local toastHolder: Frame
-local offerBtn: ImageButton
-local offerIcon: ImageLabel
-local offerTitle: TextLabel
-local offerPrice: TextLabel
-local starterBtn: GuiObject
 local badges: { [string]: TextLabel } = {}
 local teamCount: TextLabel
 local hotbar: Frame
@@ -133,35 +128,13 @@ local function setBadge(key: string, n: number)
 	end
 end
 
--- Green price chip: Robux tag icon + "69"
-local function priceChip(parent: GuiObject, price: number, y: number): TextLabel
-	local chip = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(90, 28), Position = UDim2.new(0.5, 0, 0, y), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 4, Parent = parent })
-	UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I.Robux, Size = UDim2.fromOffset(28, 28), ZIndex = 4, Parent = chip })
-	return UI.label({ Text = tostring(price), TextColor3 = Color3.fromRGB(120, 240, 120), TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -32, 1, 0), Position = UDim2.fromOffset(32, 0), ZIndex = 4, Parent = chip })
-end
-
--- Two creatures in a viewport (offer art)
-local function creatureArt(parent: GuiObject, ids: { string }, size: UDim2): ViewportFrame
-	local vp = UI.new("ViewportFrame", { BackgroundTransparency = 1, Size = size, Ambient = Color3.fromRGB(210, 210, 220), LightDirection = Vector3.new(-1, -1, -1), ZIndex = 2, Parent = parent })
-	for i, id in ids do
-		local rig = MonsterModels.build(id, 1)
-		if rig then
-			local x = (i - (#ids + 1) / 2) * 2.6
-			MonsterModels.pose(rig, CFrame.new(x, 0, i * 0.6) * CFrame.Angles(0, math.rad(-20 + i * 25), 0), i, false, false)
-			rig.model.Parent = vp
-		end
-	end
-	local cam = Instance.new("Camera")
-	cam.FieldOfView = 34
-	cam.CFrame = CFrame.lookAt(Vector3.new(-2, 2.5, -9.5), Vector3.new(0, 0.6, 0.6))
-	cam.Parent = vp
-	vp.CurrentCamera = cam
-	return vp
-end
-
 ---------------------------------------------------------------------------
 -- Toasts
 ---------------------------------------------------------------------------
+function Hud.hasToasts(): boolean
+	return toastHolder ~= nil and toastHolder:FindFirstChildWhichIsA("GuiObject") ~= nil
+end
+
 function Hud.toast(text: string, color: Color3?)
 	if not toastHolder then
 		return
@@ -520,47 +493,6 @@ function Hud.setBattle(on: boolean)
 end
 
 ---------------------------------------------------------------------------
--- Rotating offer
----------------------------------------------------------------------------
-local OFFER_INDEX = 1
-local OFFER_ICON = { DoubleCoins = "Coin", FuseLuck = "LuckEgg", FastFuse = "Heart", FastBattle = "Speed", InsaneLuck = "LuckEgg", Luck30 = "LuckEgg", DoubleLuck = "LuckEgg" }
-local function currentOffer(): string
-	return Config.OFFER_ROTATION[(OFFER_INDEX - 1) % #Config.OFFER_ROTATION + 1]
-end
-
-local function offerInfo(name: string): (string, number)
-	local pass = Config.GAMEPASSES[name]
-	if pass then
-		return pass.name, pass.price
-	end
-	local prod = Config.PRODUCTS[name]
-	return prod.name, prod.price
-end
-
-local function refreshOffer()
-	-- skip passes the player already owns
-	for _ = 1, #Config.OFFER_ROTATION do
-		local o = currentOffer()
-		local info = Config.GAMEPASSES[o] or Config.PRODUCTS[o]
-		-- skip passes already owned, and anything not created on Roblox yet (id 0) outside Studio
-		if (Config.GAMEPASSES[o] and State.hasPass(o)) or (info and info.id == 0 and not game:GetService("RunService"):IsStudio()) then
-			OFFER_INDEX += 1
-		else
-			break
-		end
-	end
-	local name = currentOffer()
-	local title, price = offerInfo(name)
-	offerTitle.Text = title
-	offerPrice.Text = tostring(price)
-	offerIcon.Image = Config.STORE_ICONS[name] or I[OFFER_ICON[name] or "Coin"]
-end
-
-function Hud.offerName(): string
-	return currentOffer()
-end
-
----------------------------------------------------------------------------
 -- Refresh from the snapshot
 ---------------------------------------------------------------------------
 function Hud.refresh()
@@ -598,9 +530,8 @@ function Hud.refresh()
 	pearlLbl.Text = Format.abbrev(snap.pearls)
 	local unlocked = snap.tutorial >= Config.HUD_UNLOCK_STEP
 	leftCol.Visible = false -- menus live at vendors in the world now
-	rightCol.Visible = unlocked
+	rightCol.Visible = unlocked and not Hud.inBattle and not State.cinematic
 	powersCard.Visible = false -- the Power Shrine vendor in the harbour
-	starterBtn.Visible = not snap.starterBought
 	local monsters = 0
 	for _ in snap.monsters do
 		monsters += 1
@@ -622,12 +553,16 @@ function Hud.refresh()
 	local ringHolder = fuseRing.Parent :: GuiObject
 	ringHolder.Visible = canFuse
 	-- Sell sits beside it once the tutorial is done (the server won't sell before that)
-	sellBtn.Visible = snap.tutorial >= Config.TUTORIAL_DONE and monsters > 0 and not Hud.inBattle and not Hud.fuseOpen
+	local hasEgg = snap.carrying ~= nil
+	for _, nest in snap.nests do
+		if nest.kind == "egg" then hasEgg = true break end
+	end
+	sellBtn.Visible = snap.tutorial >= Config.TUTORIAL_DONE and (monsters > 0 or hasEgg) and not Hud.inBattle and not Hud.fuseOpen
 	-- toasts ride above the tray so the two never overlap
 	if toastHolder then
 		toastHolder.Position = UDim2.new(0.5, 0, 1, if Hud.fuseOpen then -176 else -140)
 	end
-	fightBtn.Visible = not Hud.inBattle and snap.tutorial >= 5 and monsters > 0 and not snap.carrying
+	fightBtn.Visible = not Hud.inBattle and (snap.tutorial == 5 or snap.tutorial >= Config.TUTORIAL_DONE) and monsters > 0 and not snap.carrying
 	-- "Pick Team" sits beside FIGHT once the tutorial is done (same moments FIGHT shows)
 	teamBtn.Visible = fightBtn.Visible and snap.tutorial >= Config.TUTORIAL_DONE
 	-- Enough coins for the next team slot? Show a red "!" on Pick Team and say so once per slot.
@@ -643,14 +578,14 @@ function Hud.refresh()
 	local team = 0
 	local list = {}
 	for uid, m in snap.monsters do
-		table.insert(list, { uid = uid, m = m, p = Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6) })
+		table.insert(list, { uid = uid, m = m, p = Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6, m) })
 	end
 	if #snap.team > 0 then
 		for _, uid in snap.team do
 			local m = snap.monsters[uid]
 			if m and team < snap.teamSlots then
 				team += 1
-				power += Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6)
+				power += Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6, m)
 			end
 		end
 	else
@@ -831,37 +766,16 @@ function Hud.init(screen: ScreenGui)
 	badge(giftBtn, "Gifts")
 	giftLbl = teamCount -- (kept for refresh symmetry)
 
-	-- right column: Starter Pack (creature art) + rotating offer
+	-- right column: one entry point for the Robux shop
 	rightCol = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(140, 300), Position = UDim2.new(1, -10, 0.5, -30), AnchorPoint = Vector2.new(1, 0.5), Visible = false, Parent = root })
 	rightLayout = UI.new("UIListLayout", { Padding = UDim.new(0, 18), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Top, Parent = rightCol })
-	local sb = UI.new("ImageButton", { BackgroundTransparency = 1, Image = "", Size = UDim2.fromOffset(130, 120), Parent = rightCol })
-	creatureArt(sb, { "Kelpdrake", "Splashfin" }, UDim2.new(1, 0, 0, 92))
-	priceChip(sb, Config.PRODUCTS.StarterPack.price, -12)
-	UI.label({ Text = "Starter\nPack", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.new(0, 0, 1, -40), ZIndex = 4, Parent = sb })
-	sb.Activated:Connect(function()
-		fire("Starter")
+	iconButton(rightCol, I.Speed, "Boosts", 70, function()
+		fire("Shop")
 	end)
-	starterBtn = sb
-	offerBtn = UI.new("ImageButton", { BackgroundTransparency = 1, Image = "", Size = UDim2.fromOffset(130, 120), Parent = rightCol })
-	offerIcon = UI.new("ImageLabel", { BackgroundTransparency = 1, Image = I.Coin, Size = UDim2.fromOffset(80, 80), Position = UDim2.new(0.5, 0, 0, 12), AnchorPoint = Vector2.new(0.5, 0), Parent = offerBtn })
-	offerPrice = priceChip(offerBtn, 0, -12)
-	offerTitle = UI.label({ Text = "", Size = UDim2.new(1.2, 0, 0, 40), Position = UDim2.new(0.5, 0, 1, -36), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 4, Parent = offerBtn })
-	offerBtn.Activated:Connect(function()
-		fire("Offer")
-	end)
-	refreshOffer()
 	task.spawn(function()
 		while true do
 			task.wait(0.5)
 			Hud.tickRest()
-		end
-	end)
-	task.spawn(function()
-		while true do
-			task.wait(Config.OFFER_ROTATE)
-			OFFER_INDEX += 1
-			refreshOffer()
-			UI.pop(offerBtn, 0.8)
 		end
 	end)
 

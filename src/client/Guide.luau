@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local Format = require(Shared.Format)
 local Remotes = require(Shared.Remotes)
 local Stats = require(Shared.Stats)
 
@@ -17,7 +18,6 @@ local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
 local Hud = require(script.Parent.Hud)
 local Sound = require(script.Parent.Sound)
-local Platform = require(script.Parent.Platform)
 local ShipView = require(script.Parent.ShipView)
 
 local Guide = {}
@@ -124,8 +124,6 @@ local function hudTarget(target: string?): GuiObject?
 	return nil
 end
 
-local lastStep = 0
-
 -- Do you own enough monsters of one level to fuse (Stats.fuseNeeded: 2 for Lv1-2, then the level)?
 local function canFuseNow(snap: any): boolean
 	if not snap or not snap.monsters then
@@ -146,9 +144,8 @@ local function canFuseNow(snap: any): boolean
 end
 
 -- True while the guide should show nothing: a fight is running, you are not on your own ship, or the
--- camera is facing the arena (out to starboard) from the deck. `ignoreLook` skips that last check:
--- the Fuse helper points at monsters on your own deck, and hiding it whenever the camera happened
--- to swing toward the arena made the arrow vanish at some angles.
+-- camera is facing the arena (out to starboard) from the deck. The tutorial and Fuse
+-- helper skip the camera check so turning around never removes the current instruction.
 local function isQuiet(ignoreLook: boolean?): boolean
 	if Hud.inBattle then
 		return true
@@ -190,7 +187,7 @@ function Guide.init(screen: ScreenGui)
 	marker = buildMarker()
 	guiArrow = UI.label({ Text = "▼", TextColor3 = ARROW, Size = UDim2.fromOffset(60, 60), AnchorPoint = Vector2.new(0.5, 1), Visible = false, ZIndex = 20, Parent = screen })
 	fuseTag = UI.panel({ Size = UDim2.fromOffset(250, 78), AnchorPoint = Vector2.new(1, 0.5), Color = Color3.fromRGB(40, 140, 235), Radius = 18, Visible = false, ZIndex = 20, Parent = screen })
-	fuseTagLbl = UI.label({ Text = "", MaxText = 24, Size = UDim2.new(1, -24, 1, -14), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2, ZIndex = 21, Parent = fuseTag })
+	fuseTagLbl = UI.label({ Text = "", MaxText = 24, TextWrapped = true, Size = UDim2.new(1, -24, 1, -14), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2, ZIndex = 21, Parent = fuseTag })
 	fuseTagTail = UI.label({ Text = "▶", TextColor3 = Color3.fromRGB(40, 140, 235), Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, 14, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 19, Parent = fuseTag })
 
 	Remotes.event("Tutorial").OnClientEvent:Connect(function(step)
@@ -198,9 +195,13 @@ function Guide.init(screen: ScreenGui)
 			Sound.play("Click", 0.5, 1.4)
 		end
 		if step == Config.TUTORIAL_DONE then
-			task.delay(3, function()
+			task.defer(function()
+				task.wait(3)
+				while State.revealing do
+					task.wait(0.25)
+				end
 				Hud.splash("THE HARBOUR IS OPEN!", C.Gold)
-				Hud.toast("Walk the dock to the island: shops, spells, eggs and more!", C.Deep)
+				Hud.toast("Try FIGHT with your stronger monster, or follow the dock to town!", C.Deep)
 			end)
 		end
 	end)
@@ -210,41 +211,38 @@ function Guide.init(screen: ScreenGui)
 		local t = os.clock()
 		local step = if snap then snap.tutorial else 0
 		local info = Config.TUTORIAL[step]
-		-- Stay completely quiet (no banner, trail, arrows or tags) while you are watching a fight, away
-		-- from your ship, or looking out toward the arena from the deck: the prompts only belong to
-		-- the ship, and they used to sit right over the battle and its depth bar.
-		-- a helper (the open Fuse tray) takes over the banner, trail and arrow while it is open; it
-		-- ignores where the camera looks (you opened the tray, so you want the way shown)
+		-- Hide the banner during battles. Keep tutorial instructions visible from any deck camera angle.
 		local helper = Guide.helper
-		-- HUD targets (FIGHT, Fuse) point at a button, not the deck, so where the camera looks doesn't
-		-- matter: the FIGHT prompt used to vanish whenever the camera faced the arena
-		local hudStep = info ~= nil and (info.target == "fight" or info.target == "fuse")
-		local quiet = isQuiet(helper ~= nil or hudStep)
+		local quiet = isQuiet(helper ~= nil or info ~= nil)
 		-- the Fuse prompt (tag + arrow) only makes sense when something CAN be fused right now
 		local noFuse = info ~= nil and info.target == "fuse" and not canFuseNow(snap)
-		local active = info ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet and not noFuse
+		local fishing = info ~= nil and info.target == "winch" and player:GetAttribute("Fishing") == true
+		local active = info ~= nil and (not State.cinematic or fishing) and not Hud.inBattle and not State.revealing and not quiet and not noFuse
 		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
+		local target = if active and info and not fishing then info.target else nil
+		local part = if helping and helper then helper.world() else worldTarget(target)
 		-- the Fuse step shows beside the Fuse button instead of in the top banner
 		local tagText: string? = nil
 		if quiet then
 			Hud.banner(nil)
 		elseif helping and helper then
 			Hud.banner(helper.text())
-		elseif not info or State.cinematic then
+		elseif not info or (State.cinematic and not fishing) then
 			Hud.banner(nil)
 		elseif active and info.target == "fuse" then
 			Hud.banner(nil)
-			tagText = (string.gsub(info.text, "{PRESS}", Platform.press()))
+			tagText = info.text
 		elseif active then
-			Hud.banner((string.gsub(info.text, "{PRESS}", Platform.press())))
+			local readyAt = if target == "egg" and part then part:GetAttribute("ReadyAt") :: number? else nil
+			local left = if readyAt then math.ceil(readyAt - State.now()) else 0
+			local price = if target == "pedestal" and part then part:GetAttribute("Price") :: number? else nil
+			Hud.banner(if fishing then "Your hook is bringing up an <EGG>!"
+				elseif left > 0 then "Your egg is warming up. <OPEN> in " .. left .. "s."
+				elseif price and price > 0 then "Choose <TAKE> to buy this egg for " .. Format.abbrev(price) .. " coins."
+				else info.text)
 		else
 			Hud.banner(nil)
 		end
-		if step ~= lastStep then
-			lastStep = step
-		end
-		local target = if active and info then info.target else nil
-		local part = if helping and helper then helper.world() else worldTarget(target)
 		local char = player.Character
 		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		-- carrying an egg changes "nest" targets from the winch side; fine as is

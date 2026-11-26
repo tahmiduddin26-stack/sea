@@ -65,17 +65,40 @@ function Stats.fuseLevel(levels: { number }): number
 	return top + 1
 end
 
-function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string?, sixth: boolean?): MonsterStats
+function Stats.abilityHits(power: string?): number
+	return if power == "Kraken" then 2 else Config.ABILITY_HITS
+end
+
+function Stats.attackDps(atk: number, interval: number, power: string?): number
+	return atk / interval * (1 + (Config.ABILITY_MULT - 1) / Stats.abilityHits(power))
+end
+
+function Stats.monster(sp: string, lvl: number, _stars: number?, variant: string?, sixth: boolean?, profile: any?): MonsterStats
 	local def = Config.MONSTERS[sp]
 	local role = Config.ROLES[def and def.role or "balanced"]
 	local grow = Config.LEVEL_STAT_GROWTH ^ (lvl - 1)
 	local star = Config.STAR_MULT[math.clamp(Stats.stars(sp), 1, #Config.STAR_MULT)] * (def and def.power or 1) * Stats.variant(variant).mult * (if sixth then Config.SIXTH_STAR_MULT else 1)
 	local k = Config.NUMBER_SCALE -- inflation, matched in Stats.enemy
-	return {
-		hp = math.floor(Config.BASE_HP * role.hp * grow * star * k),
-		atk = math.max(1, math.floor(Config.BASE_ATK * role.atk * grow * star * k)),
-		interval = Config.BASE_ATTACK_INTERVAL / role.rate,
-	}
+	local interval = Config.BASE_ATTACK_INTERVAL / role.rate
+	local hp = math.floor(Config.BASE_HP * role.hp * grow * star * k)
+	local atk = math.max(1, math.floor(Config.BASE_ATK * role.atk * grow * star * k))
+	local fusion = profile and profile.fusion
+	if fusion then
+		hp = math.max(hp, fusion.hp)
+		atk = math.max(atk, math.ceil(fusion.dps * interval))
+	end
+	local power = profile and profile.power
+	if power == "Fierce" then
+		atk = math.floor(atk * 1.3)
+	elseif power == "Tough" then
+		hp = math.floor(hp * 1.4)
+	elseif power == "Swift" then
+		interval /= 1.3
+	elseif power == "Titan" then
+		atk = math.floor(atk * 1.6)
+		hp = math.floor(hp * 1.6)
+	end
+	return { hp = hp, atk = atk, interval = interval }
 end
 
 -- How big a monster of this level looks, as a multiplier on its species size: it grows a little with every
@@ -86,15 +109,27 @@ function Stats.sizeMult(lvl: number): number
 end
 
 -- One number for "how strong is this team" (shown as Team Power)
-function Stats.power(sp: string, lvl: number, stars: number?, variant: string?, sixth: boolean?): number
-	local s = Stats.monster(sp, lvl, stars, variant, sixth)
-	return math.floor(s.hp * 0.2 + (s.atk / s.interval) * 8)
+function Stats.power(sp: string, lvl: number, stars: number?, variant: string?, sixth: boolean?, profile: any?): number
+	local s = Stats.monster(sp, lvl, stars, variant, sixth, profile)
+	return math.floor(s.hp * 0.2 + Stats.attackDps(s.atk, s.interval, profile and profile.power) * 8)
 end
 
 -- Damage per second of a monster on its own (what the damage sticker and the hatch card show)
-function Stats.dps(sp: string, lvl: number, stars: number?, variant: string?, sixth: boolean?): number
-	local s = Stats.monster(sp, lvl, stars, variant, sixth)
-	return s.atk / s.interval
+function Stats.dps(sp: string, lvl: number, stars: number?, variant: string?, sixth: boolean?, profile: any?): number
+	local s = Stats.monster(sp, lvl, stars, variant, sixth, profile)
+	return Stats.attackDps(s.atk, s.interval, profile and profile.power)
+end
+
+function Stats.fusionFloor(parents: { any }): { hp: number, dps: number }
+	local hp, regularDps, sustainedDps = 0, 0, 0
+	for _, parent in parents do
+		local s = Stats.monster(parent.sp, parent.lvl, parent.stars, parent.v, parent.x6, parent)
+		hp += s.hp
+		regularDps += s.atk / s.interval
+		sustainedDps += Stats.attackDps(s.atk, s.interval, parent.power)
+	end
+	-- Powers aren't copied to the child. Account for a parent's extra ability hits in the floor.
+	return { hp = hp, dps = math.max(regularDps, sustainedDps / Stats.attackDps(1, 1, nil)) }
 end
 
 function Stats.stageOf(depth: number): number

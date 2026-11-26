@@ -30,6 +30,7 @@ MonetizationService.init()
 require(script.AdminService).init()
 require(script.MissionService).init()
 require(script.CrateService).init()
+require(script.MiniGameService).init()
 
 local function spawnPlayer(player: Player)
 	if not player.Parent then

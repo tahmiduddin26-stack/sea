@@ -57,9 +57,17 @@ local function tag(parent: Instance, size: UDim2, offset: Vector3, maxDistance: 
 	return UI.new("BillboardGui", { Size = size, StudsOffsetWorldSpace = offset, LightInfluence = 0, MaxDistance = maxDistance or TAG_DISTANCE, AlwaysOnTop = false, Parent = parent })
 end
 
--- an egg's countdown / "Ready!" must stay readable from anywhere on the deck (a nest is 18 studs from
--- the next, so the 24 stud name-tag rule made timers vanish as soon as you walked a few steps away)
-local EGG_TAG_DISTANCE = 90
+local SLEEP_TAG_DISTANCE = 90
+
+local function eggTag(slot: Slot, egg: Model, width: number, height: number): BillboardGui
+	egg:PivotTo(slot.base)
+	local bounds, size = egg:GetBoundingBox()
+	local top = bounds.Position.Y + size.Y / 2 - slot.anchor.Position.Y
+	-- Leave room for the shell, its decorations, and the bob or wobble during hatching.
+	local gui = tag(slot.anchor, UDim2.fromScale(width, height), Vector3.new(0, top + height / 2 + 1.1, 0), TAG_DISTANCE * 2)
+	gui.Enabled = false -- gated by walking distance, independent of camera position
+	return gui
+end
 
 local function variantPrefix(v: string?): string
 	if v == "Golden" then
@@ -95,7 +103,13 @@ local function nameTag(slot: Slot, sp: string, lvl: number, stars: number, heigh
 	UI.label({ Text = variantPrefix(v) .. (if def then def.name else sp) .. ' <font color="#FFCD32">Lv.' .. lvl .. "</font>", Size = UDim2.new(1, 0, 0.34, 0), Position = UDim2.fromScale(0, 0.22), Parent = gui })
 	-- damage sticker: how hard it hits per second
 	local sticker = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 8, Size = UDim2.new(0.62, 0, 0.24, 0), Position = UDim2.fromScale(0.5, 0.57), AnchorPoint = Vector2.new(0.5, 0), Parent = gui })
-	UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(sp, lvl, nil, v) + 0.5)) .. "/s", Size = UDim2.new(1, -6, 0.82, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = sticker })
+	local fusionDps = slot.anchor:GetAttribute("FusionDps")
+	local fusionHp = slot.anchor:GetAttribute("FusionHp")
+	local profile = {
+		power = slot.anchor:GetAttribute("PowerId"),
+		fusion = if typeof(fusionDps) == "number" and typeof(fusionHp) == "number" then { dps = fusionDps, hp = fusionHp } else nil,
+	}
+	UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(sp, lvl, nil, v, slot.anchor:GetAttribute("Sixth") == true, profile) + 0.5)) .. "/s", Size = UDim2.new(1, -6, 0.82, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = sticker })
 	local row = UI.new("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0.17, 0), Position = UDim2.fromScale(0, 0.83), Parent = gui })
 	UI.new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 4), Parent = row })
 	if def then
@@ -112,9 +126,9 @@ local function nameTag(slot: Slot, sp: string, lvl: number, stars: number, heigh
 	local _ = col
 	slot.gui = gui
 	-- a monster that fainted sleeps until its rest is over: while it does, the name tag is hidden and
-	-- only this "Zzz 0:23" timer shows (a separate tag, readable from far away like the egg timers)
+	-- only this "Zzz 0:23" timer shows.
 	if slot.anchor:GetAttribute("RestUntil") then
-		local sleepGui = tag(slot.anchor, UDim2.fromOffset(190, 120), Vector3.new(0, height * 0.75 + 2.4, 0), EGG_TAG_DISTANCE)
+		local sleepGui = tag(slot.anchor, UDim2.fromOffset(190, 120), Vector3.new(0, height * 0.75 + 2.4, 0), SLEEP_TAG_DISTANCE)
 		sleepGui.Enabled = false
 		;(slot :: any).sleepGui = sleepGui
 		;(slot :: any).rest = UI.label({ Text = "", TextColor3 = Color3.fromRGB(190, 215, 255), MaxText = 34, Size = UDim2.new(1, 0, 0, 40), Position = UDim2.new(0, 0, 1, -40), Parent = sleepGui })
@@ -161,6 +175,9 @@ local function nestSig(pad: BasePart): string
 		tostring(pad:GetAttribute("Lvl")),
 		tostring(pad:GetAttribute("Stars")),
 		tostring(pad:GetAttribute("Sixth")),
+		tostring(pad:GetAttribute("FusionDps")),
+		tostring(pad:GetAttribute("FusionHp")),
+		tostring(pad:GetAttribute("PowerId")),
 		tostring(pad:GetAttribute("Price")),
 		tostring(pad:GetAttribute("Variant")),
 		tostring(pad:GetAttribute("Perk")),
@@ -263,12 +280,10 @@ local function buildNest(slot: Slot)
 		egg.Parent = folder
 		slot.egg = egg
 		slot.base = pad.CFrame * CFrame.new(0, pad.Size.Y / 2 + 0.85 * EGG_SCALE, 0)
-		local gui = tag(pad, UDim2.fromOffset(150, 70), Vector3.new(0, 4.2, 0), EGG_TAG_DISTANCE)
-		local def = Config.MONSTERS[sp]
+		local gui = eggTag(slot, egg, 9, 2.8)
 		local title = if state == "fuse" then "Fusing..." else (eggType(sp) .. " Egg")
-		local _ = def
-		UI.label({ Text = title .. ' <font color="#FFCD32">Lv.' .. lvl .. "</font>", Size = UDim2.new(1, 0, 0.42, 0), Parent = gui })
-		slot.timer = UI.label({ Text = "", Size = UDim2.new(1, 0, 0.55, 0), Position = UDim2.fromScale(0, 0.45), TextColor3 = C.Gold, Parent = gui })
+		UI.label({ Text = title .. ' <font color="#FFCD32">Lv.' .. lvl .. "</font>", MaxText = 24, Size = UDim2.fromScale(1, 0.42), Parent = gui })
+		slot.timer = UI.label({ Text = "", MaxText = 26, Size = UDim2.fromScale(1, 0.5), Position = UDim2.fromScale(0, 0.5), TextColor3 = C.Gold, Parent = gui })
 		slot.gui = gui
 	elseif state == "locked" then
 		-- a small coin + price chip floating over the empty nest, sized in studs
@@ -291,14 +306,11 @@ local function buildPedestal(slot: Slot)
 		return
 	end
 	local lvl = (ped:GetAttribute("Lvl") or 1) :: number
-	local stars = (ped:GetAttribute("Stars") or 1) :: number
 	local egg = MonsterModels.buildEgg(sp, EGG_SCALE, false, ped:GetAttribute("Variant") :: string?)
 	egg.Parent = folder
 	slot.egg = egg
 	slot.base = ped.CFrame * CFrame.new(0, ped.Size.Y / 2 + 1.6 * EGG_SCALE, 0)
-	local def = Config.MONSTERS[sp]
-	local gui = tag(ped, UDim2.fromOffset(170, 86), Vector3.new(0, 6.2, 0))
-	local _ = stars
+	local gui = eggTag(slot, egg, 9, 3.2)
 	UI.label({ Text = variantPrefix(ped:GetAttribute("Variant") :: string?) .. eggType(sp) .. ' Egg <font color="#FFCD32">Lv.' .. lvl .. "</font>", Size = UDim2.new(1, 0, 0.36, 0), Position = UDim2.fromScale(0, 0.24), Parent = gui })
 	UI.label({ Text = "Rarity: ???", TextColor3 = C.Muted, Size = UDim2.new(1, 0, 0.22, 0), Position = UDim2.fromScale(0, 0.02), Parent = gui })
 	local priceNum = (ped:GetAttribute("Price") or 0) :: number
@@ -466,6 +478,8 @@ local function filterPrompts()
 						-- see no button at all. The server answers a too-early press with the reason
 						-- ("Finish the tutorial first!", or how long until it unlocks / is ready again)
 						show = true
+					elseif mine and pp.Name == "FlagPrompt" then
+						show = tutorialDone
 					elseif mine and pp.Name == "UpgradePrompt" then
 						show = snap ~= nil and snap.tutorial >= Config.SIGNS_UNLOCK_STEP
 					end
@@ -624,6 +638,7 @@ function ShipView.init()
 	RunService.RenderStepped:Connect(function()
 		local t = os.clock()
 		local cam = workspace.CurrentCamera.CFrame.Position
+		local root = player.Character and player.Character.PrimaryPart
 		local now = State.now()
 		for anchor, slot in slots do
 			local near = (anchor.Position - cam).Magnitude < DRAW_DIST
@@ -706,7 +721,8 @@ function ShipView.init()
 			local sleepLeft = math.ceil(((anchor:GetAttribute("RestUntil") or 0) :: number) - now)
 			local sleeping = sleepLeft > 0
 			if slot.gui then
-				slot.gui.Enabled = not hide and not sleeping and not away -- away: the "IN BATTLE" tag instead
+				local eggInRange = not slot.egg or (root ~= nil and (anchor.Position - root.Position).Magnitude <= TAG_DISTANCE)
+				slot.gui.Enabled = eggInRange and not hide and not sleeping and not away -- away: the "IN BATTLE" tag instead
 			end
 			local sleepGui = (slot :: any).sleepGui :: BillboardGui?
 			local restLbl = (slot :: any).rest :: TextLabel?

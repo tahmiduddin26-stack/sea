@@ -260,9 +260,11 @@ local function buildHub(world: Folder)
 	local c = CFrame.new(WorldBuilder.hubCenter)
 	-- stacked blocky island: sand ring then grass top
 	local r = Config.HUB_RADIUS
+	local grassHalf = r * 0.85
 	local TOWN_K = r / 78 -- how much roomier the island is than the layout the numbers below were drawn on
+	local shorelineScale = r / 96
 	box(hub, c, Vector3.new(r * 2, 6, r * 2), Vector3.new(0, -1, 0), SAND, Enum.Material.Sand)
-	box(hub, c, Vector3.new(r * 1.7, 3, r * 1.7), Vector3.new(0, 3.5, 0), GRASS, Enum.Material.Grass)
+	box(hub, c, Vector3.new(grassHalf * 2, 3, grassHalf * 2), Vector3.new(0, 3.5, 0), GRASS, Enum.Material.Grass)
 	for i = 0, 7 do
 		local a = i / 8 * math.pi * 2
 		box(hub, c * CFrame.Angles(0, a, 0), Vector3.new(r * 0.9, 6, 18), Vector3.new(0, -1, r * 0.95), SAND, Enum.Material.Sand)
@@ -346,14 +348,15 @@ local function buildHub(world: Folder)
 	---------------------------------------------------------------------------
 	-- Vendors. Each looks like what it is (a vault, a museum, a shrine, a tent...) and sits
 	-- between the dock paths: six on the outer ring, three on the inner ring. Their fronts
-	-- face the lighthouse (+Z of the frame). The town is 25% roomier than v1 (TOWN_SCALE).
+	-- face the lighthouse (+Z of the frame).
 	---------------------------------------------------------------------------
 	-- `radius` is in the old (HUB_RADIUS 78) layout; TOWN_K spreads every vendor out with the island
-	-- The inner ring turns 12 deg one way and the outer ring 10 deg the other, so a vendor is never
-	-- straight behind another one (the Dockyard used to hide the Tide Festival, the Museum the Crate...)
+	-- The outer stalls sit halfway between docks. Offset the inner stalls so both rows are visible.
 	local function slot(angDeg: number, radius: number): CFrame
-		local shift = if radius < 45 then -12 else 10
-		return c * CFrame.Angles(0, math.rad(angDeg + shift), 0) * CFrame.new(0, 5, -radius * TOWN_K)
+		local inner = radius < 45
+		local shift = if inner then -12 else 0
+		local spread = if inner then 3 else 4
+		return c * CFrame.Angles(0, math.rad(angDeg + shift), 0) * CFrame.new(0, 5, -(radius + spread) * TOWN_K)
 	end
 	-- the invisible anchor carries the prompt and the floating name
 	local function vendorTag(m: Model, f: CFrame, title: string, sub: string, color: Color3, signY: number, promptName: string, action: string): BillboardGui
@@ -785,8 +788,7 @@ local function buildHub(world: Folder)
 		local guideTag = vendorTag(gm, gf, "Captain Coral", "Ask me how to play!", Color3.fromRGB(255, 220, 90), 14, "GuidePrompt", "Talk")
 		guideTag.AlwaysOnTop = true
 
-		-- the two new games (UI mini games, see client/MiniGames): they sit on the two free inner spots
-		-- Coral Cards: a card table under a striped awning
+		-- The Cove Keeper starts rounds and receives eggs at the same stand.
 		do
 			local f = slot(30, 30)
 			local m = newVendor("CardsStand")
@@ -797,11 +799,11 @@ local function buildHub(world: Folder)
 				box(m, f, Vector3.new(0.9, 2.6, 0.9), Vector3.new(x, 1.8, 3.4), WOOD_DARK)
 				box(m, f, Vector3.new(0.9, 2.6, 0.9), Vector3.new(x, 1.8, -0.4), WOOD_DARK)
 			end
-			-- six cards fanned along the table, every one a different colour
+			-- Rescue eggs on display at the Crab Cove host's table.
 			local cols = { Color3.fromRGB(255, 120, 140), Color3.fromRGB(255, 205, 60), Color3.fromRGB(90, 200, 255), Color3.fromRGB(120, 220, 140), Color3.fromRGB(190, 130, 255), Color3.fromRGB(255, 160, 80) }
-			for i = 1, 6 do
-				box(m, f * CFrame.Angles(math.rad(-20), 0, math.rad((i - 3.5) * 5)), Vector3.new(1.5, 2.1, 0.15), Vector3.new((i - 3.5) * 1.45, 4.4, 1.2), cols[i])
-				box(m, f * CFrame.Angles(math.rad(-20), 0, math.rad((i - 3.5) * 5)), Vector3.new(0.8, 1.2, 0.18), Vector3.new((i - 3.5) * 1.45, 4.4, 1.12), Color3.fromRGB(255, 255, 255))
+			for i = 1, 3 do
+				local egg = box(m, f, Vector3.new(1.7, 2.3, 1.7), Vector3.new((i - 2) * 2.5, 4.6, 1.5), cols[i])
+				egg.Shape = Enum.PartType.Ball
 			end
 			-- striped awning: two back posts and a roof in coral and white
 			for _, x in { -6, 6 } do
@@ -810,8 +812,8 @@ local function buildHub(world: Folder)
 			for i = 0, 6 do
 				box(m, f, Vector3.new(2, 0.5, 9.5), Vector3.new(-6 + i * 2, 10.6, -1), if i % 2 == 0 then CORAL else Color3.fromRGB(255, 245, 240))
 			end
-			vendorTag(m, f, "Coral Cards", "Match the pairs!", CORAL, 14, "CardsPrompt", "Play")
-			stand("CardsStand", f, Vector3.new(0, 1, -2.2), 0, { name = "Card Dealer", anim = "present", shirt = CORAL, pants = Color3.fromRGB(70, 60, 110), hat = "cap", hatColor = Color3.fromRGB(255, 245, 240) }, 11)
+			vendorTag(m, f, "Crab Cove", "Return 5 eggs · Hatch 1.5× for 10 min", CORAL, 14, "CardsPrompt", "Play")
+			stand("CardsStand", f, Vector3.new(0, 1, -2.2), 0, { name = "Cove Keeper", anim = "present", shirt = CORAL, pants = Color3.fromRGB(70, 60, 110), hat = "cap", hatColor = Color3.fromRGB(255, 245, 240) }, 11)
 		end
 	end
 
@@ -828,14 +830,15 @@ local function buildHub(world: Folder)
 		for i = 1, Config.SHIP_COUNT do
 			local a = (i - 1) / Config.SHIP_COUNT * math.pi * 2
 			local f = grassTop * CFrame.Angles(0, a, 0)
-			for k = 0, 11 do
+			local grassEdge = grassHalf / math.max(math.abs(f.LookVector.X), math.abs(f.LookVector.Z))
+			for k = 0, math.floor((grassEdge - 26) / 5.2) do
 				box(hub, f, Vector3.new(5.5, 0.2, 4), Vector3.new((k % 2) * 0.7 - 0.35, 0, 22 + k * 5.2), STONE, Enum.Material.Slate)
 			end
 		end
 		local towerCols = { Color3.fromRGB(150, 90, 230), Color3.fromRGB(60, 160, 255), Color3.fromRGB(255, 120, 160), Color3.fromRGB(80, 200, 140) }
 		for i = 0, 3 do
 			local a = (i + 0.5) / 4 * math.pi * 2
-			local tf = c * CFrame.Angles(0, a, 0) * CFrame.new(0, 5, -76)
+			local tf = c * CFrame.Angles(0, a, 0) * CFrame.new(0, 5, -76 * shorelineScale)
 			for k = 0, 4 do
 				box(hub, tf, Vector3.new(6 - k * 0.3, 3, 6 - k * 0.3), Vector3.new(0, 1.5 + k * 3, 0), if k % 2 == 0 then Color3.fromRGB(245, 245, 250) else towerCols[i + 1])
 			end
@@ -851,13 +854,13 @@ local function buildHub(world: Folder)
 		local flowerCols = { Color3.fromRGB(255, 90, 120), Color3.fromRGB(255, 210, 60), Color3.fromRGB(160, 110, 255), Color3.fromRGB(255, 255, 255) }
 		for i = 0, 23 do
 			local a = math.rad((i // 4) * 60 + (if i % 2 == 0 then 9 else -9))
-			local ff = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, 34 + (i % 4) * 12)
+			local ff = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, (34 + (i % 4) * 12) * shorelineScale)
 			box(hub, ff, Vector3.new(0.8, 0.8, 0.8), Vector3.new(0, 0.4, 0), flowerCols[i % 4 + 1])
 			box(hub, ff, Vector3.new(0.3, 0.5, 0.3), Vector3.new(0.9, 0.25, 0.4), Color3.fromRGB(70, 170, 70))
 		end
 		for i = 0, 15 do
 			local a = (i + 0.5) / 16 * math.pi * 2
-			local lf = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, -79)
+			local lf = grassTop * CFrame.Angles(0, a, 0) * CFrame.new(0, 0, -79 * shorelineScale)
 			box(hub, lf, Vector3.new(0.5, 5, 0.5), Vector3.new(0, 2.5, 0), Color3.fromRGB(40, 44, 60))
 			local lamp = box(hub, lf, Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 5.5, 0), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
 			local pl = Instance.new("PointLight")
@@ -872,12 +875,18 @@ local function buildHub(world: Folder)
 	for i = 1, Config.SHIP_COUNT do
 		local a = (i - 1) / Config.SHIP_COUNT * math.pi * 2
 		local dirv = Vector3.new(math.sin(a), 0, math.cos(a))
-		local from = WorldBuilder.hubCenter + dirv * (r - 4)
+		-- The square shoreline sits farther out along the diagonal links.
+		local shoreProjection = math.max(math.abs(dirv.X), math.abs(dirv.Z))
+		local from = WorldBuilder.hubCenter + dirv * (r / shoreProjection - 4)
 		local to = WorldBuilder.hubCenter + dirv * (Config.SHIP_RING_RADIUS - Config.SHIP_LENGTH / 2 - 3)
 		local mid = (from + to) / 2
 		local len = (to - from).Magnitude
 		local dock = CFrame.lookAt(mid, to)
-		box(hub, dock, Vector3.new(8, 1, len), Vector3.new(0, 2.5, 0), WOOD_LIGHT)
+		box(hub, dock, Vector3.new(8, 1, len), Vector3.new(0, 2.5, 0), WOOD_LIGHT, nil, { Name = "PierDeck" .. i })
+		-- Join the grass path to the lower dock deck with an overlap at both ends.
+		local shoreStart = WorldBuilder.hubCenter + dirv * (grassHalf / shoreProjection - 3) + Vector3.new(0, 4.6, 0)
+		local shoreEnd = from + dirv * 1 + Vector3.new(0, 2.6, 0)
+		box(hub, CFrame.lookAt((shoreStart + shoreEnd) / 2, shoreEnd), Vector3.new(8, 0.8, (shoreEnd - shoreStart).Magnitude), Vector3.zero, WOOD, nil, { Name = "ShoreRamp" .. i })
 		for z = -len / 2 + 4, len / 2 - 4, 10 do
 			for _, x in { -4.2, 4.2 } do
 				box(hub, dock, Vector3.new(1.2, 6, 1.2), Vector3.new(x, 0.5, z), WOOD_DARK)
@@ -889,7 +898,7 @@ local function buildHub(world: Folder)
 		local p0 = bow + Vector3.new(0, 3, 0)
 		local p1 = top + Vector3.new(0, Config.DECK_Y + 0.6, 0)
 		local rmid = (p0 + p1) / 2
-		box(hub, CFrame.lookAt(rmid, p1), Vector3.new(6, 0.8, (p1 - p0).Magnitude), Vector3.zero, WOOD)
+		box(hub, CFrame.lookAt(rmid, p1), Vector3.new(6, 0.8, (p1 - p0).Magnitude), Vector3.zero, WOOD, nil, { Name = "BoardingRamp" .. i })
 	end
 
 	-- a fallback spawn on the island
@@ -1379,6 +1388,23 @@ local function buildShip(world: Folder, index: number): Ship
 	box(model, cf, Vector3.new(7, 1, 7), Vector3.new(mp.X, deck + 52, mp.Z), WOOD)
 	local flag = box(model, cf, Vector3.new(0.2, 4, 7), Vector3.new(mp.X, deck + 58, mp.Z + 3.5), Color3.fromRGB(240, 60, 60))
 	flag.Name = "Flag"
+	for _, face in { Enum.NormalId.Left, Enum.NormalId.Right } do
+		local cloth = Instance.new("SurfaceGui")
+		cloth.Face = face
+		cloth.CanvasSize = Vector2.new(350, 200)
+		cloth.Parent = flag
+		local emblem = Instance.new("ImageLabel")
+		emblem.Name = "Emblem"
+		emblem.BackgroundTransparency = 1
+		emblem.AnchorPoint = Vector2.new(0.5, 0.5)
+		emblem.Position = UDim2.fromScale(0.5, 0.5)
+		emblem.Size = UDim2.fromOffset(145, 145)
+		emblem.Parent = cloth
+	end
+	local flagBoard = box(model, cf, Vector3.new(4.5, 2.4, 0.65), Vector3.new(mp.X + 4.5, deck + 2.2, mp.Z - 1), WOOD_LIGHT, Enum.Material.WoodPlanks, { Name = "FlagStation" })
+	box(model, cf, Vector3.new(0.65, 2, 0.65), Vector3.new(mp.X + 4.5, deck + 1, mp.Z - 1), WOOD_DARK)
+	paintBoard(flagBoard, "SHIP FLAG", "Design", Color3.fromRGB(255, 225, 120))
+	prompt(flagBoard, "Design", "Ship Flag", 0, 8).Name = "FlagPrompt"
 
 	-- nests
 	local nests = {}
@@ -1891,6 +1917,22 @@ end
 ---------------------------------------------------------------------------
 -- Ship Workshop paint: the sail cloth and the hull stripe take the owner's chosen colours
 -- (nil = back to the defaults when the ship is free again)
+function WorldBuilder.applyFlag(ship: Ship, design: { color: string, emblem: string }?)
+	local flag = ship.model:FindFirstChild("Flag") :: BasePart?
+	if not flag then return end
+	flag.Color = Config.FLAG_COLORS[1].color
+	for _, entry in Config.FLAG_COLORS do
+		if design and design.color == entry.id then
+			flag.Color = entry.color
+			break
+		end
+	end
+	for _, face in flag:GetChildren() do
+		local image = face:FindFirstChild("Emblem") :: ImageLabel?
+		if image then image.Image = if design then Config.ICONS[design.emblem] or "" else "" end
+	end
+end
+
 function WorldBuilder.applyPaint(ship: Ship, paint: { sail: string?, stripe: string? }?)
 	local function pick(list: { any }, id: string?): Color3
 		for _, p in list do

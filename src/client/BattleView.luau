@@ -12,6 +12,7 @@ local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
+local FishingDive = require(Shared.FishingDive)
 local Format = require(Shared.Format)
 local MonsterModels = require(Shared.MonsterModels)
 local Stats = require(Shared.Stats)
@@ -21,6 +22,8 @@ local UI = require(script.Parent.UI)
 local Hud = require(script.Parent.Hud)
 local Sound = require(script.Parent.Sound)
 local Cinema = require(script.Parent.Cinema)
+local FishingDiveView = require(script.Parent.FishingDiveView)
+local Menus = require(script.Parent.Menus)
 
 local BattleView = {}
 
@@ -311,7 +314,7 @@ function BattleView.watchTutorialFight(f: Fight)
 		if not live() or f.enemyKind == "miniboss" then
 			return
 		end
-		local card = Hud.callout("Too slow! Hatch more monsters to win faster.", "Go Fish!", function()
+		local card = Hud.callout("Your monster fights on its own. Ready to get a teammate?", "Go Fish!", function()
 			State.action("Retreat")
 		end)
 		while card and card.Parent and live() do
@@ -352,9 +355,10 @@ function BattleView.showArena(f: Fight)
 		end
 		holder:Destroy()
 	end)
-	Hud.toast("Your team is battling out at sea, off the side of your ship!", C.Gold)
-	-- the camera glide (skipped during another cinematic)
 	local State = require(script.Parent.State) :: any
+	local firstFight = State.snapshot and State.snapshot.tutorial == 5
+	Hud.toast(if firstFight then "Watch your monster fight on its own!" else "Your team is battling out at sea, off the side of your ship!", C.Gold)
+	-- the camera glide (skipped during another cinematic)
 	if State.cinematic then
 		return
 	end
@@ -362,7 +366,7 @@ function BattleView.showArena(f: Fight)
 	local start = camera.CFrame
 	local look = CFrame.lookAt((arena * CFrame.new(0, 26, 46)).Position, arena.Position)
 	local t0 = os.clock()
-	local TOTAL = 2.6
+	local TOTAL = if firstFight then 5 else 2.6
 	local name = "ShowArena" .. tostring(f.owner)
 	RunService:BindToRenderStep(name, Enum.RenderPriority.Camera.Value + 1, function()
 		local t = os.clock() - t0
@@ -735,9 +739,9 @@ end
 
 -- deep = the Deep Rod (starboard): its own trench, Config.DEEP_ZONES and DEEP_ZONE_HEIGHT
 -- kind = "abyss" for the Abyss Rod (Floor 3 balcony, astern); see Config.rodInfo
-function BattleView.castRod(ship: Model, count: number, zone: number, total: number, mine: boolean, deep: any, slot0: number?)
-	local slot = slot0 or 1 -- the pedestal the catch lands on (the Deep and Abyss Rods have their own)
-	local info = Config.rodInfo(deep)
+function BattleView.castRod(ship: Model, mine: boolean, cast: FishingDive.Cast)
+	local slot = cast.slot -- the pedestal the catch lands on (the Deep and Abyss Rods have their own)
+	local info = Config.rodInfo(cast.rod)
 	local ZONES = info.zones
 	local rod = ship:FindFirstChild(info.model) :: Model?
 	local rodCf = if rod then rod:GetAttribute("RodCf") :: CFrame? else nil
@@ -780,14 +784,14 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	end
 
 	-- timeline (seconds)
+	local total = cast.time
 	local H = info.H
-	local zdef = ZONES[zone] or ZONES[1]
-	local CAST = RodAnim.SPLASH
-	local GRAB = 0.75
-	local FLY = 0.7
-	local travel = math.max(1, total - CAST - GRAB - FLY)
-	local DOWN = travel * 0.58
-	local UP = travel - DOWN
+	local zdef = ZONES[#ZONES]
+	local CAST = FishingDive.CAST
+	local GRAB = FishingDive.GRAB
+	local FLY = FishingDive.FLY
+	local DOWN = FishingDive.downTime(total)
+	local UP = total - CAST - GRAB - FLY - DOWN
 	local tGrab = CAST + DOWN
 	local tUp = tGrab + GRAB
 	local tFly = tUp + UP
@@ -804,13 +808,14 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		return (base * (trackCf("Hook", t))).Position - Vector3.new(0, drop * u * u, 0)
 	end
 	local splashPos = castHook(CAST)
-	local bottomY = Config.SEA_LEVEL - (zone - 1) * H - H + 7
+	local bottomY = Config.SEA_LEVEL - #ZONES * H + 7
 	local stopPos = Vector3.new(column.X, bottomY, column.Z)
 
 	-- effects
 	local fx = Instance.new("Folder")
 	fx.Name = "RodFx"
 	fx.Parent = workspace
+	local dive = if mine then FishingDiveView.new(fx, column, outward, cast, DOWN, Config.SEA_LEVEL, bottomY) else nil
 	local function part(props: { [string]: any }): Part
 		local p = Instance.new("Part")
 		p.Anchored = true
@@ -858,11 +863,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	bubbles.SpreadAngle = Vector2.new(30, 30)
 	bubbles.Parent = att0
 	local line = part({ Size = Vector3.new(0.12, 0.12, 1), Color = Color3.fromRGB(250, 250, 250), Material = Enum.Material.Neon, Transparency = 0.2 })
-	local eggs: { Model } = {}
-	for i = 1, math.max(1, count) do
-		local e = MonsterModels.buildEgg("Splashfin", 1.3, true)
-		eggs[i] = e
-	end
+	local egg = MonsterModels.buildEgg("Splashfin", 1.3, true)
 	local function drawLine(a: Vector3, b: Vector3)
 		line.Size = Vector3.new(0.12, 0.12, math.max((b - a).Magnitude, 0.1))
 		line.CFrame = CFrame.lookAt((a + b) / 2, b)
@@ -930,80 +931,21 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		barb.CFrame = CFrame.new(pos + Vector3.new(0, -1.2, 0)) * CFrame.Angles(0, t * 2, math.sin(t * 6) * 0.2)
 	end
 
-	-- Dive gauge (owner only): one see-through bubble on the LEFT edge that shows the zone the
-	-- hook is passing through and updates in place, so the middle of the screen stays clear to
-	-- watch the hook. A column of small dots below it fills in as the hook passes each zone.
-	local gaugeGui: ScreenGui? = nil
-	local gaugeName: TextLabel? = nil
-	local gaugeSub: TextLabel? = nil
-	local gaugeBubble: Frame? = nil
-	local gaugeDots: { Frame } = {}
-	if mine then
-		local pg = player:WaitForChild("PlayerGui")
-		local g = Instance.new("ScreenGui")
-		g.Name = "DiveGauge"
-		g.ResetOnSpawn = false
-		g.IgnoreGuiInset = true
-		g.DisplayOrder = 5
-		g.Parent = pg
-		gaugeGui = g
-		local bubble = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(120, 210, 255), BackgroundTransparency = 0.72, Size = UDim2.fromOffset(210, 64), Position = UDim2.new(0, 20, 0.3, 0), Parent = g }, {
-			UI.corner(32),
-			UI.new("UIStroke", { Color = Color3.fromRGB(220, 250, 255), Thickness = 2, Transparency = 0.35 }),
-			UI.new("UIGradient", { Rotation = 90, Transparency = NumberSequence.new(0.1, 0.6) }),
-		})
-		-- a little shine like a soap bubble
-		UI.new("Frame", { BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.55, Size = UDim2.fromOffset(34, 9), Position = UDim2.fromOffset(18, 8), Rotation = -12, Parent = bubble }, { UI.corner(5) })
-		gaugeBubble = bubble
-		gaugeName = UI.label({ Text = "", MaxText = 22, Size = UDim2.new(1, -24, 0, 30), Position = UDim2.fromOffset(12, 8), Parent = bubble })
-		gaugeSub = UI.label({ Text = "", MaxText = 14, Stroke = 0, TextColor3 = Color3.fromRGB(225, 245, 255), TextTransparency = 0.15, Size = UDim2.new(1, -24, 0, 18), Position = UDim2.fromOffset(12, 38), Parent = bubble })
-		for k = 1, #ZONES do
-			gaugeDots[k] = UI.new("Frame", { BackgroundColor3 = Color3.fromRGB(200, 240, 255), BackgroundTransparency = 0.8, Size = UDim2.fromOffset(12, 12), Position = UDim2.new(0, 34 + (k - 1) % 5 * 18, 0.3, 74 + math.floor((k - 1) / 5) * 18), Parent = g }, { UI.corner(6), UI.new("UIStroke", { Color = Color3.new(1, 1, 1), Transparency = 0.5 }) })
-		end
-		bubble.Visible = false
-	end
-	local function gaugeZone(k: number, z: any)
-		if not gaugeBubble or not gaugeName or not gaugeSub then
-			return
-		end
-		gaugeBubble.Visible = true
-		gaugeBubble.BackgroundColor3 = z.color
-		gaugeName.Text = string.upper(z.name)
-		gaugeName.TextColor3 = Color3.new(1, 1, 1)
-		gaugeSub.Text = "Zone " .. k .. " / " .. #ZONES
-		local dot = gaugeDots[k]
-		if dot then
-			dot.BackgroundColor3 = z.color
-			dot.BackgroundTransparency = 0.1
-		end
-		gaugeBubble.Size = UDim2.fromOffset(190, 58)
-		UI.tween(gaugeBubble, 0.35, { Size = UDim2.fromOffset(210, 64) }, Enum.EasingStyle.Back)
-	end
-	local function gaugeCaught(z: any)
-		if not gaugeBubble or not gaugeName or not gaugeSub then
-			return
-		end
-		gaugeName.Text = "EGG CAUGHT!"
-		gaugeName.TextColor3 = Color3.fromRGB(255, 230, 110)
-		gaugeSub.Text = "in " .. z.name
-		gaugeBubble.Size = UDim2.fromOffset(180, 56)
-		UI.tween(gaugeBubble, 0.4, { Size = UDim2.fromOffset(220, 66) }, Enum.EasingStyle.Back)
-	end
-
 	-- the owner's camera follows the hook, blending in and out of the normal camera
 	local camera = workspace.CurrentCamera
 	local savedFov = camera.FieldOfView
 	local camState = { cf = camera.CFrame, fov = savedFov }
 	castCount += 1
 	local bindName = "EggRodCam" .. castCount
-	local t0 = os.clock()
+	local t0 = cast.start
 	local passed = 0
 	local State = require(script.Parent.State) :: any
 	if mine then
 		State.cinematic = true
+		Menus.setDiveActive(true)
 		Hud.refresh()
 		RunService:BindToRenderStep(bindName, Enum.RenderPriority.Camera.Value + 1, function()
-			local t = os.clock() - t0
+			local t = workspace:GetServerTimeNow() - t0
 			local w = math.clamp(math.min(t / 0.35, (total - t) / 0.5), 0, 1)
 			w = w * w * (3 - 2 * w)
 			camera.CFrame = camera.CFrame:Lerp(camState.cf, w)
@@ -1336,6 +1278,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 	nestFolder.Parent = nil
 
 	local hookPos = splashPos
+	local grabCamera: CFrame? = nil
 	task.spawn(function()
 		local grabbed, flew, splashed, landedFx = false, false, false, false
 		local popped = false
@@ -1343,7 +1286,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 			Sound.play("Cast", 0.8, 1)
 		end
 		while rod.Parent do
-			local t = os.clock() - t0
+			local t = workspace:GetServerTimeNow() - t0
 			if t >= total then
 				break
 			end
@@ -1357,7 +1300,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				camState.cf = cf
 				camState.fov = camFov(t)
 			elseif t < tGrab then
-				-- the dive: fast at first, easing into the stop zone
+				-- Glide over the trench, then descend through the luck gates.
 				if not splashed then
 					splashed = true
 					splash(splashPos, 6)
@@ -1373,16 +1316,14 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				local u = (t - CAST) / DOWN
 				-- first glide just under the surface to the middle of the shaft (the rock walls start
 				-- ~28 studs down, so sinking while sliding across went straight through them), then dive
-				local SLIDE = 0.15
-				local h = math.clamp(u / SLIDE, 0, 1)
+				local h = math.clamp(u / FishingDive.SLIDE, 0, 1)
 				h = h * h * (3 - 2 * h)
-				local du = math.clamp((u - SLIDE) / (1 - SLIDE), 0, 1)
-				local e = 1 - (1 - du) ^ 2.2
 				local col = splashPos:Lerp(Vector3.new(column.X, splashPos.Y, column.Z), h)
 				local shallowY = Config.SEA_LEVEL - 6 * h -- just below the waves while it slides
-				local y = if u < SLIDE then math.min(splashPos.Y, shallowY) else shallowY + (bottomY - shallowY) * e
-				hookPos = Vector3.new(col.X + math.sin(t * 4) * 1.2 * h, y, col.Z + math.cos(t * 3) * 1.2 * h)
-				-- crossing into a new zone: banner + ring flash
+				local y = if u < FishingDive.SLIDE then math.min(splashPos.Y, shallowY) else shallowY + (bottomY - shallowY) * FishingDive.depth(u)
+				local center = Vector3.new(col.X, y, col.Z)
+				local lateral = if dive then dive.step(u) else Vector3.zero
+				hookPos = center + lateral
 				local inZone = math.clamp(math.floor((Config.SEA_LEVEL - hookPos.Y) / H) + 1, 1, #ZONES)
 				if inZone > passed then
 					passed = inZone
@@ -1397,34 +1338,25 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 						zoneFolders[inZone - 2]:Destroy()
 					end
 					setGrade(z.look or z.id)
-					-- a glowing gate marks the zone boundary the hook flies through
-					for g = 0, 7 do
-						local ga = g / 8 * math.pi * 2
-						local gate = mk(fx, Vector3.new(7, 0.6, 0.6), CFrame.new(Vector3.new(column.X, Config.SEA_LEVEL - (inZone - 1) * H, column.Z) + Vector3.new(math.cos(ga) * 14, 0, math.sin(ga) * 14)) * CFrame.Angles(0, -ga + math.pi / 2, 0), z.color, Enum.Material.Neon)
-						gate.Transparency = 0.2
-						UI.tween(gate, 1.4, { Transparency = 0.85 })
-					end
-					if mine then
-						gaugeZone(inZone, z)
-						Sound.play("ZoneChime", 0.7, 0.85 + inZone * 0.1)
-					end
 				end
-				-- the camera orbits the hook so the scenery slides by at different distances
-				local ang = (t - CAST) * 0.55
-				local orbit = Vector3.new(math.cos(ang) * 11, 5, math.sin(ang) * 11)
-				camState.cf = CFrame.lookAt(hookPos + orbit, hookPos - Vector3.new(0, 3, 0))
-				camState.fov = 68
+				if dive then
+					camState.cf = (base * trackCf("Cam", CAST)):Lerp(dive.camera(center, lateral), h)
+					camState.fov = camFov(CAST) + (72 - camFov(CAST)) * h
+				end
 			elseif t < tUp then
 				-- the grab: the hook finds the egg, a flash in the zone's colour
 				if not grabbed then
 					grabbed = true
+					grabCamera = camState.cf
 					bubbles.Rate = 10
 					burst(hookPos, zdef.color, 30, 12, true)
 					if mine then
-						gaugeCaught(zdef)
+						if dive then
+							dive.caught()
+						end
 						Sound.play("Super", 0.8)
 					end
-					eggs[1].Parent = fx
+					egg.Parent = fx
 				end
 				-- the hook settles on the egg, the line tugs, the egg shakes in its nest and
 				-- then POPS free in a puff of dust and rides up on the hook
@@ -1434,7 +1366,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				pull = pull * pull * (3 - 2 * pull)
 				local shake = if u > 0.2 and u < 0.6 then math.sin(t * 60) * 0.18 * (u - 0.15) * 2.2 else 0
 				local eggPos = nestEggAt:Lerp(hookPos + Vector3.new(0, -2.8, 0), pull) + Vector3.new(shake, 0, shake * 0.6)
-				eggs[1]:PivotTo(CFrame.new(eggPos) * CFrame.Angles(shake * 1.5, t * (2 + pull * 6), shake))
+				egg:PivotTo(CFrame.new(eggPos) * CFrame.Angles(shake * 1.5, t * (2 + pull * 6), shake))
 				for i, de in decoyEggs do
 					de:PivotTo(de:GetPivot() * CFrame.Angles(0, 0, math.sin(t * 40 + i) * 0.01 * (1 - pull)))
 				end
@@ -1446,8 +1378,10 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 						Sound.play("EggPop", 0.8, 1)
 					end
 				end
-				camState.cf = CFrame.lookAt(hookPos + Vector3.new(math.cos(t * 0.6) * 7, 1.5, math.sin(t * 0.6) * 7), nestEggAt + Vector3.new(0, 1, 0))
-				camState.fov = 48
+				local closeup = CFrame.lookAt(hookPos + outward * 7 + Vector3.new(0, 2, 0), nestEggAt + Vector3.new(0, 1, 0))
+				local blend = math.min(u * 2.5, 1)
+				camState.cf = (grabCamera or closeup):Lerp(closeup, blend)
+				camState.fov = 72 - 24 * blend
 			elseif t < tFly then
 				-- ride back up with the catch, the rod heaving
 				bubbles.Rate = 60
@@ -1471,10 +1405,7 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 					splash(Vector3.new(hookPos.X, Config.SEA_LEVEL, hookPos.Z), 7)
 					burst(hookPos, zdef.color, 20, 10, true)
 				end
-				for i, eg in eggs do
-					local a = (i - 1) / #eggs * math.pi * 2 + t * 4
-					eg:PivotTo(CFrame.new(hookPos + Vector3.new(math.cos(a) * (#eggs > 1 and 1.6 or 0), -2.8, math.sin(a) * (#eggs > 1 and 1.6 or 0))) * CFrame.Angles(0, t * 5, 0))
-				end
+				egg:PivotTo(CFrame.new(hookPos - Vector3.new(0, 2.8, 0)) * CFrame.Angles(0, t * 5, 0))
 				-- while in the shaft the camera rides just above the catch, inside the water column
 				-- (out to the side it sat in the rock and the zone scenery hid the egg); above the
 				-- water it swings out to watch the egg fly to the rod
@@ -1492,15 +1423,12 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 				end
 				local u = math.clamp((t - tFly) / FLY, 0, 1)
 				poseRod(RodAnim.HAULEND + (RodAnim.DURATION - RodAnim.HAULEND) * u)
-				for i, eg in eggs do
-					local ped = ship:FindFirstChild("Pedestal" .. (slot + i - 1), true) :: BasePart?
-					local dest = if ped then ped.Position + Vector3.new(0, 3.2, 0) else hookPos
-					local p = hookPos:Lerp(dest, u) + Vector3.new(0, math.sin(u * math.pi) * 10, 0)
-					eg:PivotTo(CFrame.new(p) * CFrame.Angles(0, u * 8, 0))
-				end
-				local ped1 = ship:FindFirstChild("Pedestal" .. slot, true) :: BasePart?
-				if ped1 then
-					camState.cf = CFrame.lookAt(ped1.Position + outward * 16 + Vector3.new(0, 14, 0), ped1.Position)
+				local ped = ship:FindFirstChild("Pedestal" .. slot, true) :: BasePart?
+				local dest = if ped then ped.Position + Vector3.new(0, 3.2, 0) else hookPos
+				local p = hookPos:Lerp(dest, u) + Vector3.new(0, math.sin(u * math.pi) * 10, 0)
+				egg:PivotTo(CFrame.new(p) * CFrame.Angles(0, u * 8, 0))
+				if ped then
+					camState.cf = CFrame.lookAt(ped.Position + outward * 16 + Vector3.new(0, 14, 0), ped.Position)
 				end
 			end
 			placeHook(hookPos, t)
@@ -1523,23 +1451,24 @@ function BattleView.castRod(ship: Model, count: number, zone: number, total: num
 		if grade then
 			grade:Destroy()
 		end
-		for i = 1, #eggs do
-			local ped = ship:FindFirstChild("Pedestal" .. (slot + i - 1), true) :: BasePart?
-			if ped then
-				burst(ped.Position + Vector3.new(0, 3, 0), Color3.fromRGB(255, 230, 120), 14, 6, true)
-			end
+		local ped = ship:FindFirstChild("Pedestal" .. slot, true) :: BasePart?
+		if ped then
+			burst(ped.Position + Vector3.new(0, 3, 0), Color3.fromRGB(255, 230, 120), 14, 6, true)
 		end
 		if mine then
 			Sound.play("Winch", 0.6, 1.2)
 			RunService:UnbindFromRenderStep(bindName)
 			State.cinematic = false
+			Menus.setDiveActive(false)
 			Hud.refresh()
 			camera.FieldOfView = savedFov
 		end
-		fx:Destroy()
-		if gaugeGui then
-			gaugeGui:Destroy()
+		if dive then
+			dive.destroy()
 		end
+		egg:Destroy()
+		nestFolder:Destroy()
+		fx:Destroy()
 		casting[rod] = nil
 	end)
 end
@@ -1551,7 +1480,7 @@ local function onShipEvent(owner: number, kind: string, p: any)
 		return
 	end
 	if kind == "haul" then
-		BattleView.castRod(ship, (p and p.count) or 1, (p and p.zone) or 1, (p and p.time) or Config.FISH_TIME, owner == player.UserId, p and (p.rod or p.deep), p and p.slot)
+		BattleView.castRod(ship, owner == player.UserId, p)
 	elseif kind == "fuse" then
 		local a = ship:FindFirstChild("Nest" .. p.into, true) :: BasePart?
 		if a then

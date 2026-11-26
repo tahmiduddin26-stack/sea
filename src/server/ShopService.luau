@@ -233,10 +233,32 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 	Sell = function(player, arg)
 		return FarmService.sellMonster(player, arg)
 	end,
+	SellEgg = function(player, arg)
+		return FarmService.sellEgg(player, arg)
+	end,
+	ShipFlag = function(player, arg)
+		local ship = FarmService.shipOf(player)
+		local station = ship and ship.model:FindFirstChild("FlagStation") :: BasePart?
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if FarmService.inTutorial(player) or not ship or not station or not root or (root.Position - station.Position).Magnitude > 14 then
+			return false, "Visit the flag station on your ship"
+		end
+		if typeof(arg) ~= "table" or not table.find(Config.FLAG_EMBLEMS, arg.emblem) then return false, "Pick an emblem" end
+		for _, entry in Config.FLAG_COLORS do
+			if entry.id == arg.color then
+				local design = { color = entry.id, emblem = arg.emblem }
+				DataService.get(player).shipFlag = design
+				WorldBuilder.applyFlag(ship, design)
+				DataService.changed(player)
+				return true, "Ship flag saved!"
+			end
+		end
+		return false, "Pick a flag colour"
+	end,
 	Admin = function(player, arg)
 		return AdminService.run(player, arg)
 	end,
-	-- harbour mini games: ask to play (returns the shuffle seed), then report the result for the reward
+	-- Crab Cove starts a server-owned round. MiniFinish leaves early.
 	MiniStart = function(player, arg)
 		return MiniGameService.start(player, arg)
 	end,

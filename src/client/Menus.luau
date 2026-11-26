@@ -29,6 +29,7 @@ local C = UI.Colors
 
 local screenRef: ScreenGui
 local open: Frame? = nil
+local diveActive = false
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -37,6 +38,14 @@ Menus.onOpen = nil :: ((GuiObject) -> ())?
 
 function Menus.isOpen(): boolean
 	return open ~= nil
+end
+
+function Menus.setDiveActive(active: boolean)
+	diveActive = active
+	if open then
+		open.Visible = not active
+		Platform.menuChanged(not active)
+	end
 end
 
 Menus.onClose = nil :: (() -> ())?
@@ -57,11 +66,12 @@ local function window(title: string, size: Vector2, color: Color3?): (Frame, Fra
 	local f, body = UI.window({ Title = title, Accent = color or C.Sea, Size = UDim2.fromOffset(size.X, size.Y), Position = UDim2.fromScale(0.5, 0.46), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 10, Parent = screenRef }, Menus.close)
 	f.Parent = screenRef
 	open = f
+	f.Visible = not diveActive
 	-- phones are shorter than most menus: shrink to fit the screen
 	local fit = Platform.fit(size)
 	f.Position = Platform.menuPosition(size, fit)
 	UI.pop(f, 0.7 * fit, fit)
-	Platform.menuChanged(true)
+	Platform.menuChanged(not diveActive)
 	if Menus.onOpen then
 		Menus.onOpen(f)
 	end
@@ -241,18 +251,6 @@ local function detail(kind: string, name: string)
 end
 Menus.prompt = detail -- (signs, the Starter Pack and the offers open the detail window)
 
-function Menus.promptOffer(name: string)
-	if Config.GAMEPASSES[name] then
-		if State.hasPass(name) then
-			Hud.toast("You already own " .. Config.GAMEPASSES[name].name, C.Kelp)
-			return
-		end
-		detail("Pass", name)
-	else
-		detail("Product", name)
-	end
-end
-
 ---------------------------------------------------------------------------
 -- Fuse
 ---------------------------------------------------------------------------
@@ -393,7 +391,7 @@ end
 -- Shop (Robux) + codes
 ---------------------------------------------------------------------------
 function Menus.shop()
-	local _, body = window("Shop", Vector2.new(800, 540), C.Gold)
+	local _, body = window("Boosts · Robux Shop", Vector2.new(800, 540), C.Gold)
 	-- short lines only: every card is icon, name, one line, price, so nothing gets cut
 	local SHORT = {
 		StarterPack = "Lv3 Kelpdrake + coins", PearlDragonPack = "Legendary dragon", FuseLuck = "x2 fuse luck 15m",
@@ -418,11 +416,15 @@ function Menus.shop()
 			line = "+" .. Format.abbrev(Stats.coinPack(name, State.snapshot.bestDepth or 0)) .. " Coins"
 		end
 		UI.label({ Text = line, Stroke = 0, TextColor3 = if Config.COIN_PACK_MINUTES[name] then Color3.fromRGB(200, 140, 0) else C.Ink, MaxText = 15, Size = UDim2.new(1, -12, 0, 20), Position = UDim2.fromOffset(6, 106), Parent = c })
-		UI.button({ Text = if owned then "Owned" else ("R$ " .. info.price), Color = if owned then C.Muted else C.Kelp, Size = UDim2.new(1, -20, 0, 44), Position = UDim2.new(0, 10, 1, -54), Parent = c }, function()
+		local sticker = UI.button({ Text = "", Color = if owned then C.Muted else Color3.fromRGB(255, 219, 119), Size = UDim2.new(1, -20, 0, 44), Position = UDim2.new(0, 10, 1, -54), Rotation = -2, Parent = c }, function()
 			if not owned then
 				detail(kind, name) -- what it is first, then Buy
 			end
 		end)
+		if not owned then
+			UI.new("ImageLabel", { Image = Config.ICONS.Robux, BackgroundTransparency = 1, Size = UDim2.fromOffset(27, 27), Position = UDim2.fromOffset(7, 8), Parent = sticker })
+		end
+		UI.label({ Text = if owned then "Owned" else tostring(info.price) .. " Robux", Stroke = 0, TextColor3 = C.Ink, MaxText = 21, Size = UDim2.new(1, if owned then 0 else -35, 1, 0), Position = UDim2.fromOffset(if owned then 0 else 31, 0), Parent = sticker })
 	end
 	for _, name in { "StarterPack", "PearlDragonPack", "ElementBundle", "LimitedRoll", "PowerSpins", "Luck30", "FuseLuck", "InsaneLuck", "SkipTimer", "Revive", "CoinsSmall", "CoinsBig" } do
 		local info = Config.PRODUCTS[name]
@@ -520,13 +522,16 @@ end
 -- Battle end
 ---------------------------------------------------------------------------
 function Menus.battleEnd(p: any)
-	local title = if p.retreat then "Retreated" elseif p.timeUp then "TIME'S UP!" else "Team Fainted!"
+	local title = if p.firstFight then "First fight complete!" elseif p.retreat then "Retreated" elseif p.timeUp then "TIME'S UP!" else "Team Fainted!"
 	-- tall enough for up to 5 text lines (36 each) and the Revive + No Thanks buttons below them
 	local f, body = window(title, Vector2.new(440, 420), C.Coral)
 	if p.timeUp then
 		Hud.splash("TIME'S UP!", C.Coral)
 	end
-	local why = if p.retreat then "You swam back safely." elseif p.timeUp then "The boss swam away! Beat it in " .. Stats.bossTime(p.depth or 1) .. "s." else "Your team needs to get stronger!"
+	local why = if p.firstFight then "Next: fish for your second egg."
+		elseif p.retreat then "You swam back safely."
+		elseif p.timeUp then "The boss swam away! Beat it in " .. Stats.bossTime(p.depth or 1) .. "s."
+		else "Your team needs to get stronger!"
 	local lines = {
 		why,
 		"Depth reached: " .. p.depth,
@@ -534,7 +539,7 @@ function Menus.battleEnd(p: any)
 		"Enemies beaten: " .. p.kills,
 	}
 	if p.rest then
-		table.insert(lines, "Fainted monsters sleep up to " .. Format.time(p.rest))
+		table.insert(lines, "You can fish while your team rests (" .. Format.time(p.rest) .. ").")
 	end
 	for i, t in lines do
 		UI.label({ Text = t, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, (i - 1) * 36), Parent = body })
@@ -543,7 +548,7 @@ function Menus.battleEnd(p: any)
 	-- out) it is just "OK"
 	-- Revive is only ever for a team that was DEFEATED: a retreat never offers it
 	local offerRevive = p.canRevive == true and not p.retreat
-	local closeBtn = UI.button({ Text = if offerRevive then "No Thanks" else "OK", Color = if offerRevive then C.Muted else C.Kelp, Size = UDim2.new(1, -20, 0, 50), Position = UDim2.new(0, 10, 1, -58), Parent = body }, Menus.close)
+	local closeBtn = UI.button({ Text = if p.firstFight then "Go Fish!" elseif offerRevive then "Keep Resting" else "OK", Color = if offerRevive then C.Muted else C.Kelp, Size = UDim2.new(1, -20, 0, 50), Position = UDim2.new(0, 10, 1, -58), Parent = body }, Menus.close)
 	if offerRevive then
 		local btn = UI.button({ Text = "Revive & Continue  R$" .. Config.PRODUCTS.Revive.price, Color = C.Kelp, Size = UDim2.new(1, -20, 0, 54), Position = UDim2.new(0, 10, 1, -120), Parent = body }, function()
 			Menus.close()
@@ -597,7 +602,7 @@ function Menus.reveal(kind: string, p: any)
 	local stars = UI.label({ Text = "", TextColor3 = C.Gold, Size = UDim2.fromOffset(300, 40), Position = UDim2.new(0.5, 0, 0.84, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, Parent = f })
 	-- damage sticker: damage per second of the new monster
 	local dmgSticker = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 12, Size = UDim2.fromOffset(230, 34), Position = UDim2.new(0.5, 0, 0.9, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 32, Visible = false, Parent = f })
-	UI.label({ Text = "DAMAGE " .. Format.abbrev(math.floor(Stats.dps(p.sp, p.lvl, p.stars, p.v, p.x6) + 0.5)) .. " / sec", MaxText = 22, Size = UDim2.new(1, -16, 0.8, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 33, Parent = dmgSticker })
+	UI.label({ Text = "DAMAGE " .. Format.abbrev(math.floor(Stats.dps(p.sp, p.lvl, p.stars, p.v, p.x6, p) + 0.5)) .. " / sec", MaxText = 22, Size = UDim2.new(1, -16, 0.8, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 33, Parent = dmgSticker })
 	local isNew = true
 	local _ = isNew
 	UI.pop(title, 0.4)
@@ -714,7 +719,7 @@ end
 local function sortedMonsters(snap: any)
 	local list = {}
 	for uid, m in snap.monsters do
-		table.insert(list, { uid = uid, m = m, p = Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6) })
+		table.insert(list, { uid = uid, m = m, p = Stats.power(m.sp, m.lvl, m.stars, m.v, m.x6, m) })
 	end
 	table.sort(list, function(a, b)
 		return a.p > b.p
@@ -724,10 +729,174 @@ end
 
 local teamSellMode = false -- (Sell mode stays on while you sell several in a row)
 
--- The Sell button: the team screen with Sell mode already on
 function Menus.sell()
-	teamSellMode = true
-	Menus.team(true)
+	if not State.snapshot then return end
+	local frame, body = window("Sell for Coins", Vector2.new(720, 448), C.Gold)
+	local list = UI.new("ScrollingFrame", { Name = "Items", BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 8, ScrollingDirection = Enum.ScrollingDirection.Y, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Position = UDim2.fromOffset(10, 65), Size = UDim2.new(1, -20, 1, -72), Parent = body })
+	UI.new("UIListLayout", { Padding = UDim.new(0, 9), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list })
+	UI.new("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4), PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 15), Parent = list })
+	local empty = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Ink, MaxText = 28, Size = UDim2.new(1, -24, 0, 42), Position = UDim2.new(0, 12, 0.46, 0), Parent = body })
+	local emptyHint = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Ink, MaxText = 22, Size = UDim2.new(1, -24, 0, 48), Position = UDim2.new(0, 12, 0.46, 40), Parent = body })
+	local footer = UI.panel({ Color = C.Panel, Radius = 12, Position = UDim2.new(0, 10, 1, -65), Size = UDim2.new(1, -20, 0, 58), Visible = false, Parent = body })
+	local selection = UI.label({ Text = "", Stroke = 0, TextColor3 = C.Ink, MaxText = 23, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.fromOffset(12, 5), Size = UDim2.new(1, -355, 1, -10), Parent = footer })
+	local tab = "Eggs"
+	local selected: string? = nil
+	local busy = false
+	local sold: { [string]: boolean } = {}
+	type Sale = { id: string, name: string, detail: string, icon: string, price: number, pickup: number }
+	local items: { [string]: Sale } = {}
+	local rows: { [string]: Frame } = {}
+	local render: () -> ()
+	local confirm: TextButton
+	local function selectSale(id: string?)
+		selected = id
+		local sale = if id then items[id] else nil
+		footer.Visible = sale ~= nil
+		list.Size = UDim2.new(1, -20, 1, if sale then -138 else -72)
+		if sale then
+			selection.Text = "Sell " .. sale.name .. "?"
+			UI.setText(confirm, "Confirm • " .. Format.abbrev(sale.price) .. " coins")
+		end
+		for key, row in rows do
+			local border = row:FindFirstChildOfClass("UIStroke")
+			if border then border.Color = if key == id then C.Brass else C.Ink end
+		end
+	end
+	UI.button({ Text = "Cancel", Color = C.Sea, Size = UDim2.fromOffset(98, 44), Position = UDim2.new(1, -328, 0, 7), Parent = footer }, function()
+		if not busy then selectSale(nil) end
+	end)
+	confirm = UI.button({ Text = "Confirm Sale", Color = C.Kelp, Size = UDim2.fromOffset(212, 44), Position = UDim2.new(1, -220, 0, 7), Parent = footer }, function()
+		local id = selected
+		if busy or not id then return end
+		busy = true
+		UI.setText(confirm, "Selling…")
+		local ok, msg = State.action(if tab == "Eggs" then "SellEgg" else "Sell", id)
+		busy = false
+		Hud.toast(msg or "Try again", if ok then C.Gold else C.Coral)
+		if ok then
+			sold[id] = true
+			Sound.play("Coin", 0.7)
+		end
+		if frame.Parent then
+			selectSale(nil)
+			render()
+		end
+	end)
+	local tabs: { [string]: TextButton } = {}
+	for i, name in { "Eggs", "Monsters" } do
+		tabs[name] = UI.button({ Name = name, Text = name, Color = C.Panel, Size = UDim2.new(0.5, -16, 0, 48), Position = UDim2.new((i - 1) * 0.5, if i == 1 then 10 else 6, 0, 7), Parent = body }, function()
+			if busy or tab == name then return end
+			tab = name
+			list.CanvasPosition = Vector2.zero
+			selectSale(nil)
+			render()
+		end)
+	end
+	local lastList = ""
+	render = function()
+		local snap = State.snapshot
+		local sales: { Sale } = {}
+		local function add(item: any, id: string?, location: string, pickup: number?)
+			if not id or sold[id] then return end
+			local monster = Config.MONSTERS[item.sp]
+			if not monster then return end
+			local name = monster.name .. (if tab == "Eggs" then " Egg" else "")
+			local variant = if item.v and item.v ~= "Normal" then item.v .. " • " else ""
+			table.insert(sales, { id = id, name = name, detail = variant .. "Lv. " .. item.lvl .. " • " .. location, icon = Config.ICONS[if tab == "Eggs" then "LuckEgg" else monster.icon] or "", price = Stats.sellPrice(item.sp, item.lvl, item.v, snap.bestDepth), pickup = pickup or 0 })
+		end
+		if tab == "Eggs" then
+			if snap.carrying then add(snap.carrying, snap.carrying.saleId, "In your hands") end
+			for i = 1, #Config.PEDESTAL_POS + 1 do
+				local egg = snap.pedestalEggs[tostring(i)]
+				if egg then
+					local place = if i == #Config.PEDESTAL_POS + 1 then "Abyss Rod pedestal" else "Pedestal " .. i
+					add(egg, egg.saleId, place, egg.price)
+				end
+			end
+			for i = 1, #Config.NEST_SLOTS do
+				local nest = snap.nests[tostring(i)]
+				if nest and nest.kind == "egg" then add(nest.egg, nest.egg.saleId, "Nest " .. i) end
+			end
+		else
+			for i = 1, #Config.NEST_SLOTS do
+				local nest = snap.nests[tostring(i)]
+				local monster = nest and nest.kind == "mon" and snap.monsters[nest.uid]
+				if monster then add(monster, nest.uid, if table.find(snap.team, nest.uid) then "On your team" else "Nest " .. i) end
+			end
+		end
+		local blocked = if snap.tutorial < Config.TUTORIAL_DONE then "Finish the tutorial first" elseif snap.inBattle then "Wait for the battle to end" else nil
+		local signature = { tab, blocked or "" }
+		for _, sale in sales do table.insert(signature, sale.id .. sale.detail .. sale.price .. ":" .. sale.pickup) end
+		local key = table.concat(signature, "|")
+		if lastList == key then return end
+		lastList = key
+		for _, row in rows do row:Destroy() end
+		table.clear(rows)
+		table.clear(items)
+		for name, button in tabs do
+			local gradient = button:FindFirstChildOfClass("UIGradient")
+			if gradient then gradient.Color = UI.gradient(if name == tab then C.Sea else C.Plank).Color end
+		end
+		UI.setText(tabs[tab], tab .. " (" .. #sales .. ")")
+		UI.setText(tabs[if tab == "Eggs" then "Monsters" else "Eggs"], if tab == "Eggs" then "Monsters" else "Eggs")
+		empty.Visible = #sales == 0
+		emptyHint.Visible = #sales == 0
+		empty.Text = if tab == "Eggs" then "No eggs on your ship" else "No monsters to sell"
+		emptyHint.Text = if tab == "Eggs" then "Fish up an egg to sell it here." else "Hatch an egg to get a monster."
+		for i, sale in sales do
+			local row = UI.panel({ Color = Color3.fromRGB(255, 246, 221), Radius = 12, Size = UDim2.new(1, 0, 0, 65), LayoutOrder = i, Parent = list })
+			items[sale.id] = sale
+			rows[sale.id] = row
+			UI.new("ImageLabel", { Image = sale.icon, BackgroundTransparency = 1, Size = UDim2.fromOffset(44, 44), Position = UDim2.fromOffset(11, 10), Parent = row })
+			UI.label({ Text = sale.name, MaxText = 24, TextColor3 = C.Ink, Stroke = 0, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -296, 0, 27), Position = UDim2.fromOffset(62, 7), Parent = row })
+			UI.label({ Text = sale.detail, MaxText = 19, TextColor3 = C.PlankDark, Stroke = 0, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -296, 0, 24), Position = UDim2.fromOffset(62, 34), Parent = row })
+			local reason = blocked or (if sale.pickup > 0 then "Take first • " .. Format.abbrev(sale.pickup) .. " coins" else nil)
+			if reason then
+				UI.label({ Text = reason, MaxText = 20, TextColor3 = C.PlankDark, Stroke = 0, Size = UDim2.fromOffset(212, 46), Position = UDim2.new(1, -225, 0, 9), Parent = row })
+			else
+				UI.button({ Text = "Sell • " .. Format.abbrev(sale.price) .. " coins", Color = C.Gold, Size = UDim2.fromOffset(212, 46), Position = UDim2.new(1, -225, 0, 9), Parent = row }, function()
+					if not busy then selectSale(sale.id) end
+				end)
+			end
+		end
+		if blocked or (selected and not items[selected]) then selectSale(nil) else selectSale(selected) end
+	end
+	render()
+	local changed = State.Changed:Connect(render)
+	frame.Destroying:Once(function() changed:Disconnect() end)
+end
+
+function Menus.shipFlag()
+	local snap = State.snapshot
+	if not snap or snap.tutorial < Config.TUTORIAL_DONE then return end
+	local design = table.clone(snap.shipFlag or { color = "Coral", emblem = "Plain" })
+	local _, body = window("Design Your Flag", Vector2.new(540, 380), C.Sea)
+	local cloth = UI.new("Frame", { Size = UDim2.fromOffset(186, 97), Position = UDim2.new(0.5, 0, 0, 10), AnchorPoint = Vector2.new(0.5, 0), Parent = body }, { UI.corner(8), UI.stroke(4) })
+	local emblem = UI.new("ImageLabel", { BackgroundTransparency = 1, Size = UDim2.fromOffset(73, 73), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = cloth })
+	local function preview()
+		for _, entry in Config.FLAG_COLORS do
+			if entry.id == design.color then cloth.BackgroundColor3 = entry.color end
+		end
+		emblem.Image = Config.ICONS[design.emblem] or ""
+	end
+	for i, entry in Config.FLAG_COLORS do
+		UI.button({ Text = entry.id, Color = entry.color, Size = UDim2.fromOffset(84, 43), Position = UDim2.new(0.5, -226 + (i - 1) * 92, 0, 121), Parent = body }, function()
+			design.color = entry.id
+			preview()
+		end)
+	end
+	for i, id in Config.FLAG_EMBLEMS do
+		UI.button({ Text = id, Color = C.Pearl, Size = UDim2.fromOffset(106, 43), Position = UDim2.new(0.5, -224 + (i - 1) * 114, 0, 178), Parent = body }, function()
+			design.emblem = id
+			preview()
+		end)
+	end
+	preview()
+	UI.button({ Text = "Save Flag", Color = C.Kelp, Size = UDim2.fromOffset(180, 49), Position = UDim2.new(0.5, 0, 1, -12), AnchorPoint = Vector2.new(0.5, 1), Parent = body }, function()
+		local ok, msg = State.action("ShipFlag", design)
+		Hud.toast(msg or "Try again", if ok then C.Kelp else C.Coral)
+		if ok then Menus.close() end
+	end)
 end
 
 -- keepSell: stay in Sell mode (the Sell button, or the redraw after a sale). Opening the team screen
@@ -814,7 +983,7 @@ function Menus.team(keepSell: boolean?)
 		UI.label({ Text = "Lv." .. e.m.lvl .. (if e.m.power then " " .. e.m.power else ""), MaxText = 22, Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 92), Parent = card })
 		-- damage sticker: how hard this monster hits, per second
 		local dmg = UI.panel({ Color = Color3.fromRGB(255, 120, 100), Radius = 10, Size = UDim2.new(1, -24, 0, 26), Position = UDim2.fromOffset(12, 118), Parent = card })
-		UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(e.m.sp, e.m.lvl, e.m.stars, e.m.v, e.m.x6) + 0.5)) .. "/s", MaxText = 19, Size = UDim2.new(1, -8, 0.85, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = dmg })
+		UI.label({ Text = "DMG " .. Format.abbrev(math.floor(Stats.dps(e.m.sp, e.m.lvl, e.m.stars, e.m.v, e.m.x6, e.m) + 0.5)) .. "/s", MaxText = 19, Size = UDim2.new(1, -8, 0.85, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Parent = dmg })
 		UI.label({ Name = "PowerLbl", Text = "Power " .. Format.abbrev(e.p), TextColor3 = C.Gold, MaxText = 19, Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 146), Parent = card })
 		-- what this monster sells for (the capped price the server pays), shown only in Sell mode
 		UI.label({ Name = "SellTag", Text = "Sells for " .. Format.abbrev(Stats.sellPrice(e.m.sp, e.m.lvl, e.m.v, snap.bestDepth)), TextColor3 = C.Gold, MaxText = 22, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 144), Visible = false, Parent = card })

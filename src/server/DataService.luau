@@ -4,6 +4,7 @@
 -- saved, so a failed load can't overwrite a real save with a fresh profile.
 
 local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -95,6 +96,8 @@ function DataService.defaultData()
 		indexV = {}, -- species -> { Golden = true, Rainbow = true } mutations found
 		indexRewards = {}, -- milestone count (string) -> true once paid
 		spellUntil = {}, -- spell id -> os.time it runs out
+		coveHatchUntil = 0,
+		shipFlag = { color = "Coral", emblem = "Plain" },
 	}
 end
 
@@ -103,6 +106,11 @@ local function reconcile(data: any)
 	for k, v in def do
 		if data[k] == nil then
 			data[k] = v
+		end
+	end
+	for _, nest in data.nests do
+		if nest.kind == "egg" and not nest.egg.saleId then
+			nest.egg.saleId = HttpService:GenerateGUID(false)
 		end
 	end
 	for k, v in def.upgrades do
@@ -188,7 +196,11 @@ function DataService.snapshot(player: Player): any
 	snap.playSeconds = DataService.playSeconds(player)
 	snap.receipts = nil
 	snap.passes = s.passes
-	snap.pedestalEggs = s.pedestalEggs
+	-- Pedestal slots can have gaps. Send a dictionary so later slots survive remote serialization.
+	snap.pedestalEggs = {}
+	for slot, egg in s.pedestalEggs do
+		snap.pedestalEggs[tostring(slot)] = egg
+	end
 	snap.carrying = s.carrying
 	snap.shipIndex = s.shipIndex
 	snap.inBattle = s.inBattle == true

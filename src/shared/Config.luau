@@ -18,7 +18,7 @@ Config.ADMIN_IDS = { 11140921447, 11110589684 } :: { number } -- TuckerFLNK, 111
 Config.SEA_LEVEL = 0 -- water surface Y
 Config.SHIP_COUNT = 6 -- one per player (6-player servers)
 Config.SHIP_RING_RADIUS = 236 -- harbour centre -> ship centre (pushed out so the bigger island never touches a hull)
-Config.HUB_RADIUS = 96 -- harbour island (was 78: the town felt cramped once the Dockyard joined the vendors)
+Config.HUB_RADIUS = 110.4 -- half-width of the harbour's sand shelf
 Config.TOWN_SCALE = Config.HUB_RADIUS / 62 -- how much bigger the town is than v1 (layout numbers below are v1 x this)
 Config.DECK_Y = 9 -- top of the main deck
 Config.UPPER_DECK_Y = 19 -- top of the quarterdeck (Floor 2)
@@ -69,6 +69,14 @@ Config.NEST_SLOTS = {
 }
 Config.QUARTERDECK_Z = 54 -- the raised stern deck (Floor 2) starts here
 Config.MAST_POS = Vector3.new(0, 0, 36)
+Config.FLAG_COLORS = {
+	{ id = "Coral", color = Color3.fromRGB(240, 60, 60) },
+	{ id = "Tide", color = Color3.fromRGB(49, 151, 227) },
+	{ id = "Kelp", color = Color3.fromRGB(52, 168, 111) },
+	{ id = "Gold", color = Color3.fromRGB(244, 184, 64) },
+	{ id = "Abyss", color = Color3.fromRGB(103, 70, 178) },
+}
+Config.FLAG_EMBLEMS = { "Plain", "Skull", "Swords", "Heart" }
 Config.WALK_SPEED = 24 -- how fast a player runs: 1.5x Roblox's default of 16
 Config.START_NESTS = 3
 Config.NEST_REVEAL_MONSTERS = 3 -- the buyable nests appear once you own this many monsters
@@ -82,9 +90,8 @@ Config.NEST_BASE_PRICE = 1500 * Config.COIN_SCALE -- the cheapest a nest can eve
 Config.NEST_MINUTES = 5 -- a nest costs about this many minutes of battle coins at its stage (see Stats.nestPrice)
 
 Config.WINCH_POS = Vector3.new(-24, 0, -40) -- the fishing rod, casting over the port rail
--- The rod dives through stacked zones in a trench off the port side; the server rolls where
--- it stops (Egg Luck makes deeper zones likelier). Each zone's eggs are its element; the
--- Abyss gives rare hybrids. A cast takes FISH_BASE + zone * FISH_PER_ZONE seconds (about 9.5-13.5 s).
+-- The rod dives to the bottom of its trench. Zone weights still define the catch pool, with
+-- Egg Luck favoring the deeper pools and steering gates affecting the catch's rarity.
 Config.FISH_ZONES = {
 	{ id = "Shallows", name = "Sunny Shallows", element = "Tide", weight = 40, color = Color3.fromRGB(80, 210, 255) },
 	{ id = "Kelp", name = "Kelp Forest", element = "Coral", weight = 28, color = Color3.fromRGB(90, 220, 120) },
@@ -140,7 +147,7 @@ Config.ABYSS_ROD = {
 	pedestal = Vector3.new(8, 0, 92),
 }
 -- The Divine Tide Sovereign: the rarest catch in the game, Abyss Rod only. Chance per cast by the
--- zone the hook stops in (about 1 in 500 casts overall; the Heart of the Trench is best). Luck does
+-- catch pool (about 1 in 500 casts overall; the Heart of the Trench is best). Gate luck does
 -- not change it.
 Config.DIVINE = { sp = "TideSovereign", chance = 1 / 700, zoneChance = { Heart = 1 / 120, LeviathanRest = 1 / 300 } }
 Config.ABYSS_ZONE_HEIGHT = 30
@@ -427,8 +434,10 @@ Config.INDEX_REWARDS = {
 -- Mutations: every egg rolls one. They change the look and multiply stats (classic RNG).
 Config.VARIANTS = {
 	{ id = "Normal", name = "", weight = 94, mult = 1 },
-	{ id = "Golden", name = "Golden", weight = 5, mult = 2, color = Color3.fromRGB(255, 205, 50) },
-	{ id = "Rainbow", name = "Rainbow", weight = 1, mult = 5, color = Color3.fromRGB(255, 120, 220) },
+	-- A level multiplies stats by 1.6 (LEVEL_STAT_GROWTH), so these are worth about 1.25 and 2.3 levels. They
+	-- used to be x2 / x5 (Rainbow = 3.4 levels): a Lv3 Rainbow beat a Lv6 Legendary, and out-hit a Lv3 Divine.
+	{ id = "Golden", name = "Golden", weight = 5, mult = 1.8, color = Color3.fromRGB(255, 205, 50) },
+	{ id = "Rainbow", name = "Rainbow", weight = 1, mult = 3, color = Color3.fromRGB(255, 120, 220) },
 }
 -- Egg-only starters by element (what the winch hauls most)
 Config.STARTER_OF = { Tide = "Splashfin", Coral = "Reefback", Storm = "Zapjelly", Abyss = "Gloomeel" }
@@ -459,7 +468,8 @@ Config.BASE_HP = 120
 Config.BASE_ATK = 5
 Config.BASE_ATTACK_INTERVAL = 1.1 -- seconds between attacks at rate 1
 Config.LEVEL_STAT_GROWTH = 1.6 -- every stat x this per level
-Config.STAR_MULT = { 1, 1.25, 1.6, 2.1, 3.0, 4.5 }
+-- (the 6th = Divine: it was 4.5, which left a Lv3 Divine dragon below a Lv3 Rainbow Mythic; 10 puts it clearly on top)
+Config.STAR_MULT = { 1, 1.25, 1.6, 2.1, 3.0, 10 }
 Config.MAX_LEVEL = 32
 Config.SIZE_MAX_BONUS = 0.25 -- a monster at MAX_LEVEL looks this much bigger than at Lv1 (grows evenly with each level)
 Config.ABILITY_HITS = 4 -- normal hits to fill the energy bar
@@ -578,18 +588,18 @@ Config.ENEMIES = {
 ---------------------------------------------------------------------------
 -- target: what the arrows point at. "winch" | "pedestal" | "nest" | "egg" | "fight" | "fuse" | nil
 Config.TUTORIAL = {
-	{ text = "Cast the rod to fish up an <EGG>!", target = "winch" },
-	{ text = "Take your first <EGG>!", target = "pedestal" },
-	{ text = "Put your egg in a <NEST>!", target = "nest" },
-	{ text = "Open your egg when it's <READY>!", target = "egg" },
-	{ text = "Try to beat the <MINI BOSS>!", target = "fight" },
-	{ text = "You need <MORE MONSTERS>!", target = "winch" },
-	{ text = "Take your new <EGG>!", target = "pedestal" },
-	{ text = "Put your egg in a <NEST>!", target = "nest" },
-	{ text = "Open your egg when it's <READY>!", target = "egg" },
+	{ text = "Follow the arrows to the rod and choose <FISH>.", target = "winch" },
+	{ text = "Walk up to your egg and choose <TAKE>.", target = "pedestal" },
+	{ text = "Walk to an empty nest and choose <PLACE EGG>.", target = "nest" },
+	{ text = "Choose <OPEN> to hatch your monster!", target = "egg" },
+	{ text = "Press <FIGHT>. Your monster attacks on its own!", target = "fight" },
+	{ text = "Fish for a <SECOND EGG> to make your team stronger!", target = "winch" },
+	{ text = "Walk up to your second egg and choose <TAKE>.", target = "pedestal" },
+	{ text = "Walk to an empty nest and choose <PLACE EGG>.", target = "nest" },
+	{ text = "Choose <OPEN> to hatch your second monster!", target = "egg" },
 	-- the arrow points at the pink Fuse heart; pressing it opens the tray and only THEN does the
 	-- guide draw the trail to the monsters (FuseView sets Guide.helper)
-	{ text = "Press the pink <FUSE> heart to fuse your monsters!", target = "fuse" },
+	{ text = "Press <FUSE> to combine your two monsters!", target = "fuse" },
 	{ text = "Your monsters are <FUSING>...", target = nil },
 	-- the tutorial ends when the first fuse opens (FarmService.tutorial(player, 11))
 }
@@ -623,7 +633,7 @@ Config.PRODUCTS = {
 	StarterPack = { id = 3734236479, price = 35, name = "Starter Pack", desc = "A Lv3 Kelpdrake, " .. (5 * Config.COIN_SCALE) .. "K coins and 50 pearls." },
 	FuseLuck = { id = 3734236499, price = 10, name = "Fuse Luck", desc = "x2 star and secret chance for 15 minutes." },
 	InsaneLuck = { id = 3734236523, price = 25, name = "Insane Fuse Luck", desc = "x4 star and secret chance for 15 minutes." },
-	Luck30 = { id = 3734813463, price = 5, name = "x2 Luck 30m", desc = "Double egg luck and fuse luck for 30 minutes." },
+	Luck30 = { id = 3734813463, price = 5, name = "30 Minutes Luck", desc = "Double egg luck and fuse luck for 30 minutes." },
 	Revive = { id = 3734236545, price = 20, name = "Revive", desc = "Bring your team back at full health and keep diving." },
 	-- timed: for HATCH_NOW_SECONDS every egg and fuse finishes instantly (also the "Hatch Now" nest prompt)
 	SkipTimer = { id = 3734236563, price = 5, name = "Hatch Now", desc = "Every egg and fuse hatches instantly for 5 minutes." },
@@ -666,10 +676,8 @@ Config.COIN_PACK_MINUTES = { CoinsSmall = 6, CoinsBig = 30 } -- = this many minu
 -- worse runs pay a share of that. One play per `cooldown` seconds per game, so battling still pays better.
 -- minSeconds = the shortest a real run can take (anything faster is refused).
 Config.MINIGAMES = {
-	cards = { name = "Coral Cards", minutes = 3, pearls = 8, cooldown = 720, minSeconds = 8 }, -- 720s = 5 plays/hour cap
+	cove = { name = "Crab Cove", minutes = 3, pearls = 8, cooldown = 720 },
 }
--- the pair count Coral Cards uses, shared so the server can check a result is possible
-Config.CARDS_PAIRS = 6 -- a perfect game = this many moves
 
 -- Cannon Gallery: a gun on each side of every ship (ship space; clear of the Workshop cannons, boards
 -- and chest). Get in, aim in first person, and shoot the LIVE crates that drop around the map for the
@@ -711,9 +719,6 @@ Config.NPC_SOUNDS = {
 	CardsStand = "Place",
 }
 
--- Rotating offer slot on the right of the HUD (cycles every OFFER_ROTATE seconds)
-Config.OFFER_ROTATION = { "DoubleCoins", "Luck30", "FuseLuck", "FastFuse", "DoubleLuck", "FastBattle", "InsaneLuck" }
-Config.OFFER_ROTATE = 25
 
 Config.CODES = {
 	SEAMONSTER = { pearls = 50 },
@@ -872,8 +877,8 @@ Config.SPELL_DROP = {
 Config.EGG_SHOP = {
 	{ id = "RareEgg", name = "Rare Egg", desc = "A random 2-star egg", pearls = 60, tier = 2 },
 	{ id = "EpicEgg", name = "Epic Egg", desc = "A random 3-star egg", pearls = 260, tier = 3 },
-	-- Golden is x2 stats, better than an Epic (x1.6), so it costs more than the Epic egg
-	{ id = "GoldenEgg", name = "Golden Egg", desc = "A Golden egg (x2 stats)", pearls = 400, tier = 1, variant = "Golden" },
+	-- Golden is x1.8 stats, better than an Epic (x1.6), so it costs more than the Epic egg
+	{ id = "GoldenEgg", name = "Golden Egg", desc = "A Golden egg (x1.8 stats)", pearls = 400, tier = 1, variant = "Golden" },
 }
 
 ---------------------------------------------------------------------------

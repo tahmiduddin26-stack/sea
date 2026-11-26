@@ -251,14 +251,16 @@ function Cinema.intro()
 		-- 28 studs short of the bow, 30 to one side of the dock. The island is a square, so pick the
 		-- side that is open water for this ship (the other one can still be on the sand)
 		local bowR = Config.SHIP_RING_RADIUS - Config.SHIP_LENGTH / 2
-		local function inWater(p: Vector3): boolean
-			return math.max(math.abs(p.X), math.abs(p.Z)) > Config.HUB_RADIUS + 14
-		end
 		local lateral = side * 30
-		if not inWater(hub + dir * (bowR - 28) + lateral) then
+		local offshore = hub + dir * (bowR - 28)
+		local preferred = offshore + lateral
+		local opposite = offshore - lateral
+		local preferredClearance = math.max(math.abs(preferred.X), math.abs(preferred.Z))
+		local oppositeClearance = math.max(math.abs(opposite.X), math.abs(opposite.Z))
+		if preferredClearance <= Config.HUB_RADIUS + 14 and oppositeClearance > preferredClearance then
 			lateral = -lateral
 		end
-		local seaPos = hub + dir * (bowR - 28) + lateral
+		local seaPos = offshore + lateral
 		local seaSpot = CFrame.lookAt(seaPos, Vector3.new(stagePos.X, seaPos.Y, stagePos.Z)) * CFrame.Angles(0, math.rad(90), 0)
 		-- high and to the dock side so the palms don't block the view of Maw
 		local camC = CFrame.lookAt(stagePos + dir * 16 + side * -10 + Vector3.new(0, 10, 0), seaPos + Vector3.new(0, 10, 0))

@@ -8,9 +8,11 @@ local Remotes = {}
 
 local FOLDER = "Remotes"
 local EVENTS = {
+	"MiniGame", -- S->owner private Crab Cove round state
 	"Snapshot", -- S->C full data snapshot
 	"Toast", -- S->C (text, color?)
 	"Battle", -- S->all (ownerUserId, kind, payload) battle beats so everyone can watch
+	"FishingDive", -- C->S steering direction, S->owner gate results
 	"Reveal", -- S->C (kind "hatch"|"fuse", monster info) big reveal card
 	"Tutorial", -- S->C (step) tutorial moved on
 	"IntroSeen", -- C->S intro cinematic finished (or skipped)

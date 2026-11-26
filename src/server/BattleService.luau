@@ -272,7 +272,7 @@ local function step(run: Run, dt: number)
 				local mult = Stats.elementMult(f.elements, e.element)
 				local ability = false
 				f.energy += 1
-				if f.energy >= (if f.power == "Kraken" then 2 else Config.ABILITY_HITS) then
+				if f.energy >= Stats.abilityHits(f.power) then
 					f.energy = 0
 					ability = true
 				end
@@ -429,6 +429,7 @@ local function finish(run: Run)
 		retreat = run.retreat,
 		timeUp = (run :: any).timeUp == true,
 		rest = if rested then longestRest else nil,
+		firstFight = data.tutorial == 5,
 	})
 	FarmService.tutorial(player, 5)
 	DataService.changed(player)
@@ -449,19 +450,9 @@ local function startRun(player: Player, depth: number, keep: Run?): (boolean, st
 	local fighters: { Fighter } = {}
 	local data0 = DataService.get(player)
 	for _, m in team do
-		local st = Stats.monster(m.sp, m.lvl, m.stars, m.v, m.x6)
-		local power = data0.monsters[m.uid] and data0.monsters[m.uid].power
-		if power == "Fierce" then
-			st.atk = math.floor(st.atk * 1.3)
-		elseif power == "Tough" then
-			st.hp = math.floor(st.hp * 1.4)
-		elseif power == "Swift" then
-			st.interval /= 1.3
-		elseif power == "Titan" then
-			st.atk = math.floor(st.atk * 1.6)
-			st.hp = math.floor(st.hp * 1.6)
-		end
-		local fit = DataService.get(player).fittings or {}
+		local st = Stats.monster(m.sp, m.lvl, m.stars, m.v, m.x6, m)
+		local power = m.power
+		local fit = data0.fittings or {}
 		st.atk = math.max(1, math.floor(st.atk * FarmService.spellMult(player, "dmg") * (1 + (fit.Cannons or 0) * Config.FITTINGS.Cannons.dmg)))
 		st.hp = math.max(1, math.floor(st.hp * FarmService.spellMult(player, "hp") * (1 + (fit.Hull or 0) * Config.FITTINGS.Hull.hp)))
 		table.insert(fighters, {
@@ -544,6 +535,7 @@ function BattleService.startDepthFor(player: Player): number
 end
 
 function BattleService.fight(player: Player): (boolean, string?)
+	if player:GetAttribute("InCrabCove") then return false, "Leave Crab Cove first!" end
 	local data = DataService.get(player)
 	if data.tutorial < 5 then
 		return false, "Hatch your first monster first!"
