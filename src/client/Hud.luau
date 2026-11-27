@@ -333,6 +333,47 @@ function Hud.spellDrop(id: string)
 	Hud.spellCast(id, "NEW SPELL!")
 end
 
+-- Server-wide brags ("X hatched a RAINBOW Kraken King!"): a plank ribbon slides down near the top of
+-- the screen, holds, and slides away. One at a time; extra ones wait in a short queue.
+local announceQueue: { { text: string, color: Color3 } } = {}
+local announcing = false
+local function nextAnnounce()
+	if announcing or #announceQueue == 0 or not screenRoot then
+		return
+	end
+	announcing = true
+	local a = table.remove(announceQueue, 1) :: any
+	-- a wooden sign hanging from two ropes: plank frame, brass rivets, a parchment strip with the words
+	-- in ink, and a wax seal in the brag's colour
+	local ribbon = UI.plank({ Color = C.Plank, Size = UDim2.fromOffset(600, 62), Position = UDim2.new(0.5, 0, 0, -70), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 800, Parent = screenRoot })
+	for _, x in { 90, 510 } do
+		UI.new("Frame", { BackgroundColor3 = C.Rope, BorderSizePixel = 0, Size = UDim2.fromOffset(5, 260), Position = UDim2.fromOffset(x, 4), AnchorPoint = Vector2.new(0.5, 1), ZIndex = 799, Parent = ribbon }, { UI.stroke(1.5) })
+	end
+	local strip = UI.panel({ Color = C.Panel, Radius = 8, Size = UDim2.new(1, -76, 1, -16), Position = UDim2.new(0, 56, 0, 8), ZIndex = 801, Parent = ribbon })
+	UI.label({ Text = a.text, TextColor3 = C.Ink, Stroke = 0, MaxText = 22, Size = UDim2.new(1, -20, 0.8, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 802, Parent = strip })
+	local seal = UI.new("Frame", { BackgroundColor3 = a.color, BorderSizePixel = 0, Size = UDim2.fromOffset(34, 34), Position = UDim2.fromOffset(30, 31), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 802, Parent = ribbon }, { UI.corner(17), UI.stroke(2.5) })
+	UI.label({ Text = "!", TextColor3 = C.Ink, Stroke = 0, MaxText = 24, Size = UDim2.fromScale(1, 0.8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 803, Parent = seal })
+	UI.rivet(ribbon, UDim2.new(1, -16, 0.5, 0)).ZIndex = 802
+	UI.tween(ribbon, 0.35, { Position = UDim2.new(0.5, 0, 0, 120) }, Enum.EasingStyle.Back)
+	local Sound = require(script.Parent.Sound) :: any
+	Sound.play("ZoneChime", 0.5, 1.6)
+	task.delay(4.2, function()
+		UI.tween(ribbon, 0.3, { Position = UDim2.new(0.5, 0, 0, -70) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		task.wait(0.32)
+		ribbon:Destroy()
+		announcing = false
+		nextAnnounce()
+	end)
+end
+
+function Hud.announce(text: string, color: Color3?)
+	if #announceQueue >= 4 then
+		table.remove(announceQueue, 1) -- drop the oldest so the queue never lags far behind
+	end
+	table.insert(announceQueue, { text = text, color = color or C.Gold })
+	nextAnnounce()
+end
+
 -- Coin icons burst from a world point and fly into the coin counter
 function Hud.flyCoins(worldPos: Vector3, count: number)
 	if not root or not screenRoot then
@@ -676,6 +717,103 @@ function Hud.init(screen: ScreenGui)
 	-- a solid rounded sea-blue pill: no dark fade behind the words, so they stay crisp
 	banner = UI.panel({ Size = UDim2.fromOffset(600, 50), Position = UDim2.new(0.5, 0, 0, 116), AnchorPoint = Vector2.new(0.5, 0), Color = Color3.fromRGB(40, 140, 235), Radius = 25, Visible = false, Parent = root })
 	bannerLbl = UI.label({ Text = "", MaxText = 28, Size = UDim2.new(1, -40, 0.72, 0), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2.5, Parent = banner })
+
+	-- NEXT GOAL: one line under FIGHT (where the tutorial banner sat) that always shows the nearest
+	-- exciting thing, with a countdown or a progress bar: a gift that's ready, the Deep Rod, the next
+	-- free gift, Floor 2, a team slot, the next boss. Only after the tutorial, never during a fight.
+	local goal = UI.plank({ Color = C.Plank, Size = UDim2.fromOffset(440, 46), Position = UDim2.new(0.5, 0, 0, 116), AnchorPoint = Vector2.new(0.5, 0), Parent = root })
+	goal.Visible = false
+	local goalTag = UI.plank({ Text = "NEXT", Color = C.Brass, TextColor = C.Ink, MaxText = 16, Size = UDim2.fromOffset(64, 30), Position = UDim2.new(0, 8, 0.5, 0), AnchorPoint = Vector2.new(0, 0.5), ZIndex = 2, Parent = goal })
+	local goalLbl = UI.label({ Text = "", MaxText = 20, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -92, 0, 24), Position = UDim2.fromOffset(82, 4), ZIndex = 2, Parent = goal })
+	local barBack = UI.new("Frame", { BackgroundColor3 = C.PlankDark, BorderSizePixel = 0, Size = UDim2.new(1, -92, 0, 8), Position = UDim2.fromOffset(82, 31), ZIndex = 2, Parent = goal }, { UI.corner(4) })
+	local barFill = UI.new("Frame", { BackgroundColor3 = C.Kelp, BorderSizePixel = 0, Size = UDim2.fromScale(0, 1), ZIndex = 3, Parent = barBack }, { UI.corner(4) })
+	local lastGoalKey = ""
+	-- the goal to show now: (key, text, fraction 0..1, ready-now?)
+	local function pickGoal(snap: any): (string?, string?, number?, boolean?)
+		local now = State.now()
+		local played = now - (snap.sessionStart or now)
+		-- 1) something waiting for you right now
+		for i, g in Config.GIFTS do
+			-- only egg gifts are announced here (plain "free gift ready" was too naggy)
+			if g.eggTier and not (snap.giftsClaimed and snap.giftsClaimed[i]) and played >= g.min * 60 then
+				local what = if g.variant then g.variant .. " Egg" elseif g.eggTier == 3 then "Epic Egg" else "Rare Egg"
+				return "gift" .. i, "Your " .. what .. " is ready! Open the Gift Chest", 1, true
+			end
+		end
+		local unlockAt = player:GetAttribute("DeepUnlockAt") :: number? or 0
+		local readyAt = player:GetAttribute("DeepReadyAt") :: number? or 0
+		if unlockAt > 0 and now >= unlockAt and now >= readyAt then
+			return "deepready", "The Deep Rod is READY! Cast it for a rare egg", 1, true
+		end
+		-- 2) the soonest timed unlock (only if it's close, so it feels reachable)
+		local bestKey, bestText, bestFrac, bestLeft = nil, nil, nil, math.huge
+		if unlockAt > now and unlockAt - now < 15 * 60 then
+			local total = Config.DEEP_ROD.unlockMinutes * 60
+			bestKey, bestText, bestFrac, bestLeft = "deepunlock", "Deep Rod unlocks in " .. Format.time(unlockAt - now), 1 - (unlockAt - now) / total, unlockAt - now
+		end
+		local prevMin = 0
+		for i, g in Config.GIFTS do
+			if not (snap.giftsClaimed and snap.giftsClaimed[i]) then
+				local left = g.min * 60 - played
+				if left > 0 then
+					if g.eggTier and left < bestLeft then
+						local what = if g.variant then g.variant .. " Egg" elseif g.eggTier == 3 then "Epic Egg" elseif g.eggTier == 2 then "Rare Egg" else "Free gift"
+						bestKey, bestText, bestFrac, bestLeft = "nextgift" .. i, what .. " in " .. Format.time(left), math.clamp((played - prevMin * 60) / ((g.min - prevMin) * 60), 0, 1), left
+					end
+					break
+				end
+			end
+			prevMin = g.min
+		end
+		if bestKey and bestLeft < 10 * 60 then
+			return bestKey, bestText, bestFrac, false
+		end
+		-- 3) progress goals
+		if (snap.floor or 1) < 2 then
+			local f = math.min(snap.totalFuses or 0, Config.FLOOR2.fuses)
+			if f < Config.FLOOR2.fuses then
+				return "floor2fuse", "Floor 2: fuse " .. f .. " / " .. Config.FLOOR2.fuses .. " times", f / Config.FLOOR2.fuses, false
+			end
+			return "floor2coins", "Floor 2: " .. Format.abbrev(snap.coins) .. " / " .. Format.abbrev(Config.FLOOR2.coins) .. " coins", math.clamp(snap.coins / Config.FLOOR2.coins, 0, 1), snap.coins >= Config.FLOOR2.coins
+		end
+		local slotPrice = Config.TEAM_SLOT_PRICES[snap.teamSlots - Config.TEAM_START + 1]
+		if slotPrice and snap.teamSlots < Config.TEAM_MAX then
+			return "slot" .. snap.teamSlots, "New team slot: " .. Format.abbrev(snap.coins) .. " / " .. Format.abbrev(slotPrice), math.clamp(snap.coins / slotPrice, 0, 1), snap.coins >= slotPrice
+		end
+		local nextBoss = (snap.bestDepth // Config.STAGE_LENGTH + 1) * Config.STAGE_LENGTH
+		return "boss" .. nextBoss, "Beat the boss at Depth " .. nextBoss, math.clamp(snap.bestDepth / nextBoss, 0, 1), false
+	end
+	task.spawn(function()
+		while true do
+			task.wait(0.5)
+			local snap = State.snapshot
+			local show = snap ~= nil and snap.tutorial >= Config.TUTORIAL_DONE and not Hud.inBattle and not State.cinematic and not banner.Visible
+			if show then
+				local key, text, frac, ready = pickGoal(snap)
+				if key and text then
+					goalLbl.Text = text
+					UI.tween(barFill, 0.3, { Size = UDim2.fromScale(math.clamp(frac or 0, 0, 1), 1) })
+					barFill.BackgroundColor3 = if ready then C.Gold else C.Kelp
+					local tagLbl = goalTag:FindFirstChildWhichIsA("TextLabel")
+					if tagLbl then
+						tagLbl.Text = if ready then "NOW!" else "NEXT"
+					end
+					if key ~= lastGoalKey then
+						lastGoalKey = key
+						UI.pop(goal, 0.85)
+						if ready then
+							local Sound = require(script.Parent.Sound) :: any
+							Sound.play("ZoneChime", 0.6, 1.3)
+						end
+					end
+				else
+					show = false
+				end
+			end
+			-- switched off: the user asked for the NEXT bar to go (the code stays in case it comes back)
+			goal.Visible = show and false
+		end
+	end)
 
 	-- settings gear (placed by Hud.setMode below)
 	settingsBtn = UI.button({ Text = "", Color = C.Plank, Radius = 28, Size = UDim2.fromOffset(56, 56), Position = UDim2.new(1, -14, 1, -14), AnchorPoint = Vector2.new(1, 1), Parent = root }, function()

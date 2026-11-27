@@ -99,6 +99,36 @@ local function refresh()
 	if a then
 		mark(a, snap.bestDepth >= Config.POWERS_UNLOCK_DEPTH and (snap.spins or 0) > 0)
 	end
+	-- Quest Board: a daily quest is finished and waiting to be claimed
+	local waiting = false
+	local qs = snap.quests
+	if qs and qs.day == State.now() // 86400 then
+		for _, q in qs.list do
+			if q.progress >= q.target and not q.claimed then
+				waiting = true
+			end
+		end
+	end
+	a = anchorOf(hub, "QuestPrompt")
+	if a then
+		mark(a, waiting)
+	end
+	-- a staggered unlock just opened (server/DripService sets "DripNew" for two minutes): a "!" shows where
+	local fresh = player:GetAttribute("DripNew")
+	a = anchorOf(hub, "CardsPrompt")
+	if a then
+		mark(a, fresh == "cove")
+	end
+	local lighthouseDoor = world:FindFirstChild("LighthouseEnter", true)
+	if lighthouseDoor and lighthouseDoor:IsA("BasePart") then
+		mark(lighthouseDoor, fresh == "lighthouse")
+	end
+	-- Tide Whirlpool: your best depth is deep enough for the next Tide Mark
+	local rebirthNeed = Stats.rebirthDepth(snap.rebirths or 0)
+	a = anchorOf(hub, "RebirthPrompt")
+	if a then
+		mark(a, rebirthNeed ~= nil and snap.bestDepth >= rebirthNeed)
+	end
 	-- Dockyard: you can afford an Egg Luck / Fast Reel level or the next Shipwright tier
 	local ups = snap.upgrades or {}
 	local lowest = math.huge
@@ -149,12 +179,16 @@ function VendorMarks.init()
 			task.wait(0.4)
 		end
 	end)
+	local bobFrame = 0
 	RunService.Heartbeat:Connect(function()
 		local t = os.clock()
-		-- bob every mark
-		for anchor, g in marks do
-			if anchor.Parent then
-				g.StudsOffsetWorldSpace = Vector3.new(0, 9 + math.abs(math.sin(t * 3)) * 1.2, 0)
+		-- bob every mark (every third frame: moving a billboard re-lays it out, and it is only a bob)
+		bobFrame += 1
+		if bobFrame % 3 == 0 then
+			for anchor, g in marks do
+				if anchor.Parent and g.Enabled then
+					g.StudsOffsetWorldSpace = Vector3.new(0, 9 + math.abs(math.sin(t * 3)) * 1.2, 0)
+				end
 			end
 		end
 		if t - last > 1 then

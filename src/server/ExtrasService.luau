@@ -291,6 +291,16 @@ function ExtrasService.claimGift(player: Player, i: any): (boolean, string?)
 	if g.egg and not ExtrasService.giveRandomEgg(player, nil, g.egg, 1) then
 		return false, "Free a nest first!"
 	end
+	-- a guaranteed egg of a rarity tier (2 = Rare, 3 = Epic), random element, optional Golden/Rainbow
+	if g.eggTier then
+		local els = { "Tide", "Coral", "Storm", "Abyss" }
+		local sp = Config.TIER_OF[els[rng:NextInteger(1, #els)]][g.eggTier]
+		local egg = { sp = sp, lvl = 1 + eggLevelBonus(data), stars = Stats.stars(sp), v = g.variant }
+		local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player))
+		if not FarmService.giveEgg(player, egg, secs) then
+			return false, "Free a nest first!"
+		end
+	end
 	s.giftsClaimed[i] = true
 	Analytics.tag(player, "TimedReward", "Gift" .. i)
 	Analytics.event(player, "GiftClaim", i)
@@ -446,6 +456,50 @@ function ExtrasService.claimDaily(player: Player): (boolean, string?)
 	ExtrasService.giveSpell(player, "boss")
 	DataService.changed(player)
 	return true, "Day " .. data.dailyStreak .. ": +" .. pearls .. " pearls and a spell card!"
+end
+
+---------------------------------------------------------------------------
+-- Tide Rebirth (Config.REBIRTH): start the climb again for a permanent coin bonus
+---------------------------------------------------------------------------
+function ExtrasService.rebirth(player: Player): (boolean, string?)
+	local data = DataService.get(player)
+	local s = DataService.session(player)
+	if data.tutorial < Config.TUTORIAL_DONE then
+		return false, "Finish the tutorial first"
+	end
+	if s and s.inBattle then
+		return false, "Finish your fight first"
+	end
+	local done = data.rebirths or 0
+	local need = Stats.rebirthDepth(done)
+	if not need then
+		return false, "You have every Tide Mark!"
+	end
+	if data.bestDepth < need then
+		return false, "Reach Depth " .. need .. " first (you are at " .. data.bestDepth .. ")"
+	end
+	local R = Config.REBIRTH
+	local before = data.bestDepth
+	data.peakDepth = math.max(data.peakDepth or 0, before)
+	data.rebirths = done + 1
+	-- back to the start: coins and depth (monsters, Index, pearls, spells, upgrades and ships stay)
+	data.bestDepth = 0
+	data.resumeDepth = 0
+	data.coins = Config.START_COINS
+	-- the reward: pearls and a guaranteed good egg
+	local pearls = R.pearlsPerMark * data.rebirths
+	data.pearls += pearls
+	local els = { "Tide", "Coral", "Storm", "Abyss" }
+	local el = els[rng:NextInteger(1, #els)]
+	local egg = { sp = Config.STARTER_OF[el], lvl = math.min(Stats.levelCap(before), Stats.stageOf(before) + 2), stars = math.min(3, R.eggStars + (if data.rebirths >= 5 then 1 else 0)) }
+	local secs = math.floor(Stats.hatchSeconds(egg.lvl, Stats.stars(egg.sp), FarmService.timerFloor(player)) * FarmService.hatchMult(player))
+	local gotEgg = FarmService.giveEgg(player, egg, secs)
+	Analytics.event(player, "Rebirth", data.rebirths)
+	FarmService.syncAll(player)
+	FarmService.updateSign(player)
+	DataService.changed(player)
+	Remotes.event("Announce"):FireAllClients(player.DisplayName .. " earned Tide Mark " .. data.rebirths .. "!", Color3.fromRGB(120, 220, 255))
+	return true, "Tide Mark " .. data.rebirths .. "! +" .. pearls .. " pearls" .. (if gotEgg then " and a " .. el .. " egg" else "")
 end
 
 ---------------------------------------------------------------------------

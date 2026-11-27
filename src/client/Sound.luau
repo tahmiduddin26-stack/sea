@@ -165,6 +165,14 @@ local function track(slot: string): Sound?
 	return s
 end
 
+-- Speed the playing track up or down (an enraged boss = 1.25); every track resets to 1 on a switch
+function Sound.setMusicSpeed(speed: number)
+	local s = music[current]
+	if s then
+		TweenService:Create(s, TweenInfo.new(0.8), { PlaybackSpeed = speed }):Play()
+	end
+end
+
 -- "Music" (deck) or "BattleMusic"
 function Sound.music(slot: string)
 	if slot == current then
@@ -178,6 +186,7 @@ function Sound.music(slot: string)
 	end
 	local s = track(slot)
 	if s then
+		s.PlaybackSpeed = 1
 		if not s.IsPlaying then
 			s:Play()
 		end

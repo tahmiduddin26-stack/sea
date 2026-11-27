@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
+local Stats = require(Shared.Stats)
 local Remotes = require(Shared.Remotes)
 
 local Analytics = require(script.Parent.Analytics)
@@ -46,6 +47,11 @@ function DataService.defaultData()
 		coins = Config.START_COINS,
 		pearls = 0,
 		bestDepth = 0,
+		peakDepth = 0, -- the deepest you have ever been (bestDepth goes back to 0 on a Tide Rebirth); drives the leaderboard
+		quests = { day = 0, list = {}, bonus = false }, -- daily quests: the UTC day, 3 { kind, target, progress, coins, pearls, claimed }
+		drip = {}, -- staggered unlocks that are open: id -> true (Config.DRIP)
+		dripBase = -1, -- playSeconds when the tutorial ended (-1 = not yet)
+		rebirths = 0, -- Tide Marks: Tide Rebirths done (Config.REBIRTH)
 		totalFuses = 0,
 		totalHatches = 0,
 		nextUid = 1,
@@ -157,6 +163,19 @@ local function syncAttributes(player: Player)
 	player:SetAttribute("Coins", data.coins)
 	player:SetAttribute("Pearls", data.pearls)
 	player:SetAttribute("BestDepth", data.bestDepth)
+	player:SetAttribute("Rebirths", data.rebirths or 0)
+	-- the strongest monster you own follows you around (client/PetView draws it for everyone)
+	local best, bestPower = nil, -1
+	for _, m in data.monsters do
+		local ok, pw = pcall(Stats.power, m.sp, m.lvl or 1, m.stars, m.v, m.x6)
+		if ok and pw > bestPower then
+			best, bestPower = m, pw
+		end
+	end
+	player:SetAttribute("PetSp", if best then best.sp else nil)
+	player:SetAttribute("PetLvl", if best then best.lvl or 1 else nil)
+	player:SetAttribute("PetV", if best then best.v else nil)
+	player:SetAttribute("PetPerk", if best then best.perk else nil)
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
 		(ls:FindFirstChild("Depth") :: IntValue).Value = data.bestDepth

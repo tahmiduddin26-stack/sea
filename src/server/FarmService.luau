@@ -50,6 +50,31 @@ function FarmService.tutorial(player: Player, from: number)
 	end
 end
 
+local lastAnnounce: { [Player]: number } = setmetatable({}, { __mode = "k" }) :: any
+-- Server-wide brag (everyone sees it): an Epic-or-better monster, or any Golden / Rainbow one.
+-- Makes the "I want that too" feeling, and shows new players what's possible.
+function FarmService.announceMonster(player: Player, m: any, verb: string)
+	if not m or not m.sp then
+		return
+	end
+	local stars = Stats.shownStars(m.sp, m.x6)
+	local fancy = m.v == "Golden" or m.v == "Rainbow"
+	if stars < 3 and not fancy then
+		return
+	end
+	-- at most one brag every 15 s per player, so a busy server never turns into a wall of banners
+	if os.clock() - (lastAnnounce[player] or -999) < 15 then
+		return
+	end
+	lastAnnounce[player] = os.clock()
+	local rarity = Config.RARITY[math.min(stars, #Config.RARITY)]
+	local rname = if stars > #Config.RARITY then "SIX STAR" else string.upper(rarity.name)
+	local what = (if fancy then string.upper(m.v) .. " " else "") .. Config.MONSTERS[m.sp].name
+	local text = player.DisplayName .. " " .. verb .. " a " .. what .. " (" .. rname .. ")!"
+	local color = if m.v == "Rainbow" then Color3.fromRGB(255, 120, 220) elseif m.v == "Golden" then Color3.fromRGB(255, 205, 50) else rarity.color
+	Remotes.event("Announce"):FireAllClients(text, color)
+end
+
 function FarmService.inTutorial(player: Player): boolean
 	local data = DataService.get(player)
 	return data ~= nil and data.tutorial < Config.TUTORIAL_DONE
@@ -135,7 +160,8 @@ function FarmService.luckMult(player: Player): number
 end
 
 function FarmService.ownsNest(data: any, i: number): boolean
-	return i <= Config.START_NESTS or data.nestsOwned[tostring(i)] == true
+	local slot = Config.NEST_SLOTS[i]
+	return slot ~= nil and (i <= Config.START_NESTS or (if slot.sideBay then data.tutorial >= Config.TUTORIAL_DONE else data.nestsOwned[tostring(i)] == true))
 end
 
 -- Mirror one nest's state onto its pad (everyone's client reads these)
@@ -184,7 +210,7 @@ function FarmService.syncNest(player: Player, i: number)
 	if not data.nestsRevealed and (owned >= Config.NEST_REVEAL_MONSTERS or data.tutorial >= Config.TUTORIAL_DONE or (data.nestCount or 0) > 0) then
 		data.nestsRevealed = true
 	end
-	local hidden = i > Config.START_NESTS and not FarmService.ownsNest(data, i) and not data.nestsRevealed
+	local hidden = not FarmService.ownsNest(data, i) and (slot.sideBay == true or not data.nestsRevealed)
 	for _, p in { pad, table.unpack(pad:GetChildren()) } do
 		if p:IsA("BasePart") then
 			p.Transparency = if hidden then 1 else 0
@@ -331,10 +357,10 @@ function FarmService.syncPedestals(player: Player)
 	end
 end
 
-function FarmService.pedestalCount(player: Player): number
+function FarmService.pedestalCount(player: Player, excludePass: boolean?): number
 	local data = DataService.get(player)
 	local n = data and data.upgrades.Pedestals or 1
-	if passes(player).ExtraPedestal then
+	if not excludePass and passes(player).ExtraPedestal then
 		n += 1
 	end
 	n += FarmService.spellAdd(player, "pedestals")
@@ -351,7 +377,7 @@ local function updateSign(player: Player?, ship: WorldBuilder.Ship)
 	if player then
 		local data = DataService.get(player)
 		text.Text = player.DisplayName .. "'s Ship"
-		best.Text = "Best Depth: " .. (if data then data.bestDepth else 0)
+		best.Text = "Best Depth: " .. (if data then data.bestDepth else 0) .. (if data and (data.rebirths or 0) > 0 then "  ★" .. data.rebirths else "")
 	else
 		text.Text = ""
 		best.Text = ""
@@ -718,8 +744,9 @@ local function haul(player: Player, kind: any)
 	local rodLuck = if abyss then Config.ABYSS_ROD.luck else Config.DEEP_ROD.luck
 	local scripted = if deep then nil else Config.TUTORIAL_EGGS[data.tutorial]
 	-- The rod always reaches the seabed. Fast Reel speeds up the whole cast.
-	local reel = 1 - 0.08 * (FarmService.pedestalCount(player) - 1)
-	local time = (Config.FISH_BASE + #ZONES * info.perZone) * math.max(0.6, reel)
+	local reel = 1 - 0.08 * (FarmService.pedestalCount(player, true) - 1)
+	local paidSpeed = if passes(player).ExtraPedestal then 1 + Config.GAMEPASSES.ExtraPedestal.reelSpeedBonus else 1
+	local time = (Config.FISH_BASE + #ZONES * info.perZone) * math.max(0.6, reel) / paidSpeed
 	s.fishing = true
 	MissionService.record(player, "fish", 1)
 	Analytics.event(player, "RodCast", 1, { rod = info.kind or "egg", zone = #ZONES })
@@ -1020,6 +1047,7 @@ local function openEgg(player: Player, i: number)
 	FarmService.syncNest(player, i)
 	DataService.changed(player)
 	Remotes.event("Reveal"):FireClient(player, "hatch", { sp = nest.egg.sp, lvl = nest.egg.lvl, stars = nest.egg.stars, v = nest.egg.v, perk = nest.egg.perk, nest = i })
+	FarmService.announceMonster(player, nest.egg, "hatched")
 	Remotes.event("Battle"):FireAllClients(player.UserId, "hatch", { nest = i, sp = nest.egg.sp })
 	FarmService.tutorial(player, 4)
 	FarmService.tutorial(player, 9)
@@ -1085,7 +1113,7 @@ local function buyNest(player: Player, i: number)
 		return
 	end
 	local slot = Config.NEST_SLOTS[i]
-	if not slot or (slot.floor >= 2 and data.floor < slot.floor) then
+	if not slot or slot.sideBay or (slot.floor >= 2 and data.floor < slot.floor) then
 		return
 	end
 	local price = Stats.nestPrice(data.nestCount)
@@ -1325,6 +1353,7 @@ local function finishFuse(player: Player, i: number)
 	FarmService.syncNest(player, i)
 	DataService.changed(player)
 	Remotes.event("Reveal"):FireClient(player, "fuse", { sp = nest.child.sp, lvl = nest.child.lvl, stars = nest.child.stars, v = nest.child.v, x6 = nest.child.x6, perk = nest.child.perk, fusion = nest.child.fusion, nest = i })
+	FarmService.announceMonster(player, nest.child, "fused")
 	FarmService.tutorial(player, 11)
 end
 

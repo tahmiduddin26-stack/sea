@@ -18,6 +18,7 @@ local ExtrasService = require(script.Parent.ExtrasService)
 local AdminService = require(script.Parent.AdminService)
 local Analytics = require(script.Parent.Analytics)
 local MiniGameService = require(script.Parent.MiniGameService)
+local LighthouseService = require(script.Parent.LighthouseService)
 local CrateService = require(script.Parent.CrateService)
 
 local ShopService = {}
@@ -258,6 +259,11 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 	Admin = function(player, arg)
 		return AdminService.run(player, arg)
 	end,
+	-- the Leave button inside the Lighthouse Climb
+	LeaveLighthouse = function(player)
+		LighthouseService.leaveClimb(player)
+		return true, nil
+	end,
 	-- Crab Cove starts a server-owned round. MiniFinish leaves early.
 	MiniStart = function(player, arg)
 		return MiniGameService.start(player, arg)
@@ -324,6 +330,23 @@ local handlers: { [string]: (Player, any) -> (boolean, string?) } = {
 	end,
 	TeamSlot = function(player)
 		return ExtrasService.buyTeamSlot(player)
+	end,
+	-- asks whether a staggered unlock is open yet: ok, or false + "Crab Cove opens in 1:12 - keep playing!"
+	DripCheck = function(player, arg)
+		if typeof(arg) ~= "string" then
+			return false, nil
+		end
+		local DripService = require(script.Parent.DripService)
+		if DripService.open(player, arg) then
+			return true, nil
+		end
+		return false, DripService.waitText(player, arg)
+	end,
+	QuestClaim = function(player, arg)
+		return require(script.Parent.MissionService).claimQuest(player, arg)
+	end,
+	Rebirth = function(player)
+		return ExtrasService.rebirth(player)
 	end,
 	Spin = function(player, arg)
 		return ExtrasService.spin(player, arg)

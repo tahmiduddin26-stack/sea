@@ -17,6 +17,7 @@ local Stats = require(Shared.Stats)
 local UI = require(script.Parent.UI)
 local State = require(script.Parent.State)
 local Hud = require(script.Parent.Hud)
+local Menus = require(script.Parent.Menus)
 local Sound = require(script.Parent.Sound)
 local ShipView = require(script.Parent.ShipView)
 
@@ -37,6 +38,23 @@ local guiArrow: TextLabel
 local fuseTag: Frame
 local fuseTagLbl: TextLabel
 local fuseTagTail: TextLabel
+
+local function emptySideNest(ship: Model?, root: BasePart?): BasePart?
+	local best: BasePart? = nil
+	local distance = math.huge
+	if ship and root then
+		for i, slot in Config.NEST_SLOTS do
+			if slot.sideBay then
+				local pad = ship:FindFirstChild("Nest" .. i) :: BasePart?
+				if pad and pad:GetAttribute("State") == "empty" then
+					local gap = (root.Position - pad.Position).Magnitude
+					if gap < distance then best, distance = pad, gap end
+				end
+			end
+		end
+	end
+	return best
+end
 
 local function bar(): BasePart
 	local b = Instance.new("Part")
@@ -159,7 +177,11 @@ local function isQuiet(ignoreLook: boolean?): boolean
 	end
 	-- off the ship (the arena side, the water, the harbour): only the ship gets prompts
 	local rel = shipCf:PointToObjectSpace(root.Position)
-	if math.abs(rel.X) > Config.SHIP_WIDTH / 2 + 8 or math.abs(rel.Z) > Config.SHIP_LENGTH / 2 + 8 then
+	local width = Config.SHIP_WIDTH / 2 + 8
+	for _, span in Config.NEST_BAY_SPANS do
+		if rel.Z >= span[1] and rel.Z <= span[2] then width = Config.SHIP_WIDTH / 2 + Config.NEST_BAY_WIDTH end
+	end
+	if math.abs(rel.X) > width or math.abs(rel.Z) > Config.SHIP_LENGTH / 2 + 8 then
 		return true
 	end
 	if ignoreLook then
@@ -189,20 +211,40 @@ function Guide.init(screen: ScreenGui)
 	fuseTag = UI.panel({ Size = UDim2.fromOffset(250, 78), AnchorPoint = Vector2.new(1, 0.5), Color = Color3.fromRGB(40, 140, 235), Radius = 18, Visible = false, ZIndex = 20, Parent = screen })
 	fuseTagLbl = UI.label({ Text = "", MaxText = 24, TextWrapped = true, Size = UDim2.new(1, -24, 1, -14), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), Stroke = 2, ZIndex = 21, Parent = fuseTag })
 	fuseTagTail = UI.label({ Text = "▶", TextColor3 = Color3.fromRGB(40, 140, 235), Size = UDim2.fromOffset(26, 26), Position = UDim2.new(1, 14, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 19, Parent = fuseTag })
+	local nextStep: ("unlock" | "fish" | "place" | "cove")? = nil
+	local selectedNest: BasePart? = nil
+	local previousEggs: { [string]: boolean } = {}
+	local bayEntry = Instance.new("Part") -- a waypoint on the deck side of the bay opening
+	bayEntry.Size = Vector3.one * 0.1
+	local function showUnlock()
+		local _, body = Menus.openWindow("SHIP UPGRADE", Vector2.new(540, 310), C.Gold)
+		local badge = UI.plank({ Color = C.Kelp, Size = UDim2.new(1, -44, 0, 70), Position = UDim2.fromOffset(22, 16), Radius = 18, Parent = body })
+		UI.label({ Text = "4 NEW NESTS!", MaxText = 36, Size = UDim2.new(1, -12, 1, -8), Position = UDim2.fromOffset(6, 4), Parent = badge })
+		UI.label({ Text = "Two on each side of your ship.", TextColor3 = C.Ink, Stroke = 0, MaxText = 24, Size = UDim2.new(1, -32, 0, 38), Position = UDim2.fromOffset(16, 95), Parent = body })
+		UI.button({ Name = "FishForEgg", Text = "Fish for an Egg", Color = C.Sea, Size = UDim2.new(1, -84, 0, 60), Position = UDim2.new(0, 42, 1, -76), Parent = body }, function()
+			Menus.close()
+			nextStep = "fish"
+		end)
+	end
+	local function showActivities()
+		local _, body = Menus.openWindow("EGG IN THE NEST", Vector2.new(560, 244), C.Kelp)
+		UI.label({ Text = "Open it when the timer ends.", TextColor3 = C.Ink, Stroke = 0, MaxText = 25, Size = UDim2.new(1, -28, 0, 46), Position = UDim2.fromOffset(14, 12), Parent = body })
+		UI.button({ Name = "FightWhileHatching", Text = "FIGHT!", Color = C.Coral, Size = UDim2.new(0.48, -8, 0, 58), Position = UDim2.new(0.02, 0, 1, -78), Parent = body }, function()
+			Menus.close()
+			Hud.press("Fight")
+		end)
+		UI.button({ Name = "VisitCrabCove", Text = "Visit Crab Cove", Color = C.Sea, Size = UDim2.new(0.48, -8, 0, 58), Position = UDim2.new(0.52, 0, 1, -78), Parent = body }, function()
+			Menus.close()
+			nextStep = "cove"
+		end)
+	end
 
 	Remotes.event("Tutorial").OnClientEvent:Connect(function(step)
 		if step > 1 then
 			Sound.play("Click", 0.5, 1.4)
 		end
 		if step == Config.TUTORIAL_DONE then
-			task.defer(function()
-				task.wait(3)
-				while State.revealing do
-					task.wait(0.25)
-				end
-				Hud.splash("THE HARBOUR IS OPEN!", C.Gold)
-				Hud.toast("Try FIGHT with your stronger monster, or follow the dock to town!", C.Deep)
-			end)
+			nextStep = "unlock"
 		end
 	end)
 
@@ -211,9 +253,34 @@ function Guide.init(screen: ScreenGui)
 		local t = os.clock()
 		local step = if snap then snap.tutorial else 0
 		local info = Config.TUTORIAL[step]
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local freeToGuide = not State.cinematic and not State.revealing and not Hud.inBattle and not Menus.isOpen() and not Guide.helper
+		if snap and step >= Config.TUTORIAL_DONE and freeToGuide then
+			if nextStep == "unlock" then
+				nextStep = nil
+				showUnlock()
+			elseif nextStep == "fish" and snap.carrying then
+				nextStep = "place"
+				selectedNest = nil
+				table.clear(previousEggs)
+				for _, nest in snap.nests do
+					if nest.kind == "egg" and nest.egg.saleId then previousEggs[nest.egg.saleId] = true end
+				end
+			elseif nextStep == "place" and not snap.carrying then
+				nextStep = "fish" -- putting the egg back is also allowed
+				for _, nest in snap.nests do
+					if nest.kind == "egg" and nest.egg.saleId and not previousEggs[nest.egg.saleId] then
+						nextStep = nil
+						showActivities()
+						break
+					end
+				end
+			end
+		end
 		-- Hide the banner during battles. Keep tutorial instructions visible from any deck camera angle.
 		local helper = Guide.helper
-		local quiet = isQuiet(helper ~= nil or info ~= nil)
+		local quiet = isQuiet(helper ~= nil or info ~= nil or nextStep ~= nil)
 		-- the Fuse prompt (tag + arrow) only makes sense when something CAN be fused right now
 		local noFuse = info ~= nil and info.target == "fuse" and not canFuseNow(snap)
 		local fishing = info ~= nil and info.target == "winch" and player:GetAttribute("Fishing") == true
@@ -221,9 +288,56 @@ function Guide.init(screen: ScreenGui)
 		local helping = helper ~= nil and not State.cinematic and not Hud.inBattle and not State.revealing and not quiet
 		local target = if active and info and not fishing then info.target else nil
 		local part = if helping and helper then helper.world() else worldTarget(target)
+		local nextText: string? = nil
+		if freeToGuide and not Menus.isOpen() and step >= Config.TUTORIAL_DONE and not info then
+			if nextStep == "fish" and not quiet then
+				local egg = worldTarget("pedestal")
+				part = egg or worldTarget("winch")
+				nextText = if egg then "Choose <TAKE> to pick up your egg." else "Follow the arrows and choose <FISH>."
+			elseif nextStep == "place" and root and not quiet then
+				local ship = myShip()
+				if not selectedNest or not selectedNest.Parent or selectedNest:GetAttribute("State") ~= "empty" then
+					selectedNest = emptySideNest(ship, root) or worldTarget("nest")
+				end
+				part = selectedNest
+				local cf = ship and ship:GetAttribute("ShipCf") :: CFrame?
+				if cf and part and math.abs(cf:PointToObjectSpace(part.Position).X) > Config.SHIP_WIDTH / 2 then
+					local to = cf:PointToObjectSpace(part.Position)
+					local from = cf:PointToObjectSpace(root.Position)
+					if math.abs(from.Z - to.Z) > 4.5 and math.abs(from.X) < Config.SHIP_WIDTH / 2 then
+						bayEntry.Position = cf:PointToWorldSpace(Vector3.new(math.sign(to.X) * (Config.SHIP_WIDTH / 2 - 4), to.Y, to.Z))
+						part = bayEntry
+					end
+				end
+				nextText = if part then "Follow the arrows and choose <PLACE EGG>." else "Make room in a nest for your egg."
+			elseif nextStep == "cove" and root then
+				local ship = myShip()
+				local world = workspace:FindFirstChild("World")
+				local covePrompt = world and world:FindFirstChild("CardsPrompt", true)
+				local host = covePrompt and covePrompt.Parent
+				local harbour = world and world:FindFirstChild("Harbour")
+				local shore = harbour and snap and harbour:FindFirstChild("ShoreRamp" .. tostring(snap.shipIndex)) :: BasePart?
+				local cf = ship and ship:GetAttribute("ShipCf") :: CFrame?
+				if host and host:IsA("BasePart") then
+					if player:GetAttribute("InCrabCove") or (root.Position - host.Position).Magnitude < 13 then
+						nextStep = nil
+					else
+						part = host
+						if cf and shore then
+							local z = cf:PointToObjectSpace(root.Position).Z
+							if z > -79 then part = ship and ship:FindFirstChild("ShipGate") :: BasePart?
+							elseif z > cf:PointToObjectSpace(shore.Position).Z then part = shore end
+						end
+						nextText = "Follow the arrows to <CRAB COVE>."
+					end
+				end
+			end
+		end
 		-- the Fuse step shows beside the Fuse button instead of in the top banner
 		local tagText: string? = nil
-		if quiet then
+		if nextText then
+			Hud.banner(nextText)
+		elseif quiet then
 			Hud.banner(nil)
 		elseif helping and helper then
 			Hud.banner(helper.text())
@@ -243,8 +357,6 @@ function Guide.init(screen: ScreenGui)
 		else
 			Hud.banner(nil)
 		end
-		local char = player.Character
-		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		-- carrying an egg changes "nest" targets from the winch side; fine as is
 		if part and root then
 			folder.Parent = workspace

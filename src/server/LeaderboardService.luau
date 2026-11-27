@@ -124,9 +124,9 @@ local function refresh()
 	if store then
 		for _, p in Players:GetPlayers() do
 			local data = DataService.get(p)
-			if data and data.bestDepth > 0 and DataService.canSave(p) then
+			if data and math.max(data.bestDepth, data.peakDepth or 0) > 0 and DataService.canSave(p) then
 				pcall(function()
-					(store :: OrderedDataStore):SetAsync(tostring(p.UserId), data.bestDepth)
+					(store :: OrderedDataStore):SetAsync(tostring(p.UserId), math.max(data.bestDepth, data.peakDepth or 0))
 				end)
 			end
 		end
@@ -148,7 +148,7 @@ local function refresh()
 			local data = DataService.get(p)
 			if data then
 				nameCache[p.UserId] = p.DisplayName
-				table.insert(entries, { id = p.UserId, depth = data.bestDepth })
+				table.insert(entries, { id = p.UserId, depth = math.max(data.bestDepth, data.peakDepth or 0) })
 			end
 		end
 		table.sort(entries, function(a, b)

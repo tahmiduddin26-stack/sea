@@ -11,6 +11,7 @@ local EVENTS = {
 	"MiniGame", -- S->owner private Crab Cove round state
 	"Snapshot", -- S->C full data snapshot
 	"Toast", -- S->C (text, color?)
+	"Announce", -- S->all (text, color?) a server-wide brag: "X hatched a RAINBOW Kraken King!"
 	"Battle", -- S->all (ownerUserId, kind, payload) battle beats so everyone can watch
 	"FishingDive", -- C->S steering direction, S->owner gate results
 	"Reveal", -- S->C (kind "hatch"|"fuse", monster info) big reveal card
@@ -19,6 +20,8 @@ local EVENTS = {
 	"Offline", -- S->C (seconds, coins) earned while away
 	"Track", -- C->S (kind, name) analytics: a vendor menu opened, an offer seen / prompted
 	"Crates", -- S->all live crates + cannon shots (server/CrateService)
+	"Drip", -- S->C (id, name, blurb) a new activity just opened (server/DripService)
+	"Tap", -- C->S ("tap" | "super") tap-to-help in your own fight (server/BattleService)
 }
 local FUNCTIONS = {
 	"Action", -- C->S (name, arg) -> ok, message. Fight, Retreat, Speed, Fuse, Skip, Upgrade, BuyNest, Code, UnlockFloor

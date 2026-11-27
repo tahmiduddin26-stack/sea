@@ -297,8 +297,15 @@ local function buildHub(world: Folder)
 	box(hub, lh, Vector3.new(9 * LS, 3 * LS, 9 * LS), Vector3.new(0, 47.5 * LS, 0), Color3.fromRGB(240, 60, 60))
 	-- door and a stone landing on the +Z face (where the Guide stands)
 	local baseW = 14 * LS
-	box(hub, lh, Vector3.new(3.2, 4.6, 0.5), Vector3.new(0, 2.3, baseW / 2 + 0.05), WOOD_DARK)
-	box(hub, lh, Vector3.new(3.8, 0.5, 0.7), Vector3.new(0, 4.8, baseW / 2 + 0.05), Color3.fromRGB(255, 205, 60))
+	-- the door is the way into the Lighthouse Climb (server/LighthouseService: it's much bigger inside)
+	-- a proper big arched doorway: stone frame, a dark opening, and a plank sign (LighthouseService
+	-- adds the sign text, the lanterns and the walk-in trigger)
+	local door = box(hub, lh, Vector3.new(4.6, 7, 0.4), Vector3.new(0, 3.5, baseW / 2 + 0.25), Color3.fromRGB(28, 22, 20))
+	door.Name = "LighthouseDoor"
+	box(hub, lh, Vector3.new(0.9, 7.6, 1.1), Vector3.new(-2.75, 3.8, baseW / 2 + 0.3), STONE_DARK, Enum.Material.Slate)
+	box(hub, lh, Vector3.new(0.9, 7.6, 1.1), Vector3.new(2.75, 3.8, baseW / 2 + 0.3), STONE_DARK, Enum.Material.Slate)
+	box(hub, lh, Vector3.new(6.4, 1, 1.2), Vector3.new(0, 7.9, baseW / 2 + 0.3), STONE_DARK, Enum.Material.Slate)
+	box(hub, lh, Vector3.new(2.2, 0.8, 1.3), Vector3.new(0, 8.5, baseW / 2 + 0.3), STONE, Enum.Material.Slate) -- keystone
 	box(hub, lh, Vector3.new(12, 0.6, 5), Vector3.new(0, 0.3, baseW / 2 + 3), STONE, Enum.Material.Slate)
 
 	-- palms: a trunk that curves, a crown sitting right on top of it, and fronds that grow
@@ -619,6 +626,39 @@ local function buildHub(world: Folder)
 		vendorTag(m, f, "Power Shrine", "Spin Tide Powers", O, 17, "PowerPrompt", "Open")
 	end
 
+	-- Tide Whirlpool (inner, aqua): the Tide Rebirth stand. A round stone basin of swirling water with a
+	-- floating four-pointed star; the menu is on the client (RebirthPrompt)
+	do
+		local f = slot(270, 30)
+		local m = newVendor("TideWhirlpool")
+		local AQUA = Color3.fromRGB(90, 220, 255)
+		local function disc(y: number, diameter: number, height: number, color: Color3, mat: Enum.Material, props: { [string]: any }?)
+			local p = box(m, f, Vector3.new(1, 1, 1), Vector3.zero, color, mat, props)
+			p.Shape = Enum.PartType.Cylinder
+			p.Size = Vector3.new(height, diameter, diameter)
+			p.CFrame = f * CFrame.new(0, y, 0) * CFrame.Angles(0, 0, math.rad(90))
+			return p
+		end
+		disc(0.5, 17, 1, STONE_DARK, Enum.Material.Slate)
+		disc(1.2, 14.5, 1.4, Color3.fromRGB(165, 165, 185), Enum.Material.Slate)
+		disc(1.85, 12, 0.3, Color3.fromRGB(30, 120, 200), Enum.Material.SmoothPlastic)
+		for i, d in { 10, 7.2, 4.4 } do
+			disc(2.05 + i * 0.04, d, 0.12, AQUA, Enum.Material.Neon, { Transparency = 0.45, CanCollide = false, Name = "Swirl" .. i })
+		end
+		-- four stone posts with sea-glass lamps
+		for k = 0, 3 do
+			local a = k / 4 * math.pi * 2 + math.pi / 4
+			local pf = f * CFrame.Angles(0, a, 0)
+			box(m, pf, Vector3.new(1.4, 6, 1.4), Vector3.new(0, 4, 7.6), Color3.fromRGB(110, 112, 135), Enum.Material.Slate)
+			ball(m, pf, Vector3.new(1.4, 1.4, 1.4), Vector3.new(0, 7.6, 7.6), AQUA, Enum.Material.Neon)
+		end
+		-- the Tide Mark star floats over the water (two crossed diamonds)
+		local star = box(m, f * CFrame.Angles(0, math.rad(45), 0), Vector3.new(0.8, 5, 0.8), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 240, 150), Enum.Material.Neon, { CanCollide = false, Name = "TideStar" })
+		box(m, f * CFrame.Angles(0, math.rad(45), math.rad(90)), Vector3.new(0.8, 5, 0.8), Vector3.new(0, 7.5, 0), Color3.fromRGB(255, 240, 150), Enum.Material.Neon, { CanCollide = false, Name = "TideStarBar" })
+		glow(m, star, AQUA, 14, 0.8)
+		vendorTag(m, f, "Tide Whirlpool", "Start over for Tide Marks", AQUA, 15, "RebirthPrompt", "Open")
+	end
+
 	local DOCK_SCALE = 0.68
 	-- Dockyard (inner, blue): the ship's store. A pier shed with a ship's wheel, an anchor, paint
 	-- cans and a model ship on the counter. Egg Luck, Fast Reel, the Shipwright and the Ship
@@ -707,6 +747,49 @@ local function buildHub(world: Folder)
 		vendorTag(m, f, "Dockyard", "Ship upgrades", BLUE, 19 * DOCK_SCALE, "DockyardPrompt", "Open")
 	end
 
+	-- the Quest Board: a wooden notice board with three pinned notes and a painted title, between the lighthouse
+	-- and the vendors. The menu (today's three quests) is on the client (QuestPrompt).
+	do
+		local f = c * CFrame.Angles(0, math.rad(345), 0) * CFrame.new(0, 5, -34)
+		local m = newVendor("QuestBoard")
+		local PARCH = Color3.fromRGB(240, 226, 190)
+		for _, x in { -5.5, 5.5 } do
+			box(m, f, Vector3.new(1, 8, 1), Vector3.new(x, 4, 0), WOOD_DARK)
+		end
+		box(m, f, Vector3.new(14, 9, 0.8), Vector3.new(0, 8.5, 0), WOOD)
+		box(m, f, Vector3.new(15, 1, 1.4), Vector3.new(0, 13.5, 0), WOOD_DARK)
+		local face = box(m, f, Vector3.new(12.6, 7.6, 0.3), Vector3.new(0, 8.5, 0.5), PARCH, nil, { Name = "QuestFace", CanCollide = false })
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = Enum.NormalId.Back
+		gui.CanvasSize = Vector2.new(504, 304)
+		gui.Parent = face
+		local title = Instance.new("TextLabel")
+		title.BackgroundTransparency = 1
+		title.Size = UDim2.fromScale(1, 0.34)
+		title.Position = UDim2.fromScale(0, 0.04)
+		title.Font = Enum.Font.FredokaOne
+		title.TextScaled = true
+		title.Text = "DAILY QUESTS"
+		title.TextColor3 = Color3.fromRGB(70, 42, 24)
+		title.Parent = gui
+		for k = 0, 2 do
+			local row = Instance.new("TextLabel")
+			row.BackgroundTransparency = 1
+			row.Size = UDim2.fromScale(0.8, 0.14)
+			row.Position = UDim2.fromScale(0.1, 0.42 + k * 0.17)
+			row.Font = Enum.Font.FredokaOne
+			row.TextScaled = true
+			row.TextXAlignment = Enum.TextXAlignment.Left
+			row.Text = ({ "New goals every day", "Prizes for each one", "Bonus chest for all 3" })[k + 1]
+			row.TextColor3 = Color3.fromRGB(110, 70, 40)
+			row.Parent = gui
+		end
+		for _, pin in { Vector3.new(-5.4, 11.8, 0.8), Vector3.new(5.4, 11.8, 0.8) } do
+			ball(m, f, Vector3.new(0.9, 0.9, 0.9), pin, Color3.fromRGB(220, 60, 60))
+		end
+		vendorTag(m, f, "Quest Board", "3 new goals every day", Color3.fromRGB(255, 220, 120), 17, "QuestPrompt", "Open")
+	end
+
 	-- the Deepest Divers leaderboard: a big wooden board on two posts (outer ring)
 	do
 		local f = slot(330, 55)
@@ -781,8 +864,9 @@ local function buildHub(world: Folder)
 		local gm = Instance.new("Model")
 		gm.Name = "GuideStand"
 		gm.Parent = hub
-		local gf = c * CFrame.new(0, 5, 5)
-		Npc.build(gm, c * CFrame.new(0, 5.6, 8.2) * CFrame.Angles(0, math.pi, 0), { name = "Captain Coral", anim = "wave", shirt = Color3.fromRGB(40, 80, 170), pants = Color3.fromRGB(240, 240, 245), hat = "captain", hatColor = Color3.fromRGB(245, 245, 250), beard = Color3.fromRGB(235, 235, 240), scale = 1.3, skin = Color3.fromRGB(224, 172, 120) }, 9)
+		-- beside the door, not in front of it (the door leads into the Lighthouse Climb)
+		local gf = c * CFrame.new(-5.5, 5, 6)
+		Npc.build(gm, c * CFrame.new(-5.5, 5.6, 8.6) * CFrame.Angles(0, math.pi + math.rad(-20), 0), { name = "Captain Coral", anim = "wave", shirt = Color3.fromRGB(40, 80, 170), pants = Color3.fromRGB(240, 240, 245), hat = "captain", hatColor = Color3.fromRGB(245, 245, 250), beard = Color3.fromRGB(235, 235, 240), scale = 1.3, skin = Color3.fromRGB(224, 172, 120) }, 9)
 		-- the name used to sink into the lighthouse behind him and hide behind his big sleeve: hang it
 		-- higher and draw it on top of everything
 		local guideTag = vendorTag(gm, gf, "Captain Coral", "Ask me how to play!", Color3.fromRGB(255, 220, 90), 14, "GuidePrompt", "Talk")
@@ -1000,6 +1084,56 @@ local BOARD_Z0, BOARD_Z1, BOARD_Z2 = 4, 16.5, 23.5
 -- arena's centre line (Config.ARENA_OFFSET_Z), so the pier runs straight out at the hole.
 local LAND_Z1, LAND_Z2 = Config.ARENA_OFFSET_Z - 3.5, Config.ARENA_OFFSET_Z + 3.5
 local SHIP_BOW = 56 -- the straight hull (and the side rails) start this far forward of the middle
+
+local function mainDeckRails(side: number): { { size: Vector3, at: Vector3 } }
+	local edge, width = Config.SHIP_WIDTH / 2, Config.NEST_BAY_WIDTH
+	local rails = {}
+	local gaps = table.clone(Config.NEST_BAY_SPANS)
+	table.insert(gaps, if side < 0 then { BOARD_Z1, BOARD_Z2 } else { LAND_Z1, LAND_Z2 })
+	table.sort(gaps, function(a, b) return a[1] < b[1] end)
+	local function along(x: number, z0: number, z1: number)
+		if z1 > z0 then
+			table.insert(rails, { size = Vector3.new(1, 3, z1 - z0), at = Vector3.new(side * x, 0, (z0 + z1) / 2) })
+		end
+	end
+	local cursor = -SHIP_BOW
+	for _, gap in gaps do
+		along(edge - 0.5, cursor, gap[1])
+		cursor = math.max(cursor, gap[2])
+	end
+	along(edge - 0.5, cursor, Config.QUARTERDECK_Z)
+	for _, span in Config.NEST_BAY_SPANS do
+		along(edge + width - 0.5, span[1], span[2])
+		for _, z in { span[1] + 0.4, span[2] - 0.4 } do
+			table.insert(rails, { size = Vector3.new(width + 0.5, 3, 0.8), at = Vector3.new(side * (edge + (width - 0.5) / 2), 0, z) })
+		end
+	end
+	return rails
+end
+
+local function buildNestBays(model: Model, cf: CFrame)
+	local edge, width, deck = Config.SHIP_WIDTH / 2, Config.NEST_BAY_WIDTH, Config.DECK_Y
+	for _, side in { -1, 1 } do
+		for _, span in Config.NEST_BAY_SPANS do
+			local z0, z1 = span[1], span[2]
+			local x = side * (edge + width / 2)
+			box(model, cf, Vector3.new(width, 3, z1 - z0), Vector3.new(x, deck - 1.5, (z0 + z1) / 2), WOOD)
+			for z = z0, z1 - 0.01, 3.5 do
+				local depth = math.min(3.5, z1 - z)
+				local col = if ((z - z0) // 3.5) % 2 == 0 then WOOD_LIGHT else Color3.fromRGB(186, 130, 80)
+				box(model, cf, Vector3.new(width + 1, 0.4, depth), Vector3.new(x - side * 0.5, deck + 0.2, z + depth / 2), col, Enum.Material.WoodPlanks, { Name = "NestBayDeck" })
+			end
+			for _, z in { z0 + 2.3, z1 - 2.3 } do
+				local a = Vector3.new(side * (edge - 0.1), deck - 7, z)
+				local b = Vector3.new(side * (edge + width - 1), deck - 2.4, z)
+				box(model, cf * CFrame.lookAt((a + b) / 2, b), Vector3.new(1.25, 1.45, (b - a).Magnitude), Vector3.zero, WOOD_DARK)
+			end
+		end
+		for _, rail in mainDeckRails(side) do
+			box(model, cf, rail.size, rail.at + Vector3.new(0, deck + 1.9, 0), WOOD_DARK)
+		end
+	end
+end
 
 local function buildBoardingRamp(model: Model, cf: CFrame, index: number, sx: number, y0: number, stairs: boolean?)
 	local W = Config.SHIP_WIDTH
@@ -1248,12 +1382,7 @@ local function buildShip(world: Folder, index: number): Ship
 	-- starboard where the arena lookout pier leaves (LAND_Z1..LAND_Z2). They stop at the quarterdeck:
 	-- running on inside it, their outer faces lay exactly on its side walls and flickered there
 	-- (the quarterdeck's own walls close the main deck at the stern, so it needs no stern rail).
-	for _, sx in { -1, 1 } do
-		local g1, g2 = if sx < 0 then BOARD_Z1 else LAND_Z1, if sx < 0 then BOARD_Z2 else LAND_Z2
-		for _, seg in { { -BOW, g1 }, { g2, Config.QUARTERDECK_Z } } do
-			box(model, cf, Vector3.new(1, 3, seg[2] - seg[1]), Vector3.new(sx * (W / 2 - 0.5), deck + 1.9, (seg[1] + seg[2]) / 2), WOOD_DARK)
-		end
-	end
+	buildNestBays(model, cf)
 
 	-- quarterdeck (Floor 2): raised stern with stairs
 	local qz0 = Config.QUARTERDECK_Z
@@ -1554,6 +1683,26 @@ local function buildShip(world: Folder, index: number): Ship
 		label(chest, "GIFTS", UDim2.fromOffset(110, 30), Vector3.new(0, 3.4, 0), Color3.fromRGB(120, 255, 170))
 		local gp = prompt(chest, "Open", "Gift Chest", 0, 10)
 		gp.Name = "GiftPrompt"
+	end
+	-- Launch cannon on the bow: "Launch" fires you across to the harbour island (the client does the
+	-- flight, see client/Travel). Off-centre so the bow walkway stays clear.
+	do
+		local lf = boardFrame(-12, -58, -Vector3.zAxis)
+		box(model, lf, Vector3.new(5.5, 1.4, 6), Vector3.new(0, 0.7, 0), WOOD_DARK)
+		for _, wx in { -2.9, 2.9 } do
+			local wheel = box(model, lf, Vector3.new(0.6, 2.6, 2.6), Vector3.new(wx, 1.3, 1.2), Color3.fromRGB(120, 80, 45), Enum.Material.Wood)
+			wheel.Shape = Enum.PartType.Cylinder
+		end
+		-- the barrel points up and out toward the island
+		local aim = lf * CFrame.new(0, 3, -0.5) * CFrame.Angles(math.rad(35), 0, 0)
+		box(model, aim, Vector3.new(2.4, 2.4, 7), Vector3.zero, Color3.fromRGB(45, 48, 60), Enum.Material.Metal)
+		box(model, aim, Vector3.new(2.9, 2.9, 0.6), Vector3.new(0, 0, -3.3), Color3.fromRGB(232, 184, 70), Enum.Material.Metal)
+		box(model, aim, Vector3.new(2.9, 2.9, 0.6), Vector3.new(0, 0, 1.6), Color3.fromRGB(232, 184, 70), Enum.Material.Metal)
+		local pad = box(model, lf, Vector3.new(8, 6, 8), Vector3.new(0, 3, 0), Color3.new(1, 1, 1), nil, { Transparency = 1, CanCollide = false, Name = "LaunchPad" })
+		local sign = label(pad, "FLY TO HARBOUR!", UDim2.fromOffset(300, 50), Vector3.new(0, 7, 0), Color3.fromRGB(120, 210, 255))
+		sign.MaxDistance = 120
+		local lp = prompt(pad, "Launch", "To Harbour", 0, 10)
+		lp.Name = "LaunchPrompt"
 	end
 	-- Team Board on the port side, mid-deck
 	do
@@ -2112,8 +2261,12 @@ function WorldBuilder.applyShipTier(ship: Ship, tier: number)
 	if tier >= 1 then
 		for z = -48, 80, 16 do
 			for _, sx in { -1, 1 } do
-				b(Vector3.new(0.4, 1.4, 0.4), Vector3.new(sx * (W / 2 - 0.5), deck + 4.1, z), Color3.fromRGB(40, 44, 60))
-				b(Vector3.new(1.1, 1.1, 1.1), Vector3.new(sx * (W / 2 - 0.5), deck + 5.4, z), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
+				local x = W / 2 - 0.5
+				for _, span in Config.NEST_BAY_SPANS do
+					if z >= span[1] and z <= span[2] then x += Config.NEST_BAY_WIDTH end
+				end
+				b(Vector3.new(0.4, 1.4, 0.4), Vector3.new(sx * x, deck + 4.1, z), Color3.fromRGB(40, 44, 60))
+				b(Vector3.new(1.1, 1.1, 1.1), Vector3.new(sx * x, deck + 5.4, z), Color3.fromRGB(255, 220, 130), Enum.Material.Neon)
 			end
 		end
 	end
@@ -2122,9 +2275,10 @@ function WorldBuilder.applyShipTier(ship: Ship, tier: number)
 	-- 160-long cap used to run past the bow corner out over the water and bridge both gaps.
 	if tier >= 2 then
 		for _, sx in { -1, 1 } do
-			local g1, g2 = if sx < 0 then BOARD_Z1 else LAND_Z1, if sx < 0 then BOARD_Z2 else LAND_Z2
-			for _, seg in { { -SHIP_BOW, g1 }, { g2, Config.QUARTERDECK_Z } } do
-				b(Vector3.new(1.4, 0.35, seg[2] - seg[1]), Vector3.new(sx * (W / 2 - 0.5), deck + 3.55, (seg[1] + seg[2]) / 2), GOLD, Enum.Material.Metal)
+			for _, rail in mainDeckRails(sx) do
+				local size = rail.size
+				local cap = if size.X == 1 then Vector3.new(1.4, 0.35, size.Z) else Vector3.new(size.X, 0.35, 1.2)
+				b(cap, rail.at + Vector3.new(0, deck + 3.55, 0), GOLD, Enum.Material.Metal)
 			end
 		end
 		b(Vector3.new(W, 0.35, 1.4), Vector3.new(0, up + 3.55, 83.5), GOLD, Enum.Material.Metal)

@@ -93,20 +93,29 @@ local function finish(player: Player, completed: boolean, gameOver: boolean?)
 		local cfg = Config.MINIGAMES.cove
 		data.miniAt = data.miniAt or {}
 		if os.time() >= (data.miniAt.cove or 0) + cfg.cooldown then
-			local quality = math.clamp(run.score / 24, 0.25, 1)
+			-- full pay for the first fullPlays plays each hour, then a reduced share (still worth replaying)
+			local hour = os.time() // 3600
+			if data.miniAt.coveHour ~= hour then
+				data.miniAt.coveHour = hour
+				data.miniAt.coveN = 0
+			end
+			data.miniAt.coveN = (data.miniAt.coveN or 0) + 1
+			local tired = data.miniAt.coveN > (cfg.fullPlays or 3)
+			local quality = math.clamp(run.score / 24, 0.25, 1) * (if tired then cfg.tiredShare or 0.4 else 1)
 			local coins = Stats.miniGameCoins("cove", data.bestDepth, quality)
 			local pearls = math.floor(cfg.pearls * quality + 0.5)
 			data.coins += coins
 			data.pearls += pearls
 			data.miniAt.cove = os.time()
 			Analytics.tag(player, "Gameplay", "MiniGame_cove")
-			reward = "+" .. Format.abbrev(coins) .. " coins · +" .. pearls .. " pearls"
+			reward = "+" .. Format.abbrev(coins) .. " coins · +" .. pearls .. " pearls" .. (if tired then " (reduced: 3 full plays an hour)" else "")
 		else
 			reward = "Coin rewards recharge in " .. Format.time(data.miniAt.cove + cfg.cooldown - os.time())
 		end
 		data.coveBest = math.max(data.coveBest or 0, run.score)
 		DataService.changed(player)
 		Analytics.event(player, "MiniGame", run.score, { game = "cove" })
+		require(script.Parent.MissionService).record(player, "cove", 1)
 	end
 	Remotes.event("MiniGame"):FireClient(player, "ended", {
 		score = run.score,
@@ -130,6 +139,10 @@ function MiniGameService.start(player: Player, gameId: any): (boolean, string?)
 	end
 	if FarmService.inTutorial(player) then
 		return false, "Finish the tutorial first!"
+	end
+	local Drip = require(script.Parent.DripService)
+	if not Drip.open(player, "cove") then
+		return false, Drip.waitText(player, "cove")
 	end
 	if session.inBattle then
 		return false, "Wait for the battle to end"

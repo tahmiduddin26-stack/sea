@@ -45,9 +45,12 @@ Config.SWIM_RADIUS = 410 -- wide enough for the Abyss Rod's cast and shaft aster
 Config.SWIM_SECONDS = 5
 Config.SWIM_Y = -1.5
 
+-- The side decks sit between the existing openings for the cannons, boarding stairs and lookout.
+Config.NEST_BAY_WIDTH = 14
+Config.NEST_BAY_SPANS = { { -31, -16 }, { 24, 36.5 } }
+
 -- Nest slots on a ship (local to the ship: +X = starboard, -Z = bow towards the harbour).
--- The first START_NESTS are free; the rest are bought (and stay hidden until the tutorial
--- is done). Upper-deck nests need Floor 2.
+-- Nest IDs are saved. Keep existing entries in place and append new slots.
 Config.NEST_SLOTS = {
 	{ pos = Vector3.new(-18, 0, 0), floor = 1 },
 	{ pos = Vector3.new(0, 0, 0), floor = 1 },
@@ -67,6 +70,12 @@ Config.NEST_SLOTS = {
 	{ pos = Vector3.new(7, 0, 78), floor = 3 },
 	{ pos = Vector3.new(20, 0, 78), floor = 3 },
 }
+for _, side in { -1, 1 } do
+	for _, span in Config.NEST_BAY_SPANS do
+		local x = side * (Config.SHIP_WIDTH / 2 + Config.NEST_BAY_WIDTH / 2)
+		table.insert(Config.NEST_SLOTS, { pos = Vector3.new(x, 0, (span[1] + span[2]) / 2), floor = 1, sideBay = true })
+	end
+end
 Config.QUARTERDECK_Z = 54 -- the raised stern deck (Floor 2) starts here
 Config.MAST_POS = Vector3.new(0, 0, 36)
 Config.FLAG_COLORS = {
@@ -77,6 +86,12 @@ Config.FLAG_COLORS = {
 	{ id = "Abyss", color = Color3.fromRGB(103, 70, 178) },
 }
 Config.FLAG_EMBLEMS = { "Plain", "Skull", "Swords", "Heart" }
+-- Tap to help in fights (Phase 2): each tap on the enemy hits for `share` of your team's damage per
+-- second (a crit: x critMult at critChance), at most maxPerSecond taps a second. Every tap fills the rage
+-- meter; at rageMax the SUPER SPLASH button lights up and hits for superSeconds of team damage. Tapping
+-- flat out is roughly +75% damage, casual tapping about +40%: worth it, but idle play still works.
+-- Bosses become ENRAGED at enrageAt of their health: a little stronger and faster (enrageAtk / enrageSpeed).
+Config.TAP = { share = 0.03, critChance = 0.1, critMult = 3, maxPerSecond = 8, rageMax = 50, superSeconds = 3, enrageAt = 0.25, enrageAtk = 1.2, enrageSpeed = 0.85 }
 Config.WALK_SPEED = 24 -- how fast a player runs: 1.5x Roblox's default of 16
 Config.START_NESTS = 3
 Config.NEST_REVEAL_MONSTERS = 3 -- the buyable nests appear once you own this many monsters
@@ -112,7 +127,8 @@ Config.FISH_TIME = Config.FISH_BASE + #Config.FISH_ZONES * Config.FISH_PER_ZONE 
 -- extra damage. `look` picks how a zone is dressed (the first rod's looks plus Ice and Vents).
 -- `trench` = the shaft centre from the rod (ship space): out past the starboard rail and a bit
 -- toward the bow, so the shaft stays clear of the arena (x 80, z -24..24) and the harbour.
-Config.DEEP_ROD = { unlockMinutes = 20, cooldown = 600, luck = 1.5, pos = Vector3.new(24, 0, -40), trench = Vector3.new(44, 0, -24), half = 22 }
+-- unlockMinutes was 20, but the average session was ~9 minutes, so almost nobody reached it: now 8
+Config.DEEP_ROD = { unlockMinutes = 8, cooldown = 600, luck = 1.5, pos = Vector3.new(24, 0, -40), trench = Vector3.new(44, 0, -24), half = 22 }
 Config.DEEP_ZONE_HEIGHT = 32
 Config.DEEP_ZONES = {
 	{ id = "Glimmer", name = "Glimmer Lagoon", element = "Tide", look = "Shallows", weight = 20, perk = 0.25, color = Color3.fromRGB(120, 235, 255) },
@@ -626,7 +642,7 @@ Config.GAMEPASSES = {
 	DoubleCoins = { id = 2093447301, price = 110, name = "x2 Coins", desc = "Double coins from every battle." },
 	FastFuse = { id = 2094359336, price = 150, name = "x2 Hatch Speed", desc = "Eggs hatch twice as fast." },
 	FastBattle = { id = 2096773204, price = 30, name = "x2 Battle Speed", desc = "Unlocks the x2 battle speed toggle." },
-	ExtraPedestal = { id = 2092505182, price = 75, name = "Fast Reel", desc = "The fishing rod reels in eggs 8% faster." },
+	ExtraPedestal = { id = 2092505182, price = 5, name = "Fast Reel", desc = "Rods reel 20% faster", reelSpeedBonus = 0.2 },
 	DoubleLuck = { id = 2093183555, price = 50, name = "x2 Luck", desc = "Double egg luck and fuse luck forever." },
 }
 Config.PRODUCTS = {
@@ -676,8 +692,31 @@ Config.COIN_PACK_MINUTES = { CoinsSmall = 6, CoinsBig = 30 } -- = this many minu
 -- worse runs pay a share of that. One play per `cooldown` seconds per game, so battling still pays better.
 -- minSeconds = the shortest a real run can take (anything faster is refused).
 Config.MINIGAMES = {
-	cove = { name = "Crab Cove", minutes = 3, pearls = 8, cooldown = 720 },
+	-- fullPlays plays an hour pay in full; plays after that pay tiredShare of it
+	cove = { name = "Crab Cove", minutes = 3, pearls = 8, cooldown = 240, fullPlays = 3, tiredShare = 0.4 },
 }
+
+-- Lighthouse Climb (server/LighthouseService + client/LighthouseView): walk in the lighthouse door and
+-- you are inside a huge tower far bigger than the outside (built far out at `origin`, out of sight).
+-- A spiral parkour climb (vanishing planks, jump pads, sweeping anchors, 2 checkpoints) leads to three
+-- loot chests at the top; each chest opens once per `chestCooldown` seconds per player.
+Config.LIGHTHOUSE = {
+	origin = Vector3.new(0, 40, -5200),
+	radius = 46, -- inside: the outside tower is only ~10 studs wide
+	steps = 36,
+	stepAngle = 32, -- degrees round the tower per step
+	stepRise = 4.2,
+	chestCooldown = 1800,
+	coinMinutes = 6, -- the Coin Chest: this many minutes of battle coins at your best depth
+	pearls = { 25, 45 }, -- the Pearl Chest
+	eggChance = 0.3, -- the Mystery Chest: an egg, otherwise a spell card
+}
+
+-- Treasure dig (server/TreasureService): `count` red X marks on the island sand every `every` seconds.
+-- Hold the prompt for `hold` seconds to dig. First come, first served. Prize odds: egg, spell card,
+-- pearls, otherwise coinMinutes of battle coins at your best depth.
+-- hold = the length of the dig cinematic (shared/DigAnim.DURATION)
+Config.TREASURE = { count = 5, every = 600, firstAt = 45, hold = 2.4, eggChance = 0.03, spellChance = 0.12, pearlChance = 0.3, pearls = { 5, 15 }, coinMinutes = 1.5 }
 
 -- Cannon Gallery: a gun on each side of every ship (ship space; clear of the Workshop cannons, boards
 -- and chest). Get in, aim in first person, and shoot the LIVE crates that drop around the map for the
@@ -688,9 +727,9 @@ Config.CANNON_GAME_POS = { Port = Vector3.new(-32, 0, -8), Starboard = Vector3.n
 Config.CANNON_GAME_Y = 3.4 -- the gun's base above the deck: level with the rail top
 Config.LIVE_CRATES = {
 	count = 5, -- crates per drop
-	every = 1800, -- seconds between drops (the drop replaces any crates nobody broke)
+	every = 720, -- seconds between drops (the drop replaces any crates nobody broke): a server event every 12 min
 	firstDrop = 30, -- seconds after the server starts
-	warn = 30, -- "Crate drop in 0:30!" shows this long before a drop
+	warn = 150, -- "CRATE RAIN in 2:30!" shows this long before a drop, so everyone heads for the cannons
 	minutes = 2, -- a crate pays this many minutes of battle coins at your best depth (Stats.coinsPerMinute)
 	-- where crates float: this far out from a ship's side (studs), along its middle
 	outMin = 45,
@@ -884,13 +923,16 @@ Config.EGG_SHOP = {
 ---------------------------------------------------------------------------
 -- Playtime gifts (minutes this session) and the daily chest
 ---------------------------------------------------------------------------
+-- Timed so something exciting lands right where players used to leave (about 9 minutes): a guaranteed
+-- Rare egg at 8, an Epic at 15, a Golden at 20. eggTier = 2 (Rare) / 3 (Epic) of a random element,
+-- `variant` makes it Golden. (The old 10 minute Power spin is gone: it was useless before depth 30.)
 Config.GIFTS = {
 	{ min = 1, coins = 500 },
-	{ min = 3, pearls = 10, spell = "miniboss" },
-	{ min = 6, coins = 2500, shells = 15 },
-	{ min = 10, spins = 1 },
-	{ min = 15, pearls = 30, spell = "boss", shells = 20 },
-	{ min = 20, egg = 2 }, -- egg = levels above your stage
+	{ min = 4, pearls = 10, spell = "miniboss" },
+	{ min = 8, eggTier = 2 },
+	{ min = 12, coins = 2500, pearls = 20, shells = 15 },
+	{ min = 15, eggTier = 3, shells = 20 },
+	{ min = 20, eggTier = 1, variant = "Golden" },
 	{ min = 30, pearls = 75, spell = "final" },
 }
 for _, g in Config.GIFTS do
@@ -902,6 +944,38 @@ Config.DAILY_PEARLS = { 10, 15, 20, 30, 40, 60, 100 } -- by streak day
 Config.GROUP_ID = 865496476 -- the owning group (the Gift Chest has a plain "Join the Crew" button, no reward)
 Config.FRIEND_BOOST = 0.1 -- +10% battle coins for each friend in your server
 Config.FRIEND_BOOST_MAX = 3
+-- Tide Rebirth (the Whirlpool in town): after a deep climb you can start the climb again for a permanent
+-- bonus. The first needs `firstDepth`, each later one `perRebirth` more depth (never past the Maw). A rebirth
+-- sends coins and best depth back to the start; monsters, the Index, pearls, spells, upgrades and ships stay.
+-- Every Tide Mark: +coinBonus battle coins for good, plus a guaranteed good egg and some pearls.
+-- Staggered unlocks (server/DripService): once the tutorial is done the island's activities open one at a time,
+-- afterMin minutes of play after the tutorial ends, each with a small pearl gift. Players who already finished
+-- the tutorial before this existed get everything open.
+Config.DRIP = {
+	{ id = "cove", name = "Crab Cove", afterMin = 1.5, pearls = 5, blurb = "Rescue the stolen eggs! Find the Cove Keeper in town." },
+	{ id = "lighthouse", name = "Lighthouse Climb", afterMin = 3.5, pearls = 8, blurb = "Climb for the chests! Go in through the Lighthouse door." },
+	{ id = "dig", name = "Treasure Digs", afterMin = 5.5, pearls = 10, blurb = "Hold E on an X on the island to dig up treasure!" },
+}
+-- Daily quests (server/MissionService, the Quest Board in town): three bigger goals a day, picked from these kinds
+-- (a new set every UTC day). minutes = coins worth that many minutes of battle income, pearls = base pearls.
+-- cove / dig / lighthouse only come up once those activities are open. All three done = a bonus chest.
+Config.QUESTS = {
+	count = 3,
+	bonusPearls = 30,
+	kinds = {
+		kills = { label = "Beat %d enemies", minutes = 8, pearls = 8 },
+		hatch = { label = "Hatch %d monsters", minutes = 8, pearls = 8 },
+		fuse = { label = "Fuse %d times", minutes = 10, pearls = 10 },
+		fish = { label = "Fish up %d eggs", minutes = 6, pearls = 6 },
+		sell = { label = "Sell %d monsters", minutes = 5, pearls = 5 },
+		boss = { label = "Win %d boss fights", minutes = 12, pearls = 12 },
+		cove = { label = "Play Crab Cove %d times", minutes = 8, pearls = 8 },
+		dig = { label = "Dig up %d treasures", minutes = 6, pearls = 8 },
+		lighthouse = { label = "Lighthouse chests to open: %d", minutes = 8, pearls = 8 },
+	},
+	order = { "kills", "hatch", "fuse", "fish", "sell", "boss", "cove", "dig", "lighthouse" },
+}
+Config.REBIRTH = { firstDepth = 60, perRebirth = 15, max = 10, coinBonus = 0.4, pearlsPerMark = 40, eggStars = 2 }
 -- Badges (0 = not created yet). Create them in Creator Hub > Badges and paste the ids here.
 Config.BADGES = {
 	Welcome = 2077297959419624, -- Welcome Aboard!

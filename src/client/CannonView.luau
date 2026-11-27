@@ -198,6 +198,7 @@ function CannonView.enter(side: string)
 	local oldFov = cam.FieldOfView
 	cam.CameraType = Enum.CameraType.Scriptable
 	local gui, ringStroke, leaveBtn, fireBtn, ammoLbl = buildUi()
+	CrateView.showTargetTags(true)
 	local function outText(): string
 		local at = (player:GetAttribute("CannonRefillAt") :: number?) or 0
 		return "Out of cannonballs! More in " .. Format.time(at - workspace:GetServerTimeNow())
@@ -245,6 +246,7 @@ function CannonView.enter(side: string)
 			return
 		end
 		active = false
+		CrateView.showTargetTags(false)
 		for _, c in conns do
 			c:Disconnect()
 		end

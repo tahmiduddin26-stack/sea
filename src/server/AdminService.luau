@@ -85,6 +85,12 @@ function AdminService.run(player: Player, arg: any): (boolean, string?)
 		data.resumeDepth = depth
 		refresh(player)
 		return true, "Press FIGHT: you start at depth " .. depth
+	elseif cmd == "Record" then
+		-- testing: counts as if you had done `arg.kind` n times (missions and daily quests)
+		if typeof(arg.kind) == "string" then
+			require(script.Parent.MissionService).record(player, arg.kind, math.max(1, n))
+		end
+		return true, "Recorded " .. tostring(arg.kind) .. " x" .. n
 	elseif cmd == "Lv1Team" then
 		-- three Lv1 1-star monsters in your nests, tutorial done (so FIGHT and the HUD are on)
 		data.tutorial = Config.TUTORIAL_DONE

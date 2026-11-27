@@ -553,6 +553,36 @@ function MiniGames.cove()
 	}, startRound)
 end
 
+-- "Your best: 14" + when full rewards are ready, over the Crab Cove stand (seen when nearby)
+task.spawn(function()
+	local world = workspace:WaitForChild("World")
+	local prompt = world:FindFirstChild("CardsPrompt", true)
+	local tries = 0
+	while not prompt and tries < 60 do
+		task.wait(1)
+		tries += 1
+		prompt = world:FindFirstChild("CardsPrompt", true)
+	end
+	local host = prompt and prompt.Parent :: BasePart?
+	if not host then
+		return
+	end
+	local bestGui = UI.new("BillboardGui", { ResetOnSpawn = false, Size = UDim2.fromOffset(260, 56), StudsOffset = Vector3.new(0, 10, 0), MaxDistance = 70, LightInfluence = 0, Adornee = host, Parent = player:WaitForChild("PlayerGui") })
+	local bestLbl = UI.label({ Text = "", TextColor3 = C.Gold, Stroke = 3, MaxText = 26, Size = UDim2.fromScale(1, 0.55), Parent = bestGui })
+	local readyLbl = UI.label({ Text = "", TextColor3 = C.White, Stroke = 2, MaxText = 18, Size = UDim2.fromScale(1, 0.45), Position = UDim2.fromScale(0, 0.55), Parent = bestGui })
+	while bestGui.Parent do
+		local s = State.snapshot
+		if s then
+			bestLbl.Text = "Your best: " .. (s.coveBest or 0)
+			local at = (s.miniAt and s.miniAt.cove or 0) + Config.MINIGAMES.cove.cooldown
+			local left = at - State.now()
+			readyLbl.Text = if left > 0 then "Rewards in " .. Format.time(left) else "Rewards ready!"
+			readyLbl.TextColor3 = if left > 0 then C.White else C.Kelp
+		end
+		task.wait(1)
+	end
+end)
+
 Remotes.event("MiniGame").OnClientEvent:Connect(function(kind, data)
 	if kind == "state" then
 		if round then

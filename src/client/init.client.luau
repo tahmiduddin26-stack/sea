@@ -46,6 +46,7 @@ local uiScale = UI.new("UIScale", { Parent = screen })
 Platform.bindScale(screen, uiScale)
 
 State.init()
+require(script.PerfView).init() -- cull far lights, no shadows on phones
 Cinema.init(screen)
 Hud.init(screen)
 Platform.onMode = Hud.setMode
@@ -53,6 +54,8 @@ Platform.init()
 Menus.init(screen)
 ShipView.init()
 BattleView.init()
+local TapFight = require(script.TapFight)
+TapFight.init(screen) -- tap to help in fights: rage meter, SUPER SPLASH, combo, enrage drama
 Guide.init(screen)
 NpcView.init()
 require(script.AdminPanel).init(screen)
@@ -86,7 +89,11 @@ end)
 local FuseView = require(script.FuseView)
 FuseView.init()
 require(script.FittingView).init()
+require(script.Travel).init(screen) -- fast travel: HUD button + the bow launch cannon
 require(script.VendorMarks).init()
+require(script.LighthouseView).init(screen) -- climb timer + chest countdowns
+require(script.DigView).init() -- the treasure-dig cinematic
+require(script.PetView).init() -- everyone's strongest monster follows them around (client/PetView)
 Hud.on("Fuse", FuseView.hint)
 Hud.on("Shop", Menus.shop)
 Hud.on("Index", Menus.index)
@@ -108,7 +115,7 @@ end)
 
 -- world prompts that open menus or Robux prompts (the server never needs to see these)
 local ProximityPromptService = game:GetService("ProximityPromptService")
-local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", DockyardPrompt = "Dockyard", CardsPrompt = "Cards", CannonGamePrompt = "Cannon" }
+local VENDOR_OF = { EventPrompt = "Event", SpellPrompt = "Spellbook", ShopPrompt = "Shop", MuseumPrompt = "Index", PowerPrompt = "Powers", GiftPrompt = "Gifts", TeamPrompt = "Team", EggShopPrompt = "EggShop", GuidePrompt = "Guide", DockyardPrompt = "Dockyard", CardsPrompt = "Cards", CannonGamePrompt = "Cannon", RebirthPrompt = "Rebirth", QuestPrompt = "Quests" }
 -- a prompt on screen owns the X button (its default gamepad key), so X-to-fight waits
 local shownPrompts = 0
 ProximityPromptService.PromptShown:Connect(function()
@@ -135,7 +142,11 @@ ProximityPromptService.PromptTriggered:Connect(function(pp: ProximityPrompt, who
 		Menus.index()
 	elseif pp.Name == "PowerPrompt" then
 		Menus.powers()
-	elseif pp.Name == "GiftPrompt" then
+	elseif pp.Name == "QuestPrompt" then
+			Menus.quests()
+		elseif pp.Name == "RebirthPrompt" then
+			Menus.rebirth()
+		elseif pp.Name == "GiftPrompt" then
 		Menus.gifts()
 	elseif pp.Name == "TeamPrompt" then
 		Menus.team()
@@ -145,7 +156,15 @@ ProximityPromptService.PromptTriggered:Connect(function(pp: ProximityPrompt, who
 		Menus.dockyard()
 	elseif pp.Name == "GuidePrompt" then
 		Menus.guide()
-	elseif pp.Name == "CardsPrompt" then
+	elseif pp.Name == "CardsPrompt" and State.snapshot and not (State.snapshot.drip and State.snapshot.drip.cove) then
+			-- not open yet (staggered unlocks): the server says when
+			local ok, msg = State.action("DripCheck", "cove")
+			if ok then
+				MiniGames.cove()
+			else
+				Hud.toast(msg or "Not open yet", C.Gold)
+			end
+		elseif pp.Name == "CardsPrompt" then
 		MiniGames.cove()
 	elseif pp.Name == "CannonGamePrompt" then -- (not "CannonPrompt": that is the Workshop cannon's Load Cannonball prompt)
 		CannonView.enter((pp.Parent :: Instance):GetAttribute("Side") :: string)
@@ -176,7 +195,14 @@ Gamepad.bind(Enum.KeyCode.ButtonX, function()
 		Hud.press("Fight")
 	end
 end)
-Gamepad.bind(Enum.KeyCode.ButtonY, FuseView.hint)
+-- Y: SUPER SPLASH in a fight (when the rage meter is full), otherwise the fuse hint
+Gamepad.bind(Enum.KeyCode.ButtonY, function()
+	if Hud.inBattle then
+		TapFight.super()
+	else
+		FuseView.hint()
+	end
+end)
 -- RT opens Pick Team (same as the button beside FIGHT)
 Gamepad.bind(Enum.KeyCode.ButtonR2, function()
 	if Hud.teamButton().Visible and not Menus.isOpen() then
@@ -184,8 +210,11 @@ Gamepad.bind(Enum.KeyCode.ButtonR2, function()
 	end
 end)
 -- RB opens Sell (same as the coin button, which only shows once the tutorial is done)
+-- in a fight RB is the tap button instead (each press is one tap)
 Gamepad.bind(Enum.KeyCode.ButtonR1, function()
-	if Hud.sellButton().Visible and not Menus.isOpen() then
+	if Hud.inBattle then
+		TapFight.tap()
+	elseif Hud.sellButton().Visible and not Menus.isOpen() then
 		Hud.press("Sell")
 	end
 end)
@@ -204,6 +233,16 @@ end
 
 Remotes.event("Toast").OnClientEvent:Connect(function(text, color)
 	Hud.toast(text, color)
+end)
+-- a new activity just opened (staggered unlocks, server/DripService)
+Remotes.event("Drip").OnClientEvent:Connect(function(_id, name, blurb)
+	Sound.play("Win", 0.6)
+	Hud.splash("NEW: " .. string.upper(tostring(name)) .. "!", C.Gold)
+	Hud.toast(tostring(blurb), C.Gold)
+end)
+-- server-wide brags (big hatches, fuses, first boss kills)
+Remotes.event("Announce").OnClientEvent:Connect(function(text, color)
+	Hud.announce(text, color)
 end)
 
 local snap = State.waitForData()
@@ -274,16 +313,21 @@ pcall(function()
 	end
 end)
 
--- ask once to favourite, a little after the tutorial ends (the first boss is beaten)
+-- Ask on a return visit, once the player has time to read the ship and join notifications.
 task.spawn(function()
+	if snap.tutorial < Config.TUTORIAL_DONE then
+		return
+	end
+	local quietSince = os.clock()
 	while true do
-		task.wait(5)
+		task.wait(1)
 		local s = State.snapshot
 		if s and s.favAsked then
 			break
 		end
-		if s and s.tutorial >= Config.TUTORIAL_DONE and not Hud.inBattle and not State.revealing and not State.cinematic then
-			task.wait(20)
+		if not s or s.tutorial < Config.TUTORIAL_DONE or Hud.inBattle or State.revealing or State.cinematic or Menus.isOpen() or Hud.hasToasts() then
+			quietSince = os.clock()
+		elseif os.clock() - quietSince >= 20 then
 			local AvatarEditorService = game:GetService("AvatarEditorService")
 			local done = false
 			local conn = AvatarEditorService.PromptSetFavoriteCompleted:Connect(function(result)

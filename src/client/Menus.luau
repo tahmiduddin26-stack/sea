@@ -32,6 +32,71 @@ local open: Frame? = nil
 local diveActive = false
 
 ---------------------------------------------------------------------------
+-- Lock the player while a menu is open. Scrolling a list used to zoom the camera (the mouse wheel),
+-- and the stick / WASD / touch pad still walked the character behind the window.
+---------------------------------------------------------------------------
+local ContextActionService = game:GetService("ContextActionService")
+local lockedNow = false
+local savedZoom: { min: number, max: number }? = nil
+local controlsOff = false
+
+local function playerControls(): any?
+	local ok, controls = pcall(function()
+		local ps = player:WaitForChild("PlayerScripts", 2)
+		local pm = ps and ps:FindFirstChild("PlayerModule")
+		return pm and (require(pm :: ModuleScript) :: any):GetControls()
+	end)
+	return if ok then controls else nil
+end
+
+local function lockPlayer(on: boolean)
+	if on == lockedNow then
+		return
+	end
+	lockedNow = on
+	if on then
+		-- 1) the wheel and the right stick can no longer move the camera
+		ContextActionService:BindActionAtPriority("MenuLock", function()
+			return Enum.ContextActionResult.Sink
+		end, false, Enum.ContextActionPriority.High.Value + 10, Enum.UserInputType.MouseWheel, Enum.KeyCode.Thumbstick2)
+		-- 2) the zoom is frozen where it is (nothing else can change it either)
+		local cam = workspace.CurrentCamera
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if cam and root then
+			local dist = math.clamp((cam.CFrame.Position - root.Position).Magnitude, 0.5, 128)
+			savedZoom = { min = player.CameraMinZoomDistance, max = player.CameraMaxZoomDistance }
+			player.CameraMinZoomDistance = dist
+			player.CameraMaxZoomDistance = dist
+		end
+		-- 3) the character stops walking (keyboard, stick and the touch pad); it stands still
+		local controls = playerControls()
+		if controls then
+			controls:Disable()
+			controlsOff = true
+		end
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum:Move(Vector3.zero)
+		end
+	else
+		ContextActionService:UnbindAction("MenuLock")
+		if savedZoom then
+			player.CameraMinZoomDistance = savedZoom.min
+			player.CameraMaxZoomDistance = savedZoom.max
+			savedZoom = nil
+		end
+		if controlsOff then
+			controlsOff = false
+			local controls = playerControls()
+			if controls then
+				controls:Enable()
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------------------
 -- Helpers
 ---------------------------------------------------------------------------
 Menus.onOpen = nil :: ((GuiObject) -> ())?
@@ -45,6 +110,7 @@ function Menus.setDiveActive(active: boolean)
 	if open then
 		open.Visible = not active
 		Platform.menuChanged(not active)
+		lockPlayer(not active)
 	end
 end
 
@@ -54,6 +120,7 @@ function Menus.close()
 	if open then
 		open:Destroy()
 		open = nil
+		lockPlayer(false)
 		Platform.menuChanged(false)
 		if Menus.onClose then
 			Menus.onClose()
@@ -67,6 +134,7 @@ local function window(title: string, size: Vector2, color: Color3?): (Frame, Fra
 	f.Parent = screenRef
 	open = f
 	f.Visible = not diveActive
+	lockPlayer(not diveActive)
 	-- phones are shorter than most menus: shrink to fit the screen
 	local fit = Platform.fit(size)
 	f.Position = Platform.menuPosition(size, fit)
@@ -208,7 +276,7 @@ local function detailLines(kind: string, name: string): ({ string }, string)
 	elseif name == "FastBattle" then
 		return { "Unlocks the x2 battle speed button", "Fights finish twice as fast" }, "Game pass: yours forever"
 	elseif name == "ExtraPedestal" then
-		return { "The fishing rods reel in eggs 8% faster" }, "Game pass: yours forever"
+		return { Config.GAMEPASSES.ExtraPedestal.desc }, "Game pass: yours forever"
 	elseif name == "DoubleLuck" then
 		return { "x2 egg luck", "x2 fuse luck (stars and secrets)" }, "Game pass: yours forever"
 	end
@@ -397,7 +465,7 @@ function Menus.shop()
 		StarterPack = "Lv3 Kelpdrake + coins", PearlDragonPack = "Legendary dragon", FuseLuck = "x2 fuse luck 15m",
 		InsaneLuck = "x4 fuse luck 15m", SkipTimer = "Instant hatch 5 min", CoinsSmall = "A chest of coins", CoinsBig = "A ship of coins",
 		VIP = "+25% coins forever", DoubleCoins = "x2 coins forever", FastFuse = "x2 hatch speed", FastBattle = "x2 battle speed",
-		ExtraPedestal = "rod reels 8% faster", Luck30 = "x2 luck for 30m", DoubleLuck = "x2 luck forever", PowerSpins = "5 Power wheel spins", ElementBundle = "1 egg of each element",
+		ExtraPedestal = Config.GAMEPASSES.ExtraPedestal.desc, Luck30 = "x2 luck for 30m", DoubleLuck = "x2 luck forever", PowerSpins = "5 Power wheel spins", ElementBundle = "1 egg of each element",
 			LimitedRoll = "Roll the Abyss Crate", Revive = "Use after a defeat",
 		}
 	local ICON = { StarterPack = "Team", PearlDragonPack = "Pearl", FuseLuck = "LuckEgg", InsaneLuck = "Crate", SkipTimer = "Speed", CoinsSmall = "Coin", CoinsBig = "Shop", VIP = "Event", DoubleCoins = "Coin", FastFuse = "Heart", FastBattle = "Speed", ExtraPedestal = "Pedestal", Luck30 = "LuckEgg", DoubleLuck = "LuckEgg" }
@@ -1204,6 +1272,116 @@ function Menus.event()
 end
 
 ---------------------------------------------------------------------------
+-- Daily quests (the Quest Board in town): three goals a day, claimed here
+---------------------------------------------------------------------------
+function Menus.quests()
+	local snap = State.snapshot
+	local Q = Config.QUESTS
+	local GOLD = Color3.fromRGB(255, 205, 60)
+	local f, body = window("Daily Quests", Vector2.new(700, 440), GOLD)
+	local quests = snap.quests
+	local today = State.now() // 86400
+	local left = (today + 1) * 86400 - State.now()
+	UI.label({ Text = "New quests in " .. string.format("%dh %02dm", left // 3600, (left % 3600) // 60), TextColor3 = C.Ink, Stroke = 0, MaxText = 22, Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 0), Parent = body })
+	if not quests or quests.day ~= today or #quests.list == 0 then
+		UI.label({ Text = "Your quests are on their way... come back in a moment!", TextColor3 = C.Ink, Stroke = 0, MaxText = 26, Size = UDim2.new(1, -20, 0, 60), Position = UDim2.fromOffset(10, 120), Parent = body })
+		return
+	end
+	local allClaimed = true
+	for i, q in quests.list do
+		local def = Q.kinds[q.kind]
+		local y = 32 + (i - 1) * 84
+		local done = q.progress >= q.target
+		local row = UI.panel({ Size = UDim2.new(1, -16, 0, 78), Position = UDim2.fromOffset(8, y), Color = if q.claimed then Color3.fromRGB(215, 222, 215) else Color3.fromRGB(250, 240, 210), Parent = body })
+		UI.label({ Text = string.format(def.label, q.target), TextColor3 = C.Ink, Stroke = 0, MaxText = 24, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -200, 0, 28), Position = UDim2.fromOffset(12, 6), Parent = row })
+		local barBack = UI.new("Frame", { BackgroundColor3 = C.Ink, Size = UDim2.new(1, -200, 0, 12), Position = UDim2.fromOffset(12, 38), Parent = row }, { UI.corner(6), UI.stroke(2) })
+		UI.new("Frame", { BackgroundColor3 = if done then C.Kelp else C.Gold, Size = UDim2.fromScale(math.clamp(q.progress / q.target, 0, 1), 1), Parent = barBack }, { UI.corner(6) })
+		UI.label({ Text = q.progress .. " / " .. q.target .. "   ·   +" .. Format.abbrev(q.coins) .. " coins, +" .. q.pearls .. " pearls", TextColor3 = C.Ink, Stroke = 0, MaxText = 18, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, -200, 0, 20), Position = UDim2.fromOffset(12, 54), Parent = row })
+		local text = if q.claimed then "Claimed" elseif done then "CLAIM!" else "In progress"
+		local color = if q.claimed then Color3.fromRGB(150, 160, 150) elseif done then C.Kelp else Color3.fromRGB(120, 130, 150)
+		UI.button({ Text = text, Color = color, Size = UDim2.fromOffset(160, 52), Position = UDim2.new(1, -10, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5), Parent = row }, function()
+			if not done or q.claimed then
+				return
+			end
+			local ok, msg = State.action("QuestClaim", i)
+			Hud.toast(msg or "", if ok then C.Kelp else C.Coral)
+			if ok then
+				Sound.play("Win", 0.6)
+				if open == f then
+					Menus.quests()
+				end
+			end
+		end)
+		if not q.claimed then
+			allClaimed = false
+		end
+	end
+	local bonus = UI.panel({ Size = UDim2.new(1, -16, 0, 44), Position = UDim2.fromOffset(8, 32 + 3 * 84), Color = if quests.bonus then Color3.fromRGB(215, 222, 215) else Color3.fromRGB(255, 232, 170), Parent = body })
+	UI.label({ Text = if quests.bonus then "Bonus chest opened. See you tomorrow!" elseif allClaimed then "Bonus chest ready!" else "All 3 claimed: bonus +" .. Q.bonusPearls .. " pearls and a spell card", TextColor3 = C.Ink, Stroke = 0, MaxText = 22, Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(10, 0), Parent = bonus })
+end
+
+---------------------------------------------------------------------------
+-- Tide Rebirth (the Whirlpool in town): start the climb again for a permanent coin bonus
+---------------------------------------------------------------------------
+function Menus.rebirth()
+	local snap = State.snapshot
+	local done = snap.rebirths or 0
+	local need = Stats.rebirthDepth(done)
+	local R = Config.REBIRTH
+	local AQUA = Color3.fromRGB(90, 220, 255)
+	local f, body = window("Tide Whirlpool", Vector2.new(700, 440), AQUA)
+	UI.label({ Text = 'Tide Marks: <font color="#FFE066">' .. done .. " / " .. R.max .. "</font>", Size = UDim2.new(1, 0, 0, 40), Position = UDim2.fromOffset(0, 0), Parent = body })
+	UI.label({ Text = "Climb again from Depth 1 for a permanent +" .. math.floor(R.coinBonus * 100) .. "% battle coins on every Tide Mark!", Stroke = 0, TextColor3 = C.Ink, MaxText = 22, Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 42), Parent = body })
+	-- what you keep / what goes back
+	local keep = UI.panel({ Size = UDim2.new(0.5, -16, 0, 104), Position = UDim2.fromOffset(8, 74), Color = Color3.fromRGB(220, 245, 225), Parent = body })
+	UI.label({ Text = "YOU KEEP", TextColor3 = C.Kelp, MaxText = 22, Size = UDim2.new(1, 0, 0, 28), Position = UDim2.fromOffset(0, 4), Parent = keep })
+	UI.label({ Text = "All your monsters, the Index, pearls, spells, upgrades and ship", Stroke = 0, TextColor3 = C.Ink, MaxText = 20, Size = UDim2.new(1, -16, 0, 62), Position = UDim2.fromOffset(8, 34), Parent = keep })
+	local lose = UI.panel({ Size = UDim2.new(0.5, -16, 0, 104), Position = UDim2.new(0.5, 8, 0, 74), Color = Color3.fromRGB(255, 226, 222), Parent = body })
+	UI.label({ Text = "GOES BACK", TextColor3 = C.Coral, MaxText = 22, Size = UDim2.new(1, 0, 0, 28), Position = UDim2.fromOffset(0, 4), Parent = lose })
+	UI.label({ Text = "Your coins and your best Depth (you climb from Depth 1 again)", Stroke = 0, TextColor3 = C.Ink, MaxText = 20, Size = UDim2.new(1, -16, 0, 62), Position = UDim2.fromOffset(8, 34), Parent = lose })
+	if not need then
+		UI.label({ Text = "You have every Tide Mark. Legend!", TextColor3 = C.Gold, MaxText = 30, Size = UDim2.new(1, 0, 0, 50), Position = UDim2.fromOffset(0, 230), Parent = body })
+		return
+	end
+	local best = snap.bestDepth or 0
+	local ready = best >= need
+	UI.label({ Text = "Next Tide Mark needs Depth " .. need .. '   <font color="' .. (if ready then "#7CFF7C" else "#FFD05A") .. '">(you: ' .. best .. ")</font>", MaxText = 24, Size = UDim2.new(1, 0, 0, 30), Position = UDim2.fromOffset(0, 184), Parent = body })
+	local barBack = UI.new("Frame", { BackgroundColor3 = C.Ink, Size = UDim2.new(0.8, 0, 0, 12), Position = UDim2.new(0.5, 0, 0, 218), AnchorPoint = Vector2.new(0.5, 0), Parent = body }, { UI.corner(6), UI.stroke(2) })
+	UI.new("Frame", { BackgroundColor3 = if ready then C.Kelp else C.Gold, Size = UDim2.fromScale(math.clamp(best / need, 0, 1), 1), Parent = barBack }, { UI.corner(6) })
+	UI.label({ Text = "Reward: +" .. R.pearlsPerMark * (done + 1) .. " pearls, a " .. math.min(3, R.eggStars + (if done + 1 >= 5 then 1 else 0)) .. "-star egg and +" .. math.floor(R.coinBonus * 100) .. "% coins for good", TextColor3 = C.Gold, MaxText = 20, Size = UDim2.new(1, -20, 0, 26), Position = UDim2.fromOffset(10, 238), Parent = body })
+	local confirming = false
+	local btn: TextButton
+	btn = UI.button({ Text = if ready then "REBIRTH" else ("Reach Depth " .. need), Color = if ready then C.Kelp else Color3.fromRGB(120, 130, 150), Size = UDim2.fromOffset(320, 58), Position = UDim2.new(0.5, 0, 1, -8), AnchorPoint = Vector2.new(0.5, 1), Parent = body }, function()
+		if not ready then
+			Hud.toast("Reach Depth " .. need .. " first", C.Coral)
+			return
+		end
+		if not confirming then
+			confirming = true
+			UI.setText(btn, "Tap again to confirm!")
+			task.delay(4, function()
+				if confirming and btn.Parent then
+					confirming = false
+					UI.setText(btn, "REBIRTH")
+				end
+			end)
+			return
+		end
+		local ok, msg = State.action("Rebirth")
+		if ok then
+			Sound.play("Win", 0.8)
+			Hud.splash("TIDE MARK " .. (done + 1) .. "!", AQUA)
+			Menus.close()
+		else
+			confirming = false
+			UI.setText(btn, "REBIRTH")
+			Hud.toast(msg or "Can't rebirth", C.Coral)
+		end
+	end)
+	local _ = f
+end
+
+---------------------------------------------------------------------------
 -- Powers
 ---------------------------------------------------------------------------
 function Menus.powers()
@@ -1298,8 +1476,9 @@ function Menus.gifts()
 	local labels = {}
 	for i, g in Config.GIFTS do
 		local c = UI.panel({ Size = UDim2.fromOffset(170, 140), Color = Color3.fromRGB(255, 244, 216), Parent = grid })
-		local icon = if g.coins then Config.ICONS.Coin elseif g.pearls then Config.ICONS.Pearl elseif g.spins then Config.ICONS.Power else Config.ICONS.LuckEgg
-		local what = if g.coins then Format.abbrev(g.coins) .. " Coins" elseif g.pearls then g.pearls .. " Pearls" elseif g.spins then "Power Spin" else "Mystery Egg"
+		local eggName = if g.variant then g.variant .. " Egg" elseif g.eggTier == 3 then "Epic Egg" elseif g.eggTier == 2 then "Rare Egg" else "Mystery Egg"
+		local icon = if g.eggTier then Config.ICONS.LuckEgg elseif g.coins then Config.ICONS.Coin elseif g.pearls then Config.ICONS.Pearl elseif g.spins then Config.ICONS.Power else Config.ICONS.LuckEgg
+		local what = if g.eggTier then eggName elseif g.coins then Format.abbrev(g.coins) .. " Coins" elseif g.pearls then g.pearls .. " Pearls" elseif g.spins then "Power Spin" else "Mystery Egg"
 		if g.spell then
 			what ..= " + Spell"
 		end

@@ -70,6 +70,7 @@ local function coinMult(player: Player): number
 	end
 	m += (data.shipTier or 0) * Config.SHIPWRIGHT.coinPerTier
 	m += (tonumber(player:GetAttribute("Friends")) or 0) * Config.FRIEND_BOOST
+	m += Stats.rebirthBonus(data.rebirths or 0)
 	m *= FarmService.spellMult(player, "coins")
 	return m
 end
@@ -226,6 +227,12 @@ local function killEnemy(run: Run)
 	end
 	if run.depth > data.bestDepth then
 		data.bestDepth = run.depth
+		data.peakDepth = math.max(data.peakDepth or 0, run.depth)
+		-- a boss beaten for the first time: the whole server hears about it
+		if e.kind == "boss" or e.kind == "final" then
+			local def = Config.ENEMIES[e.id]
+			Remotes.event("Announce"):FireAllClients(player.DisplayName .. " beat " .. (if def then def.name else "a boss") .. " at Depth " .. run.depth .. "!", Color3.fromRGB(255, 120, 90))
+		end
 		Analytics.loop(player, 6) -- pushed a new depth this session
 		if run.depth % 5 == 0 then
 			Analytics.event(player, "BestDepth", run.depth)
@@ -254,6 +261,87 @@ local function killEnemy(run: Run)
 end
 
 -- one simulation step of dt seconds
+-- Your team's damage per second right now (living monsters only): what taps and SUPER scale from
+local function teamDps(run: Run): number
+	local dps = 0
+	for _, f in run.team do
+		if f.hp > 0 then
+			dps += f.atk / f.interval
+		end
+	end
+	return dps
+end
+
+-- A boss at enrageAt of its health gets ENRAGED once: a bit stronger and faster (clients go red)
+local function checkEnrage(run: Run)
+	local e = run.enemy :: any
+	if not e or e.enraged or e.hp <= 0 then
+		return
+	end
+	if (e.kind == "boss" or e.kind == "final") and e.hp <= e.maxHp * Config.TAP.enrageAt then
+		e.enraged = true
+		e.atk = math.floor(e.atk * Config.TAP.enrageAtk)
+		e.interval *= Config.TAP.enrageSpeed
+		broadcast(run.player, "enrage", {})
+	end
+end
+
+-- Tap the enemy: a small hit (a share of team damage), a chance to crit, and a point of rage.
+-- Server-limited to Config.TAP.maxPerSecond a second, so auto-clickers gain nothing past that.
+function BattleService.tap(player: Player): (boolean, string?)
+	local run = runs[player]
+	local e = run and run.enemy :: any
+	if not run or not e or e.hp <= 0 then
+		return false, nil
+	end
+	local now = os.clock()
+	local r = run :: any
+	if now - (r.tapWindow or 0) >= 1 then
+		r.tapWindow = now
+		r.tapCount = 0
+	end
+	if (r.tapCount or 0) >= Config.TAP.maxPerSecond then
+		return false, nil
+	end
+	r.tapCount = (r.tapCount or 0) + 1
+	local dps = teamDps(run)
+	if dps <= 0 then
+		return false, nil
+	end
+	local crit = rng:NextNumber() < Config.TAP.critChance
+	local dmg = math.max(1, math.floor(dps * Config.TAP.share * (if crit then Config.TAP.critMult else 1)))
+	e.hp = math.max(0, e.hp - dmg)
+	r.rage = math.min(Config.TAP.rageMax, (r.rage or 0) + 1)
+	broadcast(player, "tap", { dmg = dmg, crit = crit, hp = e.hp, rage = r.rage, rageMax = Config.TAP.rageMax })
+	checkEnrage(run)
+	if e.hp <= 0 then
+		killEnemy(run)
+	end
+	return true, nil
+end
+
+-- SUPER SPLASH: spend a full rage meter for one huge hit (superSeconds of team damage)
+function BattleService.super(player: Player): (boolean, string?)
+	local run = runs[player]
+	local e = run and run.enemy :: any
+	if not run or not e or e.hp <= 0 then
+		return false, nil
+	end
+	local r = run :: any
+	if (r.rage or 0) < Config.TAP.rageMax then
+		return false, "Tap the enemy to fill your rage!"
+	end
+	r.rage = 0
+	local dmg = math.max(1, math.floor(teamDps(run) * Config.TAP.superSeconds))
+	e.hp = math.max(0, e.hp - dmg)
+	broadcast(player, "superSplash", { dmg = dmg, hp = e.hp, rage = 0, rageMax = Config.TAP.rageMax })
+	checkEnrage(run)
+	if e.hp <= 0 then
+		killEnemy(run)
+	end
+	return true, nil
+end
+
 local function step(run: Run, dt: number)
 	if run.enemy == nil then
 		run.waveTimer -= dt
@@ -319,6 +407,7 @@ local function step(run: Run, dt: number)
 			e.hp = math.max(0, e.hp - tick)
 		end
 	end
+	checkEnrage(run)
 	if e.hp <= 0 then
 		killEnemy(run)
 		return
@@ -625,6 +714,14 @@ end
 
 function BattleService.init()
 	DataService.Loaded:Connect(offlineEarnings)
+	-- tap-to-help (its own remote: Action's rate limit is too slow for tapping)
+	Remotes.event("Tap").OnServerEvent:Connect(function(player, what)
+		if what == "tap" then
+			BattleService.tap(player)
+		elseif what == "super" then
+			BattleService.super(player)
+		end
+	end)
 	Players.PlayerRemoving:Connect(function(player)
 		runs[player] = nil
 		ended[player] = nil

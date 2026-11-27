@@ -24,7 +24,8 @@ local C = UI.Colors
 
 local NEST_SCALE = 1.25
 local EGG_SCALE = 1.5
-local DRAW_DIST = 320
+-- phones draw (and animate) the nests of far ships less: every nest monster is dozens of parts posed per frame
+local DRAW_DIST = if game:GetService("UserInputService").TouchEnabled and not game:GetService("UserInputService").KeyboardEnabled then 200 else 320
 
 type Slot = {
 	anchor: BasePart,
@@ -479,6 +480,9 @@ local function filterPrompts()
 						-- ("Finish the tutorial first!", or how long until it unlocks / is ready again)
 						show = true
 					elseif mine and pp.Name == "FlagPrompt" then
+						show = tutorialDone
+					elseif mine and pp.Name == "LaunchPrompt" then
+						-- the bow cannon to the island opens with the rest of the island, after the tutorial
 						show = tutorialDone
 					elseif mine and pp.Name == "UpgradePrompt" then
 						show = snap ~= nil and snap.tutorial >= Config.SIGNS_UNLOCK_STEP

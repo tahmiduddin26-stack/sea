@@ -352,6 +352,20 @@ function Stats.levelCap(bestDepth: number): number
 	return math.min(Config.MAX_LEVEL, Config.LEVEL_CAP_BASE + bestDepth // Config.STAGE_LENGTH)
 end
 
+-- Tide Rebirth: the best depth needed for the next rebirth, given how many you have done (nil = all done)
+function Stats.rebirthDepth(done: number): number?
+	local R = Config.REBIRTH
+	if done >= R.max then
+		return nil
+	end
+	return math.min(Config.FINAL_DEPTH, R.firstDepth + done * R.perRebirth)
+end
+
+-- the permanent battle-coin bonus from Tide Marks (0.4 = +40%)
+function Stats.rebirthBonus(done: number): number
+	return done * Config.REBIRTH.coinBonus
+end
+
 function Stats.skipPearls(secondsLeft: number): number
 	return math.max(1, math.ceil(secondsLeft / 60 * Config.SKIP_PEARLS_PER_MINUTE))
 end

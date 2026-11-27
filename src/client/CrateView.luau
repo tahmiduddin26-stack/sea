@@ -218,19 +218,27 @@ end
 -- crates: bob, tag, health bar
 ---------------------------------------------------------------------------
 local KIND_COL: { [string]: Color3 } = { Crate = Color3.fromRGB(255, 225, 160), Barrel = Color3.fromRGB(255, 130, 110), Gold = Color3.fromRGB(255, 215, 70) }
-local tagged: { [BasePart]: { rest: CFrame, phase: number, bar: Frame? } } = {}
+local tagged: { [BasePart]: { rest: CFrame, phase: number, gui: BillboardGui } } = {}
+local showTargetTags = false
+
+function CrateView.showTargetTags(visible: boolean)
+	showTargetTags = visible
+	for crate, info in tagged do
+		info.gui.Enabled = visible and crate.Transparency < 1
+	end
+end
 
 local function tag(c: BasePart)
 	if tagged[c] then
 		return
 	end
 	local kind = c:GetAttribute("Kind") :: string
-	local bb = UI.new("BillboardGui", { Size = UDim2.fromOffset(110, 44), StudsOffsetWorldSpace = Vector3.new(0, c.Size.Y / 2 + 3, 0), AlwaysOnTop = true, LightInfluence = 0, MaxDistance = 700, Parent = c })
+	local bb = UI.new("BillboardGui", { Name = "CrateTargetTag", Enabled = showTargetTags and c.Transparency < 1, Size = UDim2.fromOffset(110, 44), StudsOffsetWorldSpace = Vector3.new(0, c.Size.Y / 2 + 3, 0), AlwaysOnTop = true, LightInfluence = 0, MaxDistance = 700, Parent = c })
 	UI.label({ Text = if kind == "Gold" then "GOLD!" elseif kind == "Barrel" then "BARREL" else "CRATE", TextColor3 = KIND_COL[kind] or C.White, MaxText = 20, Size = UDim2.new(1, 0, 0, 24), Parent = bb })
 	local back = UI.new("Frame", { BackgroundColor3 = C.Ink, Size = UDim2.new(0.8, 0, 0, 9), Position = UDim2.new(0.1, 0, 0, 28), BorderSizePixel = 0, Parent = bb }, { UI.corner(4) })
 	local bar = UI.new("Frame", { BackgroundColor3 = KIND_COL[kind] or C.Gold, Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, Parent = back }, { UI.corner(4) })
 	back.Visible = ((c:GetAttribute("MaxHp") :: number?) or 1) > 1
-	tagged[c] = { rest = c.CFrame, phase = math.random() * 6, bar = bar }
+	tagged[c] = { rest = c.CFrame, phase = math.random() * 6, gui = bb }
 	c.AncestryChanged:Connect(function()
 		if not c.Parent then
 			tagged[c] = nil
@@ -343,7 +351,7 @@ function CrateView.init(root: ScreenGui)
 	local holder = UI.new("Frame", { Name = "CrateFeed", BackgroundTransparency = 1, Size = UDim2.fromOffset(560, 120), Position = UDim2.new(0.5, 0, 0, 150), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 30, Parent = root })
 	UI.new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = holder })
 	feed = holder
-	countdown = UI.label({ Name = "CrateCountdown", Text = "", TextColor3 = C.Gold, MaxText = 30, Visible = false, Size = UDim2.fromOffset(460, 36), Position = UDim2.new(0.5, 0, 0, 112), AnchorPoint = Vector2.new(0.5, 0), ZIndex = 30, Parent = root })
+	countdown = UI.label({ Name = "CrateCountdown", Text = "", TextColor3 = C.Gold, MaxText = 26, Visible = false, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.fromOffset(460, 32), Position = UDim2.new(1, -20, 0, 96), AnchorPoint = Vector2.new(1, 0), ZIndex = 30, Parent = root })
 
 	task.spawn(buildGuns)
 
@@ -382,14 +390,11 @@ function CrateView.init(root: ScreenGui)
 				end
 			end
 		elseif kind == "break" then
-			for cp, _ in tagged do
+			for cp, info in tagged do
 				if cp:GetAttribute("Id") == a then
 					breakOpen(cp, c)
 					cp.Transparency = 1
-					local gui = cp:FindFirstChildOfClass("BillboardGui")
-					if gui then
-						gui.Enabled = false
-					end
+					info.gui.Enabled = false
 				end
 			end
 			post(tostring(b) .. " smashed a " .. (KIND_NAME[c] or "crate") .. "!", if c == "Gold" then C.Gold else C.White)
@@ -426,7 +431,7 @@ function CrateView.init(root: ScreenGui)
 			cd.Visible = State.snapshot ~= nil and State.snapshot.tutorial >= Config.TUTORIAL_DONE
 				and not State.cinematic and not menuOpen and left > 0 and left <= L.warn
 			if cd.Visible then
-				cd.Text = "Crate drop in " .. Format.time(math.ceil(left)) .. "!"
+				cd.Text = "CRATE RAIN in " .. Format.time(math.ceil(left)) .. "!" .. (if left <= 30 then " To the cannons!" else "")
 			end
 		end
 	end)

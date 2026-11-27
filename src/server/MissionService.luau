@@ -110,6 +110,122 @@ function MissionService.label(m: any): string
 	return if string.find(f, "%%d") then string.format(f, m.target) else f
 end
 
+---------------------------------------------------------------------------
+-- Daily quests: three bigger goals a day (a new set every UTC day), claimed at the Quest Board in town
+---------------------------------------------------------------------------
+local function questTarget(kind: string, stage: number, bestDepth: number): number
+	if kind == "kills" then
+		return 40 + 10 * stage
+	elseif kind == "hatch" then
+		return 3 + stage // 3
+	elseif kind == "fuse" then
+		return 3 + stage // 4
+	elseif kind == "fish" then
+		return 5 + stage // 3
+	elseif kind == "sell" then
+		return 3 + stage // 4
+	elseif kind == "boss" then
+		return if bestDepth >= Config.STAGE_LENGTH * 3 then 2 else 1
+	elseif kind == "cove" or kind == "dig" then
+		return 2
+	end
+	return 1 -- lighthouse
+end
+
+-- make sure today's three quests exist (a new UTC day brings a new set)
+function MissionService.ensureQuests(player: Player)
+	local data = DataService.get(player)
+	if not data or data.tutorial < Config.TUTORIAL_DONE then
+		return
+	end
+	local today = os.time() // 86400
+	if data.quests.day == today and #data.quests.list > 0 then
+		return
+	end
+	local stage = stageOf(data)
+	local pool = {}
+	for _, k in Config.QUESTS.order do
+		local ok = true
+		if k == "boss" and data.bestDepth < Config.STAGE_LENGTH then
+			ok = false
+		elseif (k == "cove" or k == "dig" or k == "lighthouse") and not (data.drip and data.drip[k]) then
+			ok = false
+		end
+		if ok then
+			table.insert(pool, k)
+		end
+	end
+	-- the same player gets the same set all day (a rejoin never re-rolls it)
+	local r = Random.new(today * 131 + player.UserId % 100000)
+	local list = {}
+	local cpm = Stats.coinsPerMinute(data.bestDepth)
+	for _ = 1, math.min(Config.QUESTS.count, #pool) do
+		local kind = table.remove(pool, r:NextInteger(1, #pool)) :: string
+		local def = Config.QUESTS.kinds[kind]
+		table.insert(list, {
+			kind = kind,
+			target = questTarget(kind, stage, data.bestDepth),
+			progress = 0,
+			coins = math.max(200, math.floor(cpm * def.minutes / 50) * 50),
+			pearls = def.pearls + stage // 3,
+			claimed = false,
+		})
+	end
+	data.quests = { day = today, list = list, bonus = false }
+	DataService.changed(player)
+end
+
+local function questProgress(player: Player, data: any, kind: string, amount: number)
+	MissionService.ensureQuests(player)
+	for _, q in data.quests.list do
+		if q.kind == kind and q.progress < q.target then
+			q.progress = math.min(q.target, q.progress + amount)
+			if q.progress >= q.target then
+				toast(player, "Daily quest done! Claim it at the Quest Board in town", Color3.fromRGB(255, 205, 60))
+			end
+		end
+	end
+end
+
+-- Claim a finished quest (index 1..3). Claiming the third gives the bonus chest too.
+function MissionService.claimQuest(player: Player, index: any): (boolean, string?)
+	local data = DataService.get(player)
+	if not data or typeof(index) ~= "number" then
+		return false, nil
+	end
+	MissionService.ensureQuests(player)
+	local q = data.quests.list[math.floor(index)]
+	if not q then
+		return false, "No such quest"
+	end
+	if q.claimed then
+		return false, "Already claimed"
+	end
+	if q.progress < q.target then
+		return false, "Not finished yet"
+	end
+	q.claimed = true
+	data.coins += q.coins
+	data.pearls += q.pearls
+	Analytics.event(player, "QuestClaim", 1, { kind = q.kind })
+	local msg = "+" .. Format.abbrev(q.coins) .. " coins, +" .. q.pearls .. " pearls"
+	local all = true
+	for _, other in data.quests.list do
+		if not other.claimed then
+			all = false
+		end
+	end
+	if all and not data.quests.bonus then
+		data.quests.bonus = true
+		data.pearls += Config.QUESTS.bonusPearls
+		local ExtrasService = require(script.Parent.ExtrasService) :: any
+		local sp = ExtrasService.giveSpell(player, "boss")
+		msg ..= "  BONUS: +" .. Config.QUESTS.bonusPearls .. " pearls" .. (if sp then " and a " .. sp.name .. " spell card!" else "!")
+	end
+	DataService.changed(player)
+	return true, msg
+end
+
 -- The player did something: count it towards every matching mission
 function MissionService.record(player: Player, kind: string, n: number?)
 	local data = DataService.get(player)
@@ -117,6 +233,7 @@ function MissionService.record(player: Player, kind: string, n: number?)
 		return
 	end
 	local amount = n or 1
+	questProgress(player, data, kind, amount)
 	local finished = {}
 	for i, m in data.missions do
 		if m.kind == kind then
@@ -147,6 +264,7 @@ end
 function MissionService.init()
 	DataService.Loaded:Connect(function(player)
 		MissionService.ensure(player)
+		MissionService.ensureQuests(player)
 	end)
 	-- the tutorial finishing (or a player whose board emptied) fills the board
 	task.spawn(function()
@@ -155,6 +273,7 @@ function MissionService.init()
 			for _, p in Players:GetPlayers() do
 				if DataService.isLoaded(p) then
 					MissionService.ensure(p)
+					MissionService.ensureQuests(p)
 				end
 			end
 		end

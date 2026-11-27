@@ -24,6 +24,8 @@ local Sound = require(script.Parent.Sound)
 local Cinema = require(script.Parent.Cinema)
 local FishingDiveView = require(script.Parent.FishingDiveView)
 local Menus = require(script.Parent.Menus)
+local TapFight = require(script.Parent.TapFight)
+local PerfView = require(script.Parent.PerfView)
 
 local BattleView = {}
 
@@ -49,6 +51,8 @@ type Unit = {
 	fly: { from: CFrame, t: number }?,
 	phase: number,
 	elements: { string },
+	enraged: boolean?, -- a boss under 25% health stays tinted red
+	slow: boolean?, -- a slain boss sinks in slow motion
 }
 
 type Fight = {
@@ -643,6 +647,79 @@ local function onEnemyHit(owner: number, p: any)
 	end)
 end
 
+-- Tap-to-help: the owner's own hit on the enemy (everyone nearby sees the numbers)
+local function onTap(owner: number, p: any)
+	local f = fights[owner]
+	if not f or not f.enemy then
+		return
+	end
+	local e = f.enemy :: Unit
+	e.flash = math.max(e.flash, if p.crit then 1 else 0.5)
+	setHp(e, p.hp)
+	local target = e.home.Position + Vector3.new((math.random() - 0.5) * 3, 2 + math.random() * 2, 0)
+	if (workspace.CurrentCamera.CFrame.Position - target).Magnitude < 140 then
+		if p.crit then
+			popText(target, Format.abbrev(p.dmg), C.Coral, 1)
+			popText(target + Vector3.new(0, 2.5, 0), "CRIT!", C.Gold, 0.9)
+			burst(target, C.Gold, 10, 5, true)
+		else
+			popText(target, Format.abbrev(p.dmg), Color3.fromRGB(170, 230, 255), 0.55)
+			burst(target, Color3.fromRGB(200, 240, 255), 4, 3)
+		end
+	end
+	if mine(f) then
+		Hud.setEnemyHp(p.hp, f.enemyMax)
+		TapFight.onMyTap(p.crit, p.rage)
+	end
+end
+
+-- SUPER SPLASH: a wave of water slams the enemy
+local function onSuperSplash(owner: number, p: any)
+	local f = fights[owner]
+	if not f or not f.enemy then
+		return
+	end
+	local e = f.enemy :: Unit
+	local pos = e.home.Position
+	e.flash = 1
+	setHp(e, p.hp)
+	-- a column of water rings rising up the enemy, then a big burst
+	for k = 0, 3 do
+		task.delay(k * 0.08, function()
+			splash(pos, 6 + k * 3)
+		end)
+	end
+	local column = fxPart({ Shape = Enum.PartType.Cylinder, Color = Color3.fromRGB(120, 210, 255), Transparency = 0.25, Size = Vector3.new(1, 6, 6), CFrame = CFrame.new(pos.X, waterY(), pos.Z) * CFrame.Angles(0, 0, math.rad(90)) })
+	TweenService:Create(column, TweenInfo.new(0.45, Enum.EasingStyle.Quad), { Size = Vector3.new(26, 12, 12), CFrame = CFrame.new(pos.X, waterY() + 12, pos.Z) * CFrame.Angles(0, 0, math.rad(90)), Transparency = 1 }):Play()
+	task.delay(0.5, function()
+		column:Destroy()
+	end)
+	burst(pos + Vector3.new(0, 4, 0), Color3.fromRGB(200, 240, 255), 26, 12, true)
+	if (workspace.CurrentCamera.CFrame.Position - pos).Magnitude < 160 then
+		popText(pos + Vector3.new(0, 6, 0), Format.abbrev(p.dmg), C.Sea, 1)
+	end
+	if mine(f) then
+		Hud.setEnemyHp(p.hp, f.enemyMax)
+		TapFight.onMySuper()
+	end
+end
+
+-- A boss under 25% health: it turns red and (for the owner) the screen and music get intense
+local function onEnrage(owner: number, _p: any)
+	local f = fights[owner]
+	if not f or not f.enemy then
+		return
+	end
+	local e = f.enemy :: Unit
+	e.enraged = true
+	MonsterModels.tint(e.rig, Color3.fromRGB(255, 40, 40), 0.45)
+	burst(e.home.Position + Vector3.new(0, 3, 0), C.Coral, 20, 8, true)
+	if mine(f) then
+		local def = f.enemyId and Config.ENEMIES[f.enemyId]
+		TapFight.onMyEnrage(def and def.name or f.enemyId)
+	end
+end
+
 local function onFaint(owner: number, p: any)
 	local f = fights[owner]
 	local u = f and f.team[p.who]
@@ -675,10 +752,19 @@ local function onKill(owner: number, p: any)
 		if f.enemyKind == "boss" or f.enemyKind == "final" then
 			Sound.play("Win", 0.8)
 			Hud.toast("BOSS DEFEATED!", C.Gold)
+			TapFight.finalBlow()
 		end
 	end
+	if f.enemyKind == "boss" or f.enemyKind == "final" then
+		-- the final blow: a huge burst and the boss sinks in slow motion
+		e.slow = true
+		e.enraged = false
+		burst(pos, C.White, 24, 12, true)
+		burst(pos, C.Coral, 18, 9, true)
+		splash(e.home.Position, 10)
+	end
 	local dying = e
-	task.delay(1.2, function()
+	task.delay(if e.slow then 2.6 else 1.2, function()
 		if f.enemy == dying then
 			f.enemy = nil
 		end
@@ -1534,7 +1620,7 @@ local function animate(u: Unit, t: number, dt: number, towards: Vector3?)
 	if not u.alive then
 		u.sink = 0
 		u.flash = 0
-		u.phase += dt
+		u.phase += if u.slow then dt * 0.35 else dt
 		cf = cf * CFrame.new(0, -math.min(6, u.phase * 4), 0) * CFrame.Angles(0, 0, math.min(1.2, u.phase))
 		MonsterModels.fade(u.rig, math.min(1, u.phase * 0.8))
 	end
@@ -1542,7 +1628,7 @@ local function animate(u: Unit, t: number, dt: number, towards: Vector3?)
 		MonsterModels.tint(u.rig, Color3.new(1, 1, 1), u.flash)
 		u.flash = math.max(0, u.flash - dt * 6)
 		if u.flash == 0 then
-			MonsterModels.tint(u.rig, nil, 0)
+			MonsterModels.tint(u.rig, if u.enraged then Color3.fromRGB(255, 40, 40) else nil, 0.45)
 		end
 	elseif u.flash < 0 then
 		MonsterModels.tint(u.rig, Color3.fromRGB(255, 60, 60), -u.flash)
@@ -1568,6 +1654,12 @@ function BattleView.init()
 			onFaint(owner, p)
 		elseif kind == "kill" then
 			onKill(owner, p)
+		elseif kind == "tap" then
+			onTap(owner, p)
+		elseif kind == "superSplash" then
+			onSuperSplash(owner, p)
+		elseif kind == "enrage" then
+			onEnrage(owner, p)
 		elseif kind == "end" then
 			onEnd(owner, p)
 		else
@@ -1578,7 +1670,8 @@ function BattleView.init()
 		local t = os.clock()
 		local cam = workspace.CurrentCamera.CFrame.Position
 		for _, f in fights do
-			local near = (f.arena.Position - cam).Magnitude < 350
+			-- (phones animate fewer of the other ships' fights: each monster is dozens of parts posed every frame)
+			local near = (f.arena.Position - cam).Magnitude < (if f.owner == player.UserId then 350 elseif PerfView.mobile then 190 else 350)
 			FX.Parent = workspace
 			if near then
 				local ePos = if f.enemy then f.enemy.home.Position else nil
